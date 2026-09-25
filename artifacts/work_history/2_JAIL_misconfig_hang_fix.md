@@ -2,16 +2,16 @@
 
 | Field | Value |
 |-------|-------|
-| Artifact | `2_ASKAI_misconfig_hang_fix.md` |
+| Artifact | `2_JAIL_misconfig_hang_fix.md` |
 | Category | work_history |
-| Subject | `ASKAI` — request error handling, streaming reader |
+| Subject | `JAIL` — request error handling, streaming reader |
 | Date | 2026-09-25 |
 | Area/Purpose scope | `src/brain.jl`, `src/models.jl` |
-| Related | `1_ASKAI_package_overview.md` |
+| Related | `1_JAIL_package_overview.md` |
 
 ## Scope of This Unit of Work
 
-Bug report: with an unset or invalid `AskAI_config`, a query in the `}` REPL mode hung with no error, and Ctrl+C killed the whole Julia process. Goal: any such query raises a clear error.
+Bug report: with an unset or invalid `JAIL_config`, a query in the `}` REPL mode hung with no error, and Ctrl+C killed the whole Julia process. Goal: any such query raises a clear error.
 
 ## Root Causes
 
@@ -27,7 +27,7 @@ Bug report: with an unset or invalid `AskAI_config`, a query in the `}` REPL mod
 | `src/models.jl` | Added `checkConfig(m::modelProvider)`. It errors if the model/api/url is empty or still set to the `__init__` placeholders (`noModel` / `noAPI`). |
 | `src/brain.jl` | `AIBrain` call now runs `checkConfig(m.model)` first. |
 | `src/brain.jl` | Streaming: the async body is wrapped in `try/catch`. On failure it calls `close(channel, ex)` and `close(channel2, ex)` so `take!` rethrows in the caller. After `startread`, `r.status == 200 \|\| error("HTTP $(r.status): <body>")`. Loop condition fixed to `EOF_signal <= 10 && !eof(io)`. |
-| `src/brain.jl` | Non-stream: the catch now throws `error("AskAI request failed, please check the config ...: <cause>")`. |
+| `src/brain.jl` | Non-stream: the catch now throws `error("JAIL request failed, please check the config ...: <cause>")`. |
 | `src/brain.jl` | HTTP calls use the 2.x forms: `HTTP.open(:POST, url, headers; read_idle_timeout, connect_timeout, retry=false)` and `HTTP.post(url, headers, body; ...)`. The deprecated `readtimeout` was replaced because it printed a warning. |
 
 ## Design Decisions Made
@@ -41,12 +41,12 @@ Bug report: with an unset or invalid `AskAI_config`, a query in the `}` REPL mod
 Local fake servers (`HTTP.serve!`) plus a real Gemini call, in the REPL:
 
 ```
-AskAI is not configured. Set ENV["AskAI_config"] before loading, or call AskAI.setapi("provider|model|apiOrURL").
-AskAI request failed, please check the config (provider|model|apiOrURL): HTTP 400: {"error": "bad key"} ...
-AskAI request failed, please check the config (provider|model|apiOrURL): http connect error to 127.0.0.1:1: connect tcp -> 127.0.0.1:1: SystemError: connect: Connection refused
-AskAI request failed, please check the config (provider|model|apiOrURL): http status error: 400 for POST http://127.0.0.1:18765/api/generate
+JAIL is not configured. Set ENV["JAIL_config"] before loading, or call JAIL.setapi("provider|model|apiOrURL").
+JAIL request failed, please check the config (provider|model|apiOrURL): HTTP 400: {"error": "bad key"} ...
+JAIL request failed, please check the config (provider|model|apiOrURL): http connect error to 127.0.0.1:1: connect tcp -> 127.0.0.1:1: SystemError: connect: Connection refused
+JAIL request failed, please check the config (provider|model|apiOrURL): http status error: 400 for POST http://127.0.0.1:18765/api/generate
 "# Final Output\n\ntok1 tok2 tok3 tok4 tok5 \n"          # happy-path streaming still works
-AskAI request failed, please check the config (provider|model|apiOrURL): HTTP 400: { "error": { "code": 400, "message": "API key not valid. ..."
+JAIL request failed, please check the config (provider|model|apiOrURL): HTTP 400: { "error": { "code": 400, "message": "API key not valid. ..."
 ```
 
 The user confirmed that in the interactive `}` mode the error now appears and nothing hangs.

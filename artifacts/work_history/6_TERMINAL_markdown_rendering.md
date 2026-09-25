@@ -33,9 +33,9 @@ This unit continued from the local OpenAI-compatible provider work and addressed
 Package loading and wide-table formatting were verified in the Julia REPL:
 
 ```julia
-using AskAI
+using JAIL
 wide = "| Feature | OLAP | OLTP |\n|---|---|---|\n| Purpose | A very long analytical description that exceeds the terminal width and should wrap safely | A long transactional description that should also wrap safely |"
-formatted = AskAI._formatMarkdownForTerminal(wide)
+formatted = JAIL._formatMarkdownForTerminal(wide)
 println("wide table converted: ", !occursin("| Feature | OLAP | OLTP |", formatted))
 println("max formatted line: ", maximum(length.(split(formatted, "\\n"))))
 ```
@@ -44,7 +44,7 @@ Actual output:
 
 ```text
 REPL mode askai initialized. Press } to enter and backspace to exit.
-AskAI loaded: AskAI
+JAIL loaded: JAIL
 wide table converted: true
 max formatted line: 78
 ```

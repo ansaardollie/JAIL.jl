@@ -1,7 +1,7 @@
 
 # Overview
 
-AskAI.jl, as its name suggests, is a straightforward tool for querying Large Language Models.
+JAIL.jl, as its name suggests, is a straightforward tool for querying Large Language Models.
 It supports Ollama, Google's Gemini API, Anthropic models, and OpenAI-compatible APIs, including locally hosted models. It is designed to be simple and direct: send prompts and questions to an AI provider, and optionally execute the included code within a sandboxed "playground" to avoid affecting the main scope.
 
 The main macro, `@ai`, retrieves results from a large language model, while `@AI` executes the code within the "playground" scope and displays the output(or any errors.)
@@ -9,38 +9,38 @@ The main macro, `@ai`, retrieves results from a large language model, while `@AI
 a REPL mode was also support. Press `}` to enter and backspace to exit
 
 
-![AskAI](./overview.png)
+![JAIL](./overview.png)
 
 
 !!! note
-    AskAI is configured with the environment variables `ASK_AI_PROVIDER` (`gemini`, `ollama`, `openai`, `openai-compatible` or `anthropic`), `ASK_AI_MODEL`, `ASK_AI_BASE_URL` (optional for `ollama`, `openai` and `anthropic`) and `ASK_AI_API_KEY` (optional for local servers; `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY`, and `anthropic` reads `ANTHROPIC_API_KEY`). Alternatively call `setapi(provider, model; url, api)`, where omitted keywords fall back to those variables. The old `ENV["AskAI_config"] = "provider|model|key@url"` form is deprecated. Please also add a module called `playground`: `module playground end` in your main scope if you want to use the `@AI` macro.
+    JAIL is configured with the environment variables `JAIL_PROVIDER` (`gemini`, `ollama`, `openai`, `openai-compatible` or `anthropic`), `JAIL_MODEL`, `JAIL_BASE_URL` (optional for `ollama`, `openai` and `anthropic`) and `JAIL_API_KEY` (optional for local servers; `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY`, and `anthropic` reads `ANTHROPIC_API_KEY`). Alternatively call `setapi(provider, model; url, api)`, where omitted keywords fall back to those variables. The old `ENV["JAIL_config"] = "provider|model|key@url"` form is deprecated. Please also add a module called `playground`: `module playground end` in your main scope if you want to use the `@AI` macro.
 
 !!! note
     A local OpenAI-compatible server must expose `/v1/models` and `/v1/chat/completions`. The URL may be a full URL (with or without `/v1`) or a bare hostname.
 
     ```julia
-    ENV["ASK_AI_PROVIDER"] = "openai-compatible"
-    ENV["ASK_AI_MODEL"] = "gpt-oss-20b"
-    ENV["ASK_AI_BASE_URL"] = "http://localhost:8000"
-    using AskAI
+    ENV["JAIL_PROVIDER"] = "openai-compatible"
+    ENV["JAIL_MODEL"] = "gpt-oss-20b"
+    ENV["JAIL_BASE_URL"] = "http://localhost:8000"
+    using JAIL
 
     available_models()
     @ai "Reply with one sentence about Julia."
-    AskAI.Brain.stream = false # optional: disable streaming
+    JAIL.Brain.stream = false # optional: disable streaming
     ```
 
-    AskAI includes the current terminal rows and columns in each prompt and asks the model to
-    wrap output to the available width (`AskAI.Brain.terminal_hint = false` disables this). This is guidance for the model, not a hard output limit.
+    JAIL includes the current terminal rows and columns in each prompt and asks the model to
+    wrap output to the available width (`JAIL.Brain.terminal_hint = false` disables this). This is guidance for the model, not a hard output limit.
     Oversized Markdown tables are also converted to wrapped labeled entries before display.
 
 !!! note
-    For Anthropic, set `ANTHROPIC_API_KEY`, choose `ASK_AI_PROVIDER = "anthropic"`, and provide an Anthropic model such as `claude-3-5-sonnet-20241022`. The default API URL is `https://api.anthropic.com`; set `ASK_AI_BASE_URL` only when using a proxy or custom endpoint.
+    For Anthropic, set `ANTHROPIC_API_KEY`, choose `JAIL_PROVIDER = "anthropic"`, and provide an Anthropic model such as `claude-3-5-sonnet-20241022`. The default API URL is `https://api.anthropic.com`; set `JAIL_BASE_URL` only when using a proxy or custom endpoint.
 
     ```julia
-    ENV["ASK_AI_PROVIDER"] = "anthropic"
-    ENV["ASK_AI_MODEL"] = "claude-3-5-sonnet-20241022"
+    ENV["JAIL_PROVIDER"] = "anthropic"
+    ENV["JAIL_MODEL"] = "claude-3-5-sonnet-20241022"
     ENV["ANTHROPIC_API_KEY"] = "your-anthropic-api-key"
-    using AskAI
+    using JAIL
 
     available_models()
     @ai "Reply with one sentence about Julia."
@@ -49,21 +49,21 @@ a REPL mode was also support. Press `}` to enter and backspace to exit
 !!! note
     A convenient way is to put below code in your Julia `startup.jl` configuration file.
     ```
-    ENV["ASK_AI_PROVIDER"] = "ollama"
-    ENV["ASK_AI_MODEL"] = "qwen2.5:72b"
+    ENV["JAIL_PROVIDER"] = "ollama"
+    ENV["JAIL_MODEL"] = "qwen2.5:72b"
     module playground end
-    using AskAI
+    using JAIL
     ```
-    then you can use the AskAI in every session by default
+    then you can use the JAIL in every session by default
 
 
-it starts as my persional AI tool in julia REP and only support the Gemini model currently. have fun with it and I welcome your suggestions and input for AskAI.jl!!!
+it starts as my persional AI tool in julia REP and only support the Gemini model currently. have fun with it and I welcome your suggestions and input for JAIL.jl!!!
 
 # installation
 
 ```julia
-(@v1.10) pkg> add https://github.com/AIBioLab/AskAI 
-julia> using AskAI
+(@v1.10) pkg> add https://github.com/AIBioLab/JAIL 
+julia> using JAIL
 # now you can configure it with your AI model provider; eg ollama
 julia> setapi("ollama", "glm4:latest")
 # or Gemini
@@ -75,10 +75,10 @@ julia> setapi("anthropic", "claude-3-5-sonnet-20241022"; api = "your-api-key")
 ```
 
 !!! note
-   by default the response mode is stream, it should work well, however you can always change it by set `AskAI.Brain.stream = false`.
+   by default the response mode is stream, it should work well, however you can always change it by set `JAIL.Brain.stream = false`.
 
 # quickly example
-Here's an example of using AskAI to generate scatter and histogram plots and perform basic statistical calculations.
+Here's an example of using JAIL to generate scatter and histogram plots and perform basic statistical calculations.
 ```julia 
 @AI "tell me the current date, use the pacakge when in need"
 @AI "create a new project in /tmp, name it as demo + date, activate it"
@@ -105,32 +105,32 @@ Here's an example of using AskAI to generate scatter and histogram plots and per
     ![result3](./result3.png)
 
 !!! note
-    some time you may get the wrong result from the LLM, LLM results aren't always perfect, so please double-check. You can use `@ai` instead of `@AI` for code checks. then use `AskAI.run_code()` to perform the code. Often the case I met is the necessary packages aren't installed.
+    some time you may get the wrong result from the LLM, LLM results aren't always perfect, so please double-check. You can use `@ai` instead of `@AI` for code checks. then use `JAIL.run_code()` to perform the code. Often the case I met is the necessary packages aren't installed.
     ```julia
     @ai "tell me the current date,install the package if it needs"
-    AskAI.run_code(ans)
+    JAIL.run_code(ans)
     ```
 
 to review the conversation history
 ```julia
-AskAI.Brain.history["ask"] 
-AskAI.Brain.history["ans"] 
+JAIL.Brain.history["ask"] 
+JAIL.Brain.history["ans"] 
 
 # review the last response 
-AskAI.Brain.history["ans"][end] |> AskAI.MD
+JAIL.Brain.history["ans"][end] |> JAIL.MD
 ```
 
 
 you can also try the stream mode under terminal
 ```julia
-AskAI.Brain.stream = true
+JAIL.Brain.stream = true
 @ai "why the sky is blue"
 ```
 
 
 # function and macro
 ```@autodocs
-Modules = [AskAI]
-Pages   = ["AskAI.jl", "brain.jl"]
+Modules = [JAIL]
+Pages   = ["JAIL.jl", "brain.jl"]
 ```
 

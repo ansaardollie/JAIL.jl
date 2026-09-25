@@ -11,14 +11,14 @@
 
 ## Scope of This Unit of Work
 
-Add first-class Anthropic support to AskAI using the existing provider dispatch path and the vendored Claude.jl API shape as reference. Update documentation with the required API-key and model configuration, then close out the completed unit.
+Add first-class Anthropic support to JAIL using the existing provider dispatch path and the vendored Claude.jl API shape as reference. Update documentation with the required API-key and model configuration, then close out the completed unit.
 
 ## What Changed
 
 | File | Change |
 |------|--------|
-| `src/models.jl` | Added `Anthropic <: ModelProvider`; implemented model listing, configuration requirements, URL normalization, `/v1/messages` request bodies, Anthropic headers, non-stream response parsing, SSE `content_block_delta` parsing, and API error extraction. Requests preserve bounded AskAI history and place assembled context in the Anthropic top-level `system` field. |
-| `src/AskAI.jl` | Added `anthropic` to `PROVIDERS`, configured the default `https://api.anthropic.com` URL, and added `ANTHROPIC_API_KEY` fallback when explicit and generic AskAI keys are absent. |
+| `src/models.jl` | Added `Anthropic <: ModelProvider`; implemented model listing, configuration requirements, URL normalization, `/v1/messages` request bodies, Anthropic headers, non-stream response parsing, SSE `content_block_delta` parsing, and API error extraction. Requests preserve bounded JAIL history and place assembled context in the Anthropic top-level `system` field. |
+| `src/JAIL.jl` | Added `anthropic` to `PROVIDERS`, configured the default `https://api.anthropic.com` URL, and added `ANTHROPIC_API_KEY` fallback when explicit and generic JAIL keys are absent. |
 | `readme.md` | Added Anthropic to supported providers, configuration tables, environment setup, and runtime `setapi` examples. |
 | `docs/src/index.md` | Added Anthropic to overview/configuration text and a complete environment-variable setup example. |
 | `artifacts/design_decisions/6_ANTHROPIC_native_provider.md` | Recorded the native-provider decision and rejected alternatives. |
@@ -26,7 +26,7 @@ Add first-class Anthropic support to AskAI using the existing provider dispatch 
 ## Design Decisions
 
 - Use a dedicated provider rather than adding Anthropic protocol branches to `OpenAICompatible`, because the authentication, URL, body, response, and SSE contracts differ. See `artifacts/design_decisions/6_ANTHROPIC_native_provider.md`.
-- Keep the implementation on HTTP.jl and JSON3.jl, matching AskAI's existing provider code and avoiding a new dependency.
+- Keep the implementation on HTTP.jl and JSON3.jl, matching JAIL's existing provider code and avoiding a new dependency.
 - Default Anthropic requests to `max_tokens = 1024`, matching the vendored Claude.jl client's default. A future configurable token limit is a separate extension.
 
 ## Verification
@@ -34,14 +34,14 @@ Add first-class Anthropic support to AskAI using the existing provider dispatch 
 Package loading through the Julia REPL:
 
 ```julia
-using AskAI
-println("AskAI loaded; provider names: ", AskAI.PROVIDERS)
-println("Anthropic type available: ", AskAI.Anthropic)
+using JAIL
+println("JAIL loaded; provider names: ", JAIL.PROVIDERS)
+println("Anthropic type available: ", JAIL.Anthropic)
 ```
 
 ```text
-AskAI loaded; provider names: ["gemini", "ollama", "openai", "openai-compatible", "anthropic"]
-Anthropic type available: AskAI.Anthropic
+JAIL loaded; provider names: ["gemini", "ollama", "openai", "openai-compatible", "anthropic"]
+Anthropic type available: JAIL.Anthropic
 ```
 
 Provider request and parser fixtures:
@@ -53,7 +53,7 @@ claude-3-5-sonnet-20241022 1024 Hello
 Hi
 Hi
 true
-AskAI.Anthropic https://api.anthropic.com
+JAIL.Anthropic https://api.anthropic.com
 ```
 
 Credential fallback and error parsing:
@@ -72,7 +72,7 @@ The error fixture produced `Anthropic API error: bad key`. `get_errors` reported
 
 - Live Anthropic model discovery was not completed: the environment's proxy blocked the attempted `/v1/models` request with `proxy CONNECT failed with status 403`. The local URL construction and model-list parser are implemented but not live-verified.
 - No live Anthropic generation was attempted because no usable Anthropic credential was available.
-- The provider currently sends a fixed `max_tokens = 1024`; AskAI does not yet expose a provider-wide max-token setting.
+- The provider currently sends a fixed `max_tokens = 1024`; JAIL does not yet expose a provider-wide max-token setting.
 - Tool use, vision content, prompt caching, beta headers, and server-side Anthropic conversation state are not implemented.
 
 ## Todos

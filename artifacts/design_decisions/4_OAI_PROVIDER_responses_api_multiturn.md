@@ -30,7 +30,7 @@ context was only the text summary `AIBrain.memory`, placed in the system prompt.
 ### 1. Flag shape
 
 - **A (chosen):** `OpenAICompatible.responses::Bool = false`, set by the `setapi(...; responses)`
-  keyword, which falls back to `ENV["ASK_AI_RESPONSES_API"]` (`1`/`true`/`yes`). It can also be
+  keyword, which falls back to `ENV["JAIL_RESPONSES_API"]` (`1`/`true`/`yes`). It can also be
   flipped while running with `Brain.model.responses = true`. One struct, so every
   `request_*`/`parse_answer` method branches on the flag.
 - **B:** a separate `OpenAIResponses <: ModelProvider` type or a new provider name. Rejected: it

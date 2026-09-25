@@ -11,7 +11,7 @@
 
 ## Scope of This Unit of Work
 
-The previous work-history artifact documented the vendored OpenAI.jl dependency. This unit studied the vendored `libs/PromptingTools.jl` package and recorded its exported API, message/schema architecture, provider dispatch families, intended usage, extension points, experimental modules, and limitations for future AskAI work.
+The previous work-history artifact documented the vendored OpenAI.jl dependency. This unit studied the vendored `libs/PromptingTools.jl` package and recorded its exported API, message/schema architecture, provider dispatch families, intended usage, extension points, experimental modules, and limitations for future JAIL work.
 
 ## What Changed
 
@@ -32,15 +32,15 @@ The previous work-history artifact documented the vendored OpenAI.jl dependency.
 The package load was verified through the Julia REPL with:
 
 ```julia
-using AskAI
-println("AskAI loaded: ", nameof(AskAI))
+using JAIL
+println("JAIL loaded: ", nameof(JAIL))
 ```
 
 Actual REPL output:
 
 ```text
 REPL mode askai initialized. Press } to enter and backspace to exit.
-AskAI loaded: AskAI
+JAIL loaded: JAIL
 
 ```
 nothing
@@ -70,6 +70,6 @@ The artifact files were checked for non-empty output and expected sections:
 
 ## Next Steps
 
-1. Use the distinction between `ai*` orchestration, message types, and provider schemas when integrating PromptingTools with AskAI.
+1. Use the distinction between `ai*` orchestration, message types, and provider schemas when integrating PromptingTools with JAIL.
 2. Refresh this inventory if `libs/PromptingTools.jl` is upgraded or its provider/schema surface changes.
 3. For runtime integration work, add focused tests using the package's echo schemas or local fake endpoints before relying on live provider calls.

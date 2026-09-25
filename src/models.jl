@@ -53,8 +53,8 @@ end
 list available models in the current provider (or `m`); errors are thrown, not returned
 
 ```julia
-AskAI.setapi("ollama", "glm4:latest")
-AskAI.available_models(pretty=true) # pretty = false to return raw string vector
+JAIL.setapi("ollama", "glm4:latest")
+JAIL.available_models(pretty=true) # pretty = false to return raw string vector
 ```
   available models:
 
@@ -84,14 +84,14 @@ throw an error if the model provider is unconfigured or has empty required value
 check_config(::NotConfigured) = error(CONFIG_HELP)
 function check_config(m::ModelProvider)
     absent = [name for (name, value) in _required_config(m) if isempty(strip(value))]
-    isempty(absent) || error("AskAI is missing: $(join(absent, ", ")). Call AskAI.setapi(provider, model; url, api).")
+    isempty(absent) || error("JAIL is missing: $(join(absent, ", ")). Call JAIL.setapi(provider, model; url, api).")
     return nothing
 end
 
-_required_config(m::Gemini) = ["model (ASK_AI_MODEL)" => m.model, "API key (ASK_AI_API_KEY or GEMINI_API_KEY)" => m.api]
-_required_config(m::Ollama) = ["model (ASK_AI_MODEL)" => m.model, "URL (ASK_AI_BASE_URL)" => m.url]
-_required_config(m::OpenAICompatible) = ["model (ASK_AI_MODEL)" => m.model, "URL (ASK_AI_BASE_URL)" => m.url]
-_required_config(m::Anthropic) = ["model (ASK_AI_MODEL)" => m.model, "API key (ASK_AI_API_KEY or ANTHROPIC_API_KEY)" => m.api]
+_required_config(m::Gemini) = ["model (JAIL_MODEL)" => m.model, "API key (JAIL_API_KEY or GEMINI_API_KEY)" => m.api]
+_required_config(m::Ollama) = ["model (JAIL_MODEL)" => m.model, "URL (JAIL_BASE_URL)" => m.url]
+_required_config(m::OpenAICompatible) = ["model (JAIL_MODEL)" => m.model, "URL (JAIL_BASE_URL)" => m.url]
+_required_config(m::Anthropic) = ["model (JAIL_MODEL)" => m.model, "API key (JAIL_API_KEY or ANTHROPIC_API_KEY)" => m.api]
 
 function _terminal_prompt_context()
     rows, columns = displaysize(stdout)

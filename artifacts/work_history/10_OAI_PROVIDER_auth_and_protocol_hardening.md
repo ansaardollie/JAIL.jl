@@ -14,14 +14,14 @@
 The OpenAI-compatible provider existed after artifact 9, but its chat-completions mode did not
 send prior turns, and API errors could silently appear as blank output. A subsequent
 `available_models()` request returned HTTP 401 because the active environment supplied
-`OPENAPI_API_KEY`, while `setapi` only read `ASK_AI_API_KEY` and `OPENAI_API_KEY`.
+`OPENAPI_API_KEY`, while `setapi` only read `JAIL_API_KEY` and `OPENAI_API_KEY`.
 
 ## What Changed
 
 | File | Change |
 |------|--------|
 | `src/models.jl` | `request_body(::OpenAICompatible, ...)` now sends a bounded recent conversation for chat completions, matching the Responses API path. Old turns are represented by `Brain.memory`; recent turns are emitted as alternating `user` and `assistant` messages. `parse_answer` and `_responses_answer` now call `_throw_api_error`, surfacing standard OpenAI error payloads and `response.failed` SSE events. |
-| `src/AskAI.jl` | `setapi` resolves credentials for both `openai` and `openai-compatible` in this order: explicit `api`, `ASK_AI_API_KEY`, `OPENAI_API_KEY`, then `OPENAPI_API_KEY`. `CONFIG_HELP` and the `setapi` docstring explain the fallback. |
+| `src/JAIL.jl` | `setapi` resolves credentials for both `openai` and `openai-compatible` in this order: explicit `api`, `JAIL_API_KEY`, `OPENAI_API_KEY`, then `OPENAPI_API_KEY`. `CONFIG_HELP` and the `setapi` docstring explain the fallback. |
 | `readme.md` | Documents the same OpenAI API-key environment-variable precedence. |
 
 ## Design Decisions Made
@@ -39,12 +39,12 @@ send prior turns, and API errors could silently appear as blank output. A subseq
 Package loading:
 
 ```julia
-using AskAI
-println("AskAI_loaded=", isdefined(Main, :AskAI))
+using JAIL
+println("JAIL_loaded=", isdefined(Main, :JAIL))
 ```
 
 ```text
-AskAI_loaded=true
+JAIL_loaded=true
 ```
 
 The chat-completions request fixture confirmed the recent-turn window and summarized older
@@ -79,8 +79,8 @@ stream_history="responses stream ok"
 The live OpenAI credential fallback and model listing succeeded:
 
 ```julia
-AskAI.setapi("openai", "gpt-5-nano")
-models = AskAI.available_models(pretty=false)
+JAIL.setapi("openai", "gpt-5-nano")
+models = JAIL.available_models(pretty=false)
 ```
 
 ```text
@@ -97,11 +97,11 @@ first_models=gpt-4o-transcribe, gpt-5.5-pro-2026-04-23, gpt-5.4, chatgpt-image-l
 ## Known Limitations
 
 - The previously configured external local gateway could not be rechecked: its proxy failed with
-  `proxy CONNECT failed with status 503` before AskAI reached the gateway.
+  `proxy CONNECT failed with status 503` before JAIL reached the gateway.
 - Real OpenAI chat/responses generation was not invoked; only authenticated model discovery was
   exercised against the real service.
 - Local servers that do not implement `/v1/responses` still require
-  `ASK_AI_CHAT_COMPLETIONS=true`; there is no automatic 404 fallback.
+  `JAIL_CHAT_COMPLETIONS=true`; there is no automatic 404 fallback.
 
 ## Todos
 

@@ -17,7 +17,7 @@ The public API had misspelled and inconsistently cased names (`avaliableModels`,
 `modelProvider`, `ollama`, `exe`, `checkConfig`, `getRESTURL`, `getAnswer`, `question2JSONString`),
 and configuration was a single pipe-delimited string (`"provider|model|apiOrURL"`) whose third
 field was overloaded as key, URL, or `key@url` depending on the provider. `setapi` rebound a
-global `Brain`, and `AskAI_key` was a hidden fallback.
+global `Brain`, and `JAIL_key` was a hidden fallback.
 
 ## The Question
 
@@ -29,11 +29,11 @@ overloaded config string with an explicit configuration surface, while keeping o
 ### Option A — keep `provider|model|key@url` (decision 1)
 
 - Pros: one env var, no API change.
-- Cons: overloaded field, `@` ambiguity, provider-specific parsing, undiscoverable `AskAI_key`.
+- Cons: overloaded field, `@` ambiguity, provider-specific parsing, undiscoverable `JAIL_key`.
 
 ### Option B — separate env vars + keyword `setapi` (chosen)
 
-- How it works: `ASK_AI_PROVIDER`, `ASK_AI_MODEL`, `ASK_AI_BASE_URL`, `ASK_AI_API_KEY`
+- How it works: `JAIL_PROVIDER`, `JAIL_MODEL`, `JAIL_BASE_URL`, `JAIL_API_KEY`
   (plus `OPENAI_API_KEY`/`OPENAI_BASE_URL` for `openai`, `GEMINI_API_KEY` for `gemini`);
   `setapi(provider, model; url = nothing, api = nothing)` where `nothing` falls back to the env vars
   and then provider defaults.
@@ -60,7 +60,7 @@ Option B, with snake_case function names and CamelCase types:
 | `AIBrain.RAG` | `AIBrain.rag` |
 
 Old names remain as `@deprecate` / `Base.@deprecate_binding`; `setapi("p|m|x")` and
-`ENV["AskAI_config"]` still work with a deprecation warning. `Brain` is a `const` mutated in place
+`ENV["JAIL_config"]` still work with a deprecation warning. `Brain` is a `const` mutated in place
 by `setapi`, starting as a `NotConfigured` placeholder provider.
 
 ## Consequences

@@ -2,22 +2,22 @@
 
 | Field | Value |
 |-------|-------|
-| Artifact | `1_ASKAI_package_overview.md` |
+| Artifact | `1_JAIL_package_overview.md` |
 | Category | work_history |
-| Subject | `ASKAI` — package architecture and runtime flow |
+| Subject | `JAIL` — package architecture and runtime flow |
 | Date | 2026-09-25 |
 | Area/Purpose scope | package architecture, API integration, REPL behavior |
 | Related | none |
 
 ## Scope of This Unit of Work
 
-This session reviewed the package source and documentation to understand how AskAI currently works, how it configures providers, and how the user-facing macros and runtime state fit together.
+This session reviewed the package source and documentation to understand how JAIL currently works, how it configures providers, and how the user-facing macros and runtime state fit together.
 
 ## What Changed
 
 | File | Change |
 |-------|--------|
-| `src/AskAI.jl` | Documented the module bootstrap, environment-based configuration, REPL entry mode, and the `@ai` / `@AI` macros. |
+| `src/JAIL.jl` | Documented the module bootstrap, environment-based configuration, REPL entry mode, and the `@ai` / `@AI` macros. |
 | `src/brain.jl` | Described the central `AIBrain` state, the request flow, streaming response handling, memory tracking, and conversation history behavior. |
 | `src/models.jl` | Summarized the provider abstractions for `Gemini` and `ollama`, including JSON payload creation, API URLs, and response parsing. |
 | `readme.md` | Confirmed the intended user-facing role: query an LLM, optionally run generated Julia code in a `playground` module, and use REPL mode. |
@@ -35,7 +35,7 @@ No source code was modified during this pass; this artifact records the existing
 
 I confirmed the implementation by reading the current package source directly:
 
-- `src/AskAI.jl`
+- `src/JAIL.jl`
 - `src/brain.jl`
 - `src/models.jl`
 - `readme.md`
@@ -43,9 +43,9 @@ I confirmed the implementation by reading the current package source directly:
 I also checked the repo state and commit history with:
 
 ```bash
-git -C /home/coder/forks/AskAI --no-pager log --oneline -10
+git -C /home/coder/forks/JAIL --no-pager log --oneline -10
 
-git -C /home/coder/forks/AskAI status --short
+git -C /home/coder/forks/JAIL status --short
 ```
 
 This showed the repository is a normal package repo with a recent commit history and no code changes made during this review pass.

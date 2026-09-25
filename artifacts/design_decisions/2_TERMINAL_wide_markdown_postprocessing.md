@@ -34,4 +34,4 @@ Terminal output is not a structured document surface. Once raw streaming text ha
 
 ## Revisit Trigger
 
-Reopen this decision if AskAI adopts a structured terminal UI, a renderer with reliable in-place regions, or a requirement to hide raw streamed content while retaining immediate token display.
+Reopen this decision if JAIL adopts a structured terminal UI, a renderer with reliable in-place regions, or a requirement to hide raw streamed content while retaining immediate token display.

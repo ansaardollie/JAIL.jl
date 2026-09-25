@@ -11,7 +11,7 @@
 
 ## Scope of This Unit of Work
 
-The previous work-history artifact, `2_ASKAI_misconfig_hang_fix.md`, left the repository with the vendored `OpenAI.jl` dependency present but undocumented for future AskAI work. This unit studied `libs/OpenAI.jl` and recorded its public API, generated-client structure, intended usage, extension points, and limitations.
+The previous work-history artifact, `2_JAIL_misconfig_hang_fix.md`, left the repository with the vendored `OpenAI.jl` dependency present but undocumented for future JAIL work. This unit studied `libs/OpenAI.jl` and recorded its public API, generated-client structure, intended usage, extension points, and limitations.
 
 ## What Changed
 
@@ -32,15 +32,15 @@ The previous work-history artifact, `2_ASKAI_misconfig_hang_fix.md`, left the re
 Package loading was verified through the Julia REPL with:
 
 ```julia
-using AskAI
-println("AskAI loaded: ", nameof(AskAI))
+using JAIL
+println("JAIL loaded: ", nameof(JAIL))
 ```
 
 The actual REPL output was:
 
 ```text
 REPL mode askai initialized. Press } to enter and backspace to exit.
-AskAI loaded: AskAI
+JAIL loaded: JAIL
 
 ```
 nothing
@@ -54,7 +54,7 @@ The source inventory was cross-checked against `libs/OpenAI.jl/Project.toml`, `R
 - The generated model and operation names are not duplicated in full; their authoritative catalogs remain in `libs/OpenAI.jl/src/generated/OpenAIClient.jl`, `modelincludes.jl`, `models/`, and `apis/`.
 - No live OpenAI API calls were made during this inventory. The vendored package tests are mostly live-API oriented and require `OPENAI_API_KEY`, network access, and model availability.
 - The repository-memory file is outside the Git worktree and is not part of the commit.
-- Existing follow-up items from the previous AskAI work-history artifact, including HTTP compatibility bounds, memory handling, `setapi` validation, and automated fake-server tests, remain future work and were not changed here.
+- Existing follow-up items from the previous JAIL work-history artifact, including HTTP compatibility bounds, memory handling, `setapi` validation, and automated fake-server tests, remain future work and were not changed here.
 
 ## Todos
 
@@ -63,6 +63,6 @@ The source inventory was cross-checked against `libs/OpenAI.jl/Project.toml`, `R
 
 ## Next Steps
 
-1. Use the generated-client and handwritten-layer distinction when adding OpenAI support to AskAI.
+1. Use the generated-client and handwritten-layer distinction when adding OpenAI support to JAIL.
 2. Refresh the inventory if `libs/OpenAI.jl` is upgraded or regenerated from a new OpenAPI snapshot.
 3. For runtime integration work, add focused local tests before relying on the vendored package's live API tests.

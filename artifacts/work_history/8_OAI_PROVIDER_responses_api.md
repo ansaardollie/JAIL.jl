@@ -25,8 +25,8 @@ deprecated paths, real OpenAI, docs build), all of which are still open. The wor
 |------|--------|
 | `src/models.jl` | `OpenAICompatible` gains `responses::Bool = false`. With the flag on, `request_url` returns `$(base)/v1/responses`. `request_body` builds `input` as a leading `system` message (from `_system_prompt`), then the last `b.max_turns` user/assistant pairs from `b.history`, then the question, with `stream` and `store: false`. `parse_answer` uses the new `_responses_answer`: without streaming it joins `output[type=message].content[type=output_text].text`, falling back to a top-level `output_text`; with streaming it takes only `data:` lines whose `type == "response.output_text.delta"` and returns `delta`, so other events yield `""`. `_system_prompt(b; memory = true)` gains a keyword so the memory summary can be left out when every turn is resent. |
 | `src/brain.jl` | `AIBrain.max_turns::Int = 10`. |
-| `src/AskAI.jl` | `setapi(provider, model; url, api, responses = nothing)`. `nothing` falls back to `ENV["ASK_AI_RESPONSES_API"]` in (`1`, `true`, `yes`), otherwise `false`. Docstring and `CONFIG_HELP` updated. |
-| `readme.md` | Added a row for `ASK_AI_RESPONSES_API`. |
+| `src/JAIL.jl` | `setapi(provider, model; url, api, responses = nothing)`. `nothing` falls back to `ENV["JAIL_RESPONSES_API"]` in (`1`, `true`, `yes`), otherwise `false`. Docstring and `CONFIG_HELP` updated. |
+| `readme.md` | Added a row for `JAIL_RESPONSES_API`. |
 
 The request loop (`_complete`, `_ask_stream`, `_remember!`) is unchanged. The Responses API
 streams SSE `data:` lines just like chat completions.
@@ -46,7 +46,7 @@ All runs used the local gateway through `run-julia-code`.
 Single turn (first iteration, model `openai/qwen3-coder-30b`):
 
 ```text
-AskAI.OpenAICompatible responses=true url=https://llmgarden.../v1/responses models: 90
+JAIL.OpenAICompatible responses=true url=https://llmgarden.../v1/responses models: 90
 responses ok                              # without streaming
 ¬ 1 2 3 4 5                               # streaming; history last="1 2 3 4 5"
 memory summarization path (non-stream _complete): "Sum ok"
@@ -130,7 +130,7 @@ Not verified:
    `status != "completed"` (in `_responses_answer`).
 2. Optionally resend history as messages for the chat-completions path too (`request_body` for
    `OpenAICompatible`, non-`responses` branch).
-3. Add the multi-turn eval as a `test/` script, gated on `ASK_AI_*` env vars, alongside artifact
+3. Add the multi-turn eval as a `test/` script, gated on `JAIL_*` env vars, alongside artifact
    7's planned unit tests for `_responses_answer` on sample SSE lines.
 4. Verify `setapi("openai", "gpt-5-mini"; responses = true)` with `OPENAI_API_KEY`, and consider
    `previous_response_id` when talking to real OpenAI.

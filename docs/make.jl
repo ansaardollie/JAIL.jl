@@ -1,5 +1,5 @@
 push!(LOAD_PATH,"../src/")
-using Documenter, AskAI
+using Documenter, JAIL
 
-makedocs(sitename="AskAI.jl",remotes=nothing)
+makedocs(sitename="JAIL.jl",remotes=nothing)
 

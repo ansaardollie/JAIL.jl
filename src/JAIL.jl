@@ -1,4 +1,4 @@
-module AskAI
+module JAIL
 using HTTP, JSON3, Markdown
 using ReplMaker: initrepl
 
@@ -10,21 +10,21 @@ const DEFAULT_PROMPT = "if the answer contains code, only output the raw code in
 const PROVIDERS = ["gemini", "ollama", "openai", "openai-compatible", "anthropic"]
 
 const CONFIG_HELP = """
-AskAI is not configured. Set these environment variables before `using AskAI`:
+JAIL is not configured. Set these environment variables before `using JAIL`:
 
 | Variable | Meaning |
 |---|---|
-| `ASK_AI_PROVIDER` | one of $(join("`" .* PROVIDERS .* "`", ", ")) |
-| `ASK_AI_MODEL` | model name, e.g. `gemini-2.0-flash`, `qwen2.5:72b`, `gpt-4o-mini` |
-| `ASK_AI_BASE_URL` | server URL; optional for `ollama` (`http://localhost:11434`) and `openai` (`https://api.openai.com`) |
-| `ASK_AI_API_KEY` | API key; optional for local servers. OpenAI providers also read `OPENAI_API_KEY`, then `OPENAPI_API_KEY`; `gemini` reads `GEMINI_API_KEY`; `anthropic` reads `ANTHROPIC_API_KEY` |
-| `ASK_AI_CHAT_COMPLETIONS` | `true` to use `/v1/chat/completions` instead of the default `/v1/responses` API (`openai`, `openai-compatible` only) |
+| `JAIL_PROVIDER` | one of $(join("`" .* PROVIDERS .* "`", ", ")) |
+| `JAIL_MODEL` | model name, e.g. `gemini-2.0-flash`, `qwen2.5:72b`, `gpt-4o-mini` |
+| `JAIL_BASE_URL` | server URL; optional for `ollama` (`http://localhost:11434`) and `openai` (`https://api.openai.com`) |
+| `JAIL_API_KEY` | API key; optional for local servers. OpenAI providers also read `OPENAI_API_KEY`, then `OPENAPI_API_KEY`; `gemini` reads `GEMINI_API_KEY`; `anthropic` reads `ANTHROPIC_API_KEY` |
+| `JAIL_CHAT_COMPLETIONS` | `true` to use `/v1/chat/completions` instead of the default `/v1/responses` API (`openai`, `openai-compatible` only) |
 
 or configure it at runtime, where omitted keywords fall back to the variables above:
 ```julia
-AskAI.setapi("ollama", "qwen2.5:72b")
-AskAI.setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", api = "local-key")
-AskAI.setapi("anthropic", "claude-3-5-sonnet-20241022"; api = "your-api-key")
+JAIL.setapi("ollama", "qwen2.5:72b")
+JAIL.setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", api = "local-key")
+JAIL.setapi("anthropic", "claude-3-5-sonnet-20241022"; api = "your-api-key")
 ```
 """
 
@@ -32,16 +32,16 @@ const Brain = AIBrain(model = NotConfigured(), prompt = DEFAULT_PROMPT)
 
 function __init__()
     try
-        if haskey(ENV, "ASK_AI_PROVIDER")
-            setapi(ENV["ASK_AI_PROVIDER"], get(ENV, "ASK_AI_MODEL", ""))
-        elseif haskey(ENV, "AskAI_config")
-            @warn "ENV[\"AskAI_config\"] is deprecated, set ASK_AI_PROVIDER, ASK_AI_MODEL, ASK_AI_BASE_URL and ASK_AI_API_KEY instead."
-            setapi(ENV["AskAI_config"])
+        if haskey(ENV, "JAIL_PROVIDER")
+            setapi(ENV["JAIL_PROVIDER"], get(ENV, "JAIL_MODEL", ""))
+        elseif haskey(ENV, "JAIL_config")
+            @warn "ENV[\"JAIL_config\"] is deprecated, set JAIL_PROVIDER, JAIL_MODEL, JAIL_BASE_URL and JAIL_API_KEY instead."
+            setapi(ENV["JAIL_config"])
         else
             display(Markdown.parse(CONFIG_HELP))
         end
     catch err
-        @error "AskAI configuration from the environment failed; call AskAI.setapi to configure it." exception = err
+        @error "JAIL configuration from the environment failed; call JAIL.setapi to configure it." exception = err
     end
 
     isinteractive() || return
@@ -59,9 +59,9 @@ end
 ```julia
 setapi(provider, model; url = nothing, api = nothing, chat_completions = nothing)
 ```
-Configure the provider and clear the conversation (see `reset`). `url` and `api` that are `nothing` fall back to `ENV["ASK_AI_BASE_URL"]`
-and `ENV["ASK_AI_API_KEY"]`; OpenAI providers then use `OPENAI_API_KEY` or `OPENAPI_API_KEY` (see `AskAI.CONFIG_HELP`). `openai`/`openai-compatible` use the Responses API;
-`chat_completions = true` switches to chat completions, and `nothing` falls back to `ENV["ASK_AI_CHAT_COMPLETIONS"]`, default `false`.
+Configure the provider and clear the conversation (see `reset`). `url` and `api` that are `nothing` fall back to `ENV["JAIL_BASE_URL"]`
+and `ENV["JAIL_API_KEY"]`; OpenAI providers then use `OPENAI_API_KEY` or `OPENAPI_API_KEY` (see `JAIL.CONFIG_HELP`). `openai`/`openai-compatible` use the Responses API;
+`chat_completions = true` switches to chat completions, and `nothing` falls back to `ENV["JAIL_CHAT_COMPLETIONS"]`, default `false`.
 ```julia
 setapi("ollama", "qwen2.5:72b")
 setapi("gemini", "gemini-2.0-flash"; api = "your-key")
@@ -75,8 +75,8 @@ function setapi(provider::AbstractString, model::AbstractString; url = nothing, 
     provider = lowercase(strip(provider))
     provider in PROVIDERS || throw(ArgumentError("unknown provider \"$(provider)\", expected one of: $(join(PROVIDERS, ", "))"))
     model = String(strip(model))
-    url = String(something(url, get(ENV, "ASK_AI_BASE_URL", provider == "openai" ? get(ENV, "OPENAI_BASE_URL", "") : "")))
-    api = String(something(api, get(ENV, "ASK_AI_API_KEY",
+    url = String(something(url, get(ENV, "JAIL_BASE_URL", provider == "openai" ? get(ENV, "OPENAI_BASE_URL", "") : "")))
+    api = String(something(api, get(ENV, "JAIL_API_KEY",
         provider in ("openai", "openai-compatible") ? get(ENV, "OPENAI_API_KEY", get(ENV, "OPENAPI_API_KEY", "")) :
         provider == "gemini" ? get(ENV, "GEMINI_API_KEY", "") :
         provider == "anthropic" ? get(ENV, "ANTHROPIC_API_KEY", "") : "")))
@@ -88,7 +88,7 @@ function setapi(provider::AbstractString, model::AbstractString; url = nothing, 
         Brain.model = Anthropic(model=model, url=isempty(url) ? "https://api.anthropic.com" : url, api=api)
     else
         isempty(url) && provider == "openai" && (url = "https://api.openai.com")
-        chat_completions = something(chat_completions, lowercase(strip(get(ENV, "ASK_AI_CHAT_COMPLETIONS", ""))) in ("1", "true", "yes"))
+        chat_completions = something(chat_completions, lowercase(strip(get(ENV, "JAIL_CHAT_COMPLETIONS", ""))) in ("1", "true", "yes"))
         Brain.model = OpenAICompatible(model=model, url=url, api=api, chat_completions=chat_completions)
     end
     reset()
@@ -110,7 +110,7 @@ function setapi(config::AbstractString)
         return setapi(provider, model; url = apiOrURL, api = "")
     end
     config = split(apiOrURL, "@"; limit=2)
-    api = length(config) == 2 ? String(config[1]) : get(ENV, "AskAI_key", "")
+    api = length(config) == 2 ? String(config[1]) : get(ENV, "JAIL_key", "")
     url = length(config) == 2 ? String(config[2]) : apiOrURL
     return setapi(provider, model; url = url, api = api)
 end
@@ -120,7 +120,7 @@ end
 Clear the conversation: history, memory and RAG context. The provider, prompt, and
 `stream`/`timeout` settings are kept.
 ```julia
-AskAI.reset()
+JAIL.reset()
 ```
 """
 function reset()
@@ -157,9 +157,9 @@ end
 execute the string as code in `Main.playground`
 
 ```julia
-"1 + 1" |> AskAI.run_code
+"1 + 1" |> JAIL.run_code
 
-(@ai "1 + 1") |> AskAI.run_code
+(@ai "1 + 1") |> JAIL.run_code
 ```
 """
 run_code(x) = include_string(Main.playground,replace(string(x), "```julia" => "", "```" => ""))
@@ -171,7 +171,7 @@ similar to `@ai`,
 send the question to AI but @AI perform the code directly and only return the result, or error :(
 
 
-the conversation history will stored in the `AskAI.Brain.history`
+the conversation history will stored in the `JAIL.Brain.history`
 ## example:
 ```julia
 @AI "tell me the current time, used the package you need"

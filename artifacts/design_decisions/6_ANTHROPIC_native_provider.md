@@ -1,4 +1,4 @@
-# Decision: Native Anthropic provider in AskAI
+# Decision: Native Anthropic provider in JAIL
 
 | Field | Value |
 |-------|-------|
@@ -13,16 +13,16 @@
 
 ## Context
 
-AskAI already has provider-specific dispatch for Gemini, Ollama, and OpenAI-compatible APIs. Anthropic's API is not OpenAI-compatible at the wire level: it uses `/v1/messages`, `x-api-key`, `anthropic-version`, a top-level `system` field, and `content_block_delta` streaming events. The vendored `Claude.jl` package provided the request and response shape reference.
+JAIL already has provider-specific dispatch for Gemini, Ollama, and OpenAI-compatible APIs. Anthropic's API is not OpenAI-compatible at the wire level: it uses `/v1/messages`, `x-api-key`, `anthropic-version`, a top-level `system` field, and `content_block_delta` streaming events. The vendored `Claude.jl` package provided the request and response shape reference.
 
 ## Decision
 
-Add a dedicated `Anthropic <: ModelProvider` with `model`, `url`, and `api` fields. Keep the existing AskAI provider contract and implement Anthropic-specific methods in `src/models.jl`:
+Add a dedicated `Anthropic <: ModelProvider` with `model`, `url`, and `api` fields. Keep the existing JAIL provider contract and implement Anthropic-specific methods in `src/models.jl`:
 
 - `GET /v1/models` for `available_models`.
 - `POST /v1/messages` for completion requests.
 - `x-api-key` and `anthropic-version: 2023-06-01` headers.
-- A top-level `system` string assembled from AskAI prompt, RAG, terminal context, and bounded memory.
+- A top-level `system` string assembled from JAIL prompt, RAG, terminal context, and bounded memory.
 - `content[1].text` extraction for non-streaming responses.
 - `content_block_delta` / `text_delta` extraction for SSE streaming.
 - `ANTHROPIC_API_KEY` as the provider-specific credential fallback.
@@ -35,7 +35,7 @@ Rejected because Anthropic's endpoint paths, authentication headers, request fie
 
 ### Add the vendored `Claude.jl` package as a dependency
 
-Rejected because AskAI already depends on HTTP.jl and JSON3.jl, and direct provider methods keep configuration, streaming, history, and error handling within AskAI's existing abstraction.
+Rejected because JAIL already depends on HTTP.jl and JSON3.jl, and direct provider methods keep configuration, streaming, history, and error handling within JAIL's existing abstraction.
 
 ### Add a separate high-level client layer
 
@@ -43,8 +43,8 @@ Rejected because `AIBrain` already owns lifecycle, history, streaming, and Markd
 
 ## Consequences
 
-- Users can configure `setapi("anthropic", model; api=...)` or use `ASK_AI_PROVIDER`, `ASK_AI_MODEL`, and `ANTHROPIC_API_KEY`.
-- The provider currently sends `max_tokens = 1024`, matching Claude.jl's default; AskAI has no provider-wide max-token setting yet.
+- Users can configure `setapi("anthropic", model; api=...)` or use `JAIL_PROVIDER`, `JAIL_MODEL`, and `ANTHROPIC_API_KEY`.
+- The provider currently sends `max_tokens = 1024`, matching Claude.jl's default; JAIL has no provider-wide max-token setting yet.
 - Anthropic model discovery requires a reachable `/v1/models` endpoint and valid credentials.
 - No additional dependency or manifest change is required.
 

@@ -14,12 +14,12 @@
 ## Context
 
 Decision 4 added `OpenAICompatible.responses::Bool = false`, set by `setapi(...; responses)` and
-`ASK_AI_RESPONSES_API`. The user wants the Responses API on by default for `openai` and
+`JAIL_RESPONSES_API`. The user wants the Responses API on by default for `openai` and
 `openai-compatible`, with chat completions as the option you turn on.
 
 ## The Question
 
-Which name should the flag have, and what happens to `ASK_AI_RESPONSES_API`?
+Which name should the flag have, and what happens to `JAIL_RESPONSES_API`?
 
 ## Options Considered
 
@@ -27,7 +27,7 @@ Which name should the flag have, and what happens to `ASK_AI_RESPONSES_API`?
 
 - Field, keyword and environment variable all say the same thing:
   `OpenAICompatible.chat_completions`, `setapi(...; chat_completions)` and
-  `ASK_AI_CHAT_COMPLETIONS` (`1`/`true`/`yes`). The keyword beats the environment variable when
+  `JAIL_CHAT_COMPLETIONS` (`1`/`true`/`yes`). The keyword beats the environment variable when
   both are set.
 - `false` stays the "off" value, matching the other `AIBrain` boolean settings.
 
@@ -36,20 +36,20 @@ Which name should the flag have, and what happens to `ASK_AI_RESPONSES_API`?
 - Rejected: switching to chat completions would then mean setting the flag to `false`, and there
   is no natural environment-variable spelling for "responses off".
 
-### Option C — a string setting such as `ASK_AI_OPENAI_API = "responses" | "chat"`
+### Option C — a string setting such as `JAIL_OPENAI_API = "responses" | "chat"`
 
 - Rejected: it needs value validation for only two choices, and the user asked for a
   toggle-style flag.
 
 ## Decision
 
-Option A. `ASK_AI_RESPONSES_API` and the `responses` keyword are removed with no deprecation
+Option A. `JAIL_RESPONSES_API` and the `responses` keyword are removed with no deprecation
 alias. They existed in exactly one unreleased commit (`15ff71d`).
 
 ## Consequences
 
 - Local servers without `/v1/responses` (for example Ollama's OpenAI-compatible endpoint,
-  llama.cpp, older vLLM) now need `ASK_AI_CHAT_COMPLETIONS=true`. There is no automatic fallback.
+  llama.cpp, older vLLM) now need `JAIL_CHAT_COMPLETIONS=true`. There is no automatic fallback.
 - Decision 4's other choices still hold: stateless history in `input`, a system message instead
   of `instructions`, and `store: false`.
 

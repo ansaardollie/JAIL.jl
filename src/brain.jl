@@ -13,14 +13,14 @@ end
 
 
 """
-change_model!(AskAI.Brain, "qwen2.5:72b")
+change_model!(JAIL.Brain, "qwen2.5:72b")
 """
 function change_model!(m::AIBrain, model::String)
     m.model.model = model
 end
 
 
-_request_error(err) = ErrorException("AskAI request failed, please check the configuration (see AskAI.setapi): $(sprint(showerror, err))")
+_request_error(err) = ErrorException("JAIL request failed, please check the configuration (see JAIL.setapi): $(sprint(showerror, err))")
 
 (m::AIBrain)(question::AbstractString) = begin
     check_config(m.model)
