@@ -114,9 +114,9 @@ function request_body(m::Ollama, b, question::AbstractString)
     return JSON3.write(body)
 end
 function request_body(m::OpenAICompatible, b, question::AbstractString)
+    asks, answers = b.history["ask"], b.history["ans"]
+    first_turn = max(1, length(answers) - b.max_turns + 1)
     if !m.chat_completions
-        asks, answers = b.history["ask"], b.history["ans"]
-        first_turn = max(1, length(answers) - b.max_turns + 1)
         # the memory summary only carries context for turns too old to resend verbatim
         system = _system_prompt(b; memory = first_turn > 1)
         # a system message rather than `instructions`, which some gateways drop for non-OpenAI backends
@@ -127,9 +127,12 @@ function request_body(m::OpenAICompatible, b, question::AbstractString)
         push!(input, Dict("role" => "user", "content" => question))
         return JSON3.write(Dict("model" => m.model, "input" => input, "stream" => b.stream, "store" => false))
     end
-    system = _system_prompt(b)
-    messages = [Dict("role" => "user", "content" => question)]
-    isempty(system) || pushfirst!(messages, Dict("role" => "system", "content" => system))
+    system = _system_prompt(b; memory = first_turn > 1)
+    messages = isempty(system) ? Dict{String,String}[] : [Dict("role" => "system", "content" => system)]
+    for i in first_turn:length(answers)
+        push!(messages, Dict("role" => "user", "content" => asks[i]), Dict("role" => "assistant", "content" => answers[i]))
+    end
+    push!(messages, Dict("role" => "user", "content" => question))
     return JSON3.write(Dict("model" => m.model, "messages" => messages, "stream" => b.stream))
 end
 
@@ -177,8 +180,23 @@ end
 
 function parse_answer(m::OpenAICompatible, resp, stream::Bool)
     m.chat_completions || return _responses_answer(resp, stream)
-    stream || return _choice_content(JSON3.read(resp.body), :message)
-    return try _choice_content(JSON3.read(chopprefix(resp, "data: ")), :delta) catch; "" end
+    if !stream
+        data = JSON3.read(resp.body)
+        _throw_api_error(data)
+        return _choice_content(data, :message)
+    end
+    data = try JSON3.read(chopprefix(resp, "data: ")) catch; return "" end
+    _throw_api_error(data)
+    return _choice_content(data, :delta)
+end
+
+function _throw_api_error(data)
+    response = get(data, :response, nothing)
+    api_error = get(data, :error, response === nothing ? nothing : get(response, :error, nothing))
+    api_error === nothing && return nothing
+    message = get(api_error, :message, nothing)
+    detail = message isa AbstractString ? String(message) : JSON3.write(api_error)
+    error("OpenAI-compatible API error: $(detail)")
 end
 
 # `content` is null or absent in role-only and reasoning-only chunks
@@ -193,15 +211,13 @@ end
 function _responses_answer(resp, stream::Bool)
     stream || return _responses_text(JSON3.read(resp.body))
     startswith(resp, "data: ") || return ""
-    return try
-        data = JSON3.read(chopprefix(resp, "data: "))
-        get(data, :type, "") == "response.output_text.delta" ? String(data[:delta]) : ""
-    catch
-        ""
-    end
+    data = try JSON3.read(chopprefix(resp, "data: ")) catch; return "" end
+    _throw_api_error(data)
+    return get(data, :type, "") == "response.output_text.delta" ? String(data[:delta]) : ""
 end
 
 function _responses_text(data)
+    _throw_api_error(data)
     texts = [String(c[:text]) for item in get(data, :output, []) if get(item, :type, "") == "message"
              for c in get(item, :content, []) if get(c, :type, "") == "output_text"]
     isempty(texts) && haskey(data, :output_text) && return String(data[:output_text])

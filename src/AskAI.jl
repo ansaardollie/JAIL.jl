@@ -17,7 +17,7 @@ AskAI is not configured. Set these environment variables before `using AskAI`:
 | `ASK_AI_PROVIDER` | one of $(join("`" .* PROVIDERS .* "`", ", ")) |
 | `ASK_AI_MODEL` | model name, e.g. `gemini-2.0-flash`, `qwen2.5:72b`, `gpt-4o-mini` |
 | `ASK_AI_BASE_URL` | server URL; optional for `ollama` (`http://localhost:11434`) and `openai` (`https://api.openai.com`) |
-| `ASK_AI_API_KEY` | API key; optional for local servers. `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY` |
+| `ASK_AI_API_KEY` | API key; optional for local servers. OpenAI providers also read `OPENAI_API_KEY`, then `OPENAPI_API_KEY`; `gemini` reads `GEMINI_API_KEY` |
 | `ASK_AI_CHAT_COMPLETIONS` | `true` to use `/v1/chat/completions` instead of the default `/v1/responses` API (`openai`, `openai-compatible` only) |
 
 or configure it at runtime, where omitted keywords fall back to the variables above:
@@ -59,7 +59,7 @@ end
 setapi(provider, model; url = nothing, api = nothing, chat_completions = nothing)
 ```
 Configure the provider and clear the conversation (see `reset`). `url` and `api` that are `nothing` fall back to `ENV["ASK_AI_BASE_URL"]`
-and `ENV["ASK_AI_API_KEY"]`, then to provider defaults (see `AskAI.CONFIG_HELP`). `openai`/`openai-compatible` use the Responses API;
+and `ENV["ASK_AI_API_KEY"]`; OpenAI providers then use `OPENAI_API_KEY` or `OPENAPI_API_KEY` (see `AskAI.CONFIG_HELP`). `openai`/`openai-compatible` use the Responses API;
 `chat_completions = true` switches to chat completions, and `nothing` falls back to `ENV["ASK_AI_CHAT_COMPLETIONS"]`, default `false`.
 ```julia
 setapi("ollama", "qwen2.5:72b")
@@ -75,7 +75,7 @@ function setapi(provider::AbstractString, model::AbstractString; url = nothing, 
     model = String(strip(model))
     url = String(something(url, get(ENV, "ASK_AI_BASE_URL", provider == "openai" ? get(ENV, "OPENAI_BASE_URL", "") : "")))
     api = String(something(api, get(ENV, "ASK_AI_API_KEY",
-        provider == "openai" ? get(ENV, "OPENAI_API_KEY", "") :
+        provider in ("openai", "openai-compatible") ? get(ENV, "OPENAI_API_KEY", get(ENV, "OPENAPI_API_KEY", "")) :
         provider == "gemini" ? get(ENV, "GEMINI_API_KEY", "") : "")))
     if provider == "gemini"
         Brain.model = Gemini(model, api)
