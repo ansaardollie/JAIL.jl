@@ -32,7 +32,7 @@ end
                 push!(m.history["ask"], question)
                 push!(m.history["ans"], text)
                 @async checkMemory!(m)
-                return text |> Markdown.parse # show in the terminal
+                return Markdown.parse(_formatMarkdownForTerminal(text)) # show in the terminal
             else
                 return "respond code: $(resp.status)🔗🚫"
             end
@@ -86,27 +86,130 @@ end
         showStreamStringFromChannel(channel) # show in the terminal
         streamToMemory(m,channel2)
         @async checkMemory!(m)
-        # print the final output without clearing the terminal
-        replace(Brain.history["ans"][end], r"^ans: " => "# Final Output \n\n" ) |> MD
+        flush(stdout)
+        println()
+        # Render the final Markdown below the preserved stream output.
+        final_text = replace(Brain.history["ans"][end], r"^ans: " => "# Final Output \n\n" )
+        MD(_formatMarkdownForTerminal(final_text))
 
       end;
 end
 
+function _wrapTerminalText(text::AbstractString, width::Int)
+    words = split(strip(text))
+    isempty(words) && return [""]
+    lines = String[]
+    current = ""
+    for word in words
+        if isempty(current)
+            current = word
+        elseif length(current) + length(word) + 1 <= width
+            current *= " " * word
+        else
+            push!(lines, current)
+            current = word
+        end
+    end
+    push!(lines, current)
+    return lines
+end
+
+function _tableCells(line::AbstractString)
+    value = strip(line)
+    startswith(value, "|") && (value = value[2:end])
+    endswith(value, "|") && (value = value[1:end-1])
+    return strip.(split(value, "|"))
+end
+
+function _isTableSeparator(line::AbstractString)
+    cells = _tableCells(line)
+    !isempty(cells) && all(cell -> occursin(r"^:?-{3,}:?$", cell), cells)
+end
+
+function _isPipeTableHeader(lines, index::Int)
+    index < length(lines) && occursin("|", lines[index]) && _isTableSeparator(lines[index + 1])
+end
+
+function _formatWideTable(lines, width::Int)
+    headers = _tableCells(lines[1])
+    column_count = length(headers)
+    rows = Vector{Vector{String}}()
+    for line in lines[3:end]
+        cells = _tableCells(line)
+        isempty(cells) && continue
+        values = if length(cells) == column_count
+            cells
+        elseif length(cells) > column_count
+            normalized = cells[1:column_count]
+            for (offset, cell) in enumerate(cells[column_count + 1:end])
+                target = 1 + mod(offset - 1, column_count)
+                !isempty(cell) && (normalized[target] *= " " * cell)
+            end
+            normalized
+        else
+            vcat(cells, fill("", column_count - length(cells)))
+        end
+        if !isempty(rows) && isempty(strip(values[1]))
+            previous = rows[end]
+            for index in eachindex(values)
+                !isempty(strip(values[index])) && (previous[index] *= " " * values[index])
+            end
+        else
+            push!(rows, values)
+        end
+    end
+    formatted = String[]
+    for values in rows
+        push!(formatted, "")
+        for (index, value) in enumerate(values)
+            label = index <= length(headers) ? headers[index] : "Column $(index)"
+            prefix = "- **$(label):** "
+            wrapped = _wrapTerminalText(value, max(width - length(prefix), 10))
+            push!(formatted, prefix * wrapped[1])
+            for continuation in wrapped[2:end]
+                push!(formatted, "  " * continuation)
+            end
+        end
+    end
+    return formatted
+end
+
+function _formatMarkdownForTerminal(text::AbstractString)
+    width = max(displaysize(stdout)[2] - 2, 20)
+    lines = split(String(text), "\n"; keepempty=true)
+    formatted = String[]
+    index = 1
+    while index <= length(lines)
+        if _isPipeTableHeader(lines, index)
+            stop = index + 2
+            while stop <= length(lines) && occursin("|", lines[stop]) && !isempty(strip(lines[stop]))
+                stop += 1
+            end
+            table = lines[index:stop - 1]
+            if maximum(length.(table)) > width
+                append!(formatted, _formatWideTable(table, width))
+                index = stop
+                continue
+            end
+        end
+        push!(formatted, lines[index])
+        index += 1
+    end
+    return join(formatted, "\n")
+end
+
 """
-for stream mode, displays a streaming response from the channel, updating the display in terminal with each chunk of text received.
+For stream mode, append each response chunk directly to the terminal.
 """
 function showStreamStringFromChannel(channel::Channel)
     first_text = take!(channel)
-    response = first_text
     println()
     print("\e[32m¬ \e[0m")
-    print("\033[s")
     print(first_text)
+    flush(stdout)
     for chunk in channel
-        print("\033[u\033[s")
-        response *= chunk
-        sleep(0.01)
-        display(Markdown.parse(response))
+        print(chunk)
+        flush(stdout)
     end
 end
 

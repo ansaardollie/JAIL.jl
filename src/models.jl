@@ -112,8 +112,13 @@ end
 """
 warp question into json data
 """
+function _terminalPromptContext()
+    rows, columns = displaysize(stdout)
+    return "The terminal is $(columns) columns wide and $(rows) rows high. Keep output lines within $(max(columns - 2, 1)) columns, wrap long lines, and avoid unnecessarily wide tables."
+end
+
 function question2JSONString(m::modelProvider, question::AbstractString)
-    question = Brain.RAG * "\n" * Brain.memory * "\n" *  Brain.prompt * "\n" * question
+    question = _terminalPromptContext() * "\n" * Brain.RAG * "\n" * Brain.memory * "\n" * Brain.prompt * "\n" * question
     if typeof(m) == Gemini
         return JSON3.write(Dict("contents" => Dict("parts" => [Dict("text" => question)])))
 

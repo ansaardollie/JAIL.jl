@@ -30,6 +30,10 @@ a REPL mode was also support. Press `}` to enter and backspace to exit
     Use `@http://localhost:8000` when authentication is disabled. For backward compatibility,
     a URL-only third field is supported and uses `ENV["AskAI_key"]` when set.
 
+    AskAI includes the current terminal rows and columns in each prompt and asks the model to
+    wrap output to the available width. This is guidance for the model, not a hard output limit.
+    Oversized Markdown tables are also converted to wrapped labeled entries before display.
+
 !!! note
     A convenient way is to put below code in your Julia `startup.jl` configuration file.
     ```

@@ -27,6 +27,10 @@ Put the optional key and URL together as `key@url` in the third field. For an un
 server, use `@url`. A URL-only third field is also supported and falls back to `AskAI_key`.
 The provider accepts a bare hostname as well as a full URL and appends `/v1` automatically.
 Use `AskAI.Brain.stream = false` to make a non-streaming request.
+AskAI also includes the current terminal dimensions in each prompt and asks the model to wrap
+output to the available width.
+When a Markdown table is still too wide, the terminal renderer converts it to wrapped labeled
+entries instead of allowing it to overflow.
 
 ## Overview
 ![AskAI](./overview.png)
