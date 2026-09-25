@@ -1,3 +1,5 @@
+> **Partially superseded by:** `5_OAI_PROVIDER_responses_default.md` (flag shape: the Responses API is now the default, opt-in via `chat_completions`)
+
 # Decision: Responses API as a flag on `OpenAICompatible`, with stateless multi-turn input
 
 | Field | Value |

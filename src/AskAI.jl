@@ -18,7 +18,7 @@ AskAI is not configured. Set these environment variables before `using AskAI`:
 | `ASK_AI_MODEL` | model name, e.g. `gemini-2.0-flash`, `qwen2.5:72b`, `gpt-4o-mini` |
 | `ASK_AI_BASE_URL` | server URL; optional for `ollama` (`http://localhost:11434`) and `openai` (`https://api.openai.com`) |
 | `ASK_AI_API_KEY` | API key; optional for local servers. `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY` |
-| `ASK_AI_RESPONSES_API` | `true` to use the `/v1/responses` API instead of chat completions (`openai`, `openai-compatible` only) |
+| `ASK_AI_CHAT_COMPLETIONS` | `true` to use `/v1/chat/completions` instead of the default `/v1/responses` API (`openai`, `openai-compatible` only) |
 
 or configure it at runtime, where omitted keywords fall back to the variables above:
 ```julia
@@ -56,20 +56,20 @@ end
 
 """
 ```julia
-setapi(provider, model; url = nothing, api = nothing, responses = nothing)
+setapi(provider, model; url = nothing, api = nothing, chat_completions = nothing)
 ```
 Configure the provider and clear the conversation (see `reset`). `url` and `api` that are `nothing` fall back to `ENV["ASK_AI_BASE_URL"]`
-and `ENV["ASK_AI_API_KEY"]`, then to provider defaults (see `AskAI.CONFIG_HELP`). `responses = true` makes `openai`/`openai-compatible`
-use the Responses API; `nothing` falls back to `ENV["ASK_AI_RESPONSES_API"]`, default `false`.
+and `ENV["ASK_AI_API_KEY"]`, then to provider defaults (see `AskAI.CONFIG_HELP`). `openai`/`openai-compatible` use the Responses API;
+`chat_completions = true` switches to chat completions, and `nothing` falls back to `ENV["ASK_AI_CHAT_COMPLETIONS"]`, default `false`.
 ```julia
 setapi("ollama", "qwen2.5:72b")
 setapi("gemini", "gemini-2.0-flash"; api = "your-key")
 setapi("openai", "gpt-4o-mini")  # reads OPENAI_API_KEY
 setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000")
-setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", responses = true)
+setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", chat_completions = true)
 ```
 """
-function setapi(provider::AbstractString, model::AbstractString; url = nothing, api = nothing, responses = nothing)
+function setapi(provider::AbstractString, model::AbstractString; url = nothing, api = nothing, chat_completions = nothing)
     provider = lowercase(strip(provider))
     provider in PROVIDERS || throw(ArgumentError("unknown provider \"$(provider)\", expected one of: $(join(PROVIDERS, ", "))"))
     model = String(strip(model))
@@ -83,8 +83,8 @@ function setapi(provider::AbstractString, model::AbstractString; url = nothing, 
         Brain.model = Ollama(model, isempty(url) ? "http://localhost:11434" : url)
     else
         isempty(url) && provider == "openai" && (url = "https://api.openai.com")
-        responses = something(responses, lowercase(strip(get(ENV, "ASK_AI_RESPONSES_API", ""))) in ("1", "true", "yes"))
-        Brain.model = OpenAICompatible(model=model, url=url, api=api, responses=responses)
+        chat_completions = something(chat_completions, lowercase(strip(get(ENV, "ASK_AI_CHAT_COMPLETIONS", ""))) in ("1", "true", "yes"))
+        Brain.model = OpenAICompatible(model=model, url=url, api=api, chat_completions=chat_completions)
     end
     reset()
     return nothing

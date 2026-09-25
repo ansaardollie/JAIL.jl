@@ -22,13 +22,13 @@ end
 model::String: name of the model exposed by an OpenAI-compatible API
 url::String: API host URL, with or without the `/v1` path
 api::String: optional API key; blank is valid for local endpoints
-responses::Bool: use the `/v1/responses` API instead of `/v1/chat/completions`
+chat_completions::Bool: use `/v1/chat/completions` instead of the default `/v1/responses` API
 """
 Base.@kwdef mutable struct OpenAICompatible <: ModelProvider
     model::String
     url::String
     api::String = ""
-    responses::Bool = false
+    chat_completions::Bool = false
 end
 
 """
@@ -114,7 +114,7 @@ function request_body(m::Ollama, b, question::AbstractString)
     return JSON3.write(body)
 end
 function request_body(m::OpenAICompatible, b, question::AbstractString)
-    if m.responses
+    if !m.chat_completions
         asks, answers = b.history["ask"], b.history["ans"]
         first_turn = max(1, length(answers) - b.max_turns + 1)
         # the memory summary only carries context for turns too old to resend verbatim
@@ -142,7 +142,7 @@ function request_url(m::Gemini, stream::Bool)
     return stream ? "$(base):streamGenerateContent?alt=sse" : "$(base):generateContent"
 end
 request_url(m::Ollama, stream::Bool) = "$(_base_url(m))/api/generate"
-request_url(m::OpenAICompatible, stream::Bool) = "$(_base_url(m))/v1/$(m.responses ? "responses" : "chat/completions")"
+request_url(m::OpenAICompatible, stream::Bool) = "$(_base_url(m))/v1/$(m.chat_completions ? "chat/completions" : "responses")"
 
 _request_headers(m::ModelProvider) = Dict("Content-Type" => "application/json")
 _request_headers(m::Gemini) = Dict("Content-Type" => "application/json", "x-goog-api-key" => m.api)
@@ -176,7 +176,7 @@ function parse_answer(m::Ollama, resp, stream::Bool)
 end
 
 function parse_answer(m::OpenAICompatible, resp, stream::Bool)
-    m.responses && return _responses_answer(resp, stream)
+    m.chat_completions || return _responses_answer(resp, stream)
     stream || return _choice_content(JSON3.read(resp.body), :message)
     return try _choice_content(JSON3.read(chopprefix(resp, "data: ")), :delta) catch; "" end
 end
