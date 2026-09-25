@@ -8,6 +8,7 @@ Base.@kwdef mutable struct AIBrain
     rag::String = "" # to store RAG result
     terminal_hint::Bool = true # tell the model the terminal size so output fits
     render_final::Bool = true # after streaming, also return the answer rendered as Markdown
+    max_turns::Int = 10 # past turns resent verbatim by providers that take a message list (Responses API)
 end
 
 

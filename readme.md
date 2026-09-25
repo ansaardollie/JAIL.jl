@@ -20,6 +20,7 @@ Set these environment variables before `using AskAI` (e.g. in `startup.jl` or yo
 | `ASK_AI_MODEL` | model name, e.g. `gpt-oss-20b` |
 | `ASK_AI_BASE_URL` | server URL, with or without `/v1`; optional for `ollama` and `openai` |
 | `ASK_AI_API_KEY` | API key; optional for local servers. `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY` |
+| `ASK_AI_RESPONSES_API` | `true` to use the `/v1/responses` API instead of chat completions (`openai`, `openai-compatible` only) |
 
 ```julia
 ENV["ASK_AI_PROVIDER"] = "openai-compatible"

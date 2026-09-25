@@ -22,11 +22,13 @@ end
 model::String: name of the model exposed by an OpenAI-compatible API
 url::String: API host URL, with or without the `/v1` path
 api::String: optional API key; blank is valid for local endpoints
+responses::Bool: use the `/v1/responses` API instead of `/v1/chat/completions`
 """
 Base.@kwdef mutable struct OpenAICompatible <: ModelProvider
     model::String
     url::String
     api::String = ""
+    responses::Bool = false
 end
 
 """
@@ -86,12 +88,12 @@ end
 """
 system instructions built from the brain's prompt, RAG context and conversation memory
 """
-function _system_prompt(b)
+function _system_prompt(b; memory::Bool = true)
     parts = String[]
     b.terminal_hint && push!(parts, _terminal_prompt_context())
     isempty(b.prompt) || push!(parts, b.prompt)
     isempty(b.rag) || push!(parts, "Reference material:\n" * b.rag)
-    isempty(b.memory) || push!(parts, "Conversation so far:\n" * b.memory)
+    memory && !isempty(b.memory) && push!(parts, "Conversation so far:\n" * b.memory)
     return join(parts, "\n\n")
 end
 
@@ -112,6 +114,19 @@ function request_body(m::Ollama, b, question::AbstractString)
     return JSON3.write(body)
 end
 function request_body(m::OpenAICompatible, b, question::AbstractString)
+    if m.responses
+        asks, answers = b.history["ask"], b.history["ans"]
+        first_turn = max(1, length(answers) - b.max_turns + 1)
+        # the memory summary only carries context for turns too old to resend verbatim
+        system = _system_prompt(b; memory = first_turn > 1)
+        # a system message rather than `instructions`, which some gateways drop for non-OpenAI backends
+        input = isempty(system) ? Dict{String,String}[] : [Dict("role" => "system", "content" => system)]
+        for i in first_turn:length(answers)
+            push!(input, Dict("role" => "user", "content" => asks[i]), Dict("role" => "assistant", "content" => answers[i]))
+        end
+        push!(input, Dict("role" => "user", "content" => question))
+        return JSON3.write(Dict("model" => m.model, "input" => input, "stream" => b.stream, "store" => false))
+    end
     system = _system_prompt(b)
     messages = [Dict("role" => "user", "content" => question)]
     isempty(system) || pushfirst!(messages, Dict("role" => "system", "content" => system))
@@ -127,7 +142,7 @@ function request_url(m::Gemini, stream::Bool)
     return stream ? "$(base):streamGenerateContent?alt=sse" : "$(base):generateContent"
 end
 request_url(m::Ollama, stream::Bool) = "$(_base_url(m))/api/generate"
-request_url(m::OpenAICompatible, stream::Bool) = "$(_base_url(m))/v1/chat/completions"
+request_url(m::OpenAICompatible, stream::Bool) = "$(_base_url(m))/v1/$(m.responses ? "responses" : "chat/completions")"
 
 _request_headers(m::ModelProvider) = Dict("Content-Type" => "application/json")
 _request_headers(m::Gemini) = Dict("Content-Type" => "application/json", "x-goog-api-key" => m.api)
@@ -161,6 +176,7 @@ function parse_answer(m::Ollama, resp, stream::Bool)
 end
 
 function parse_answer(m::OpenAICompatible, resp, stream::Bool)
+    m.responses && return _responses_answer(resp, stream)
     stream || return _choice_content(JSON3.read(resp.body), :message)
     return try _choice_content(JSON3.read(chopprefix(resp, "data: ")), :delta) catch; "" end
 end
@@ -171,4 +187,23 @@ function _choice_content(data, key::Symbol)
     (choices === nothing || isempty(choices)) && return ""
     content = get(get(choices[1], key, Dict()), :content, nothing)
     return content isa AbstractString ? String(content) : ""
+end
+
+# stream: only `response.output_text.delta` events carry visible text; `event:` lines and reasoning events yield ""
+function _responses_answer(resp, stream::Bool)
+    stream || return _responses_text(JSON3.read(resp.body))
+    startswith(resp, "data: ") || return ""
+    return try
+        data = JSON3.read(chopprefix(resp, "data: "))
+        get(data, :type, "") == "response.output_text.delta" ? String(data[:delta]) : ""
+    catch
+        ""
+    end
+end
+
+function _responses_text(data)
+    texts = [String(c[:text]) for item in get(data, :output, []) if get(item, :type, "") == "message"
+             for c in get(item, :content, []) if get(c, :type, "") == "output_text"]
+    isempty(texts) && haskey(data, :output_text) && return String(data[:output_text])
+    return join(texts)
 end
