@@ -1,8 +1,3 @@
-
-<a href="https://aibiolab.github.io/JAIL" target="_blank" rel="noopener noreferrer">
-    <img alt="Static Badge" src="https://img.shields.io/badge/docs-0.1.2-green">
-</a>
-
 JAIL.jl, as its name suggests (AI in JL), is a straightforward tool for querying Large Language Models inside Julia.
 It supports Ollama, Google's Gemini API, Anthropic models, and OpenAI-compatible APIs, including locally hosted models. It is designed to be simple and direct: send prompts and questions to an AI provider, and optionally execute the included code within a sandboxed "playground" to avoid affecting the main scope.
 
@@ -60,8 +55,6 @@ output to the available width (disable with `JAIL.Brain.terminal_hint = false`).
 When a Markdown table is still too wide, the terminal renderer converts it to wrapped labeled
 entries instead of allowing it to overflow.
 
-## Overview
-![JAIL](./overview.png)
 
-## Screenshot
-![screenshot](./docs/src/result3.png)
+## Acknowledgement
+JAIL.jl was built from the [AskAI.jl](https://github.com/AIBioLab/AskAI) package. We gratefully acknowledge the work that provided its foundation.
