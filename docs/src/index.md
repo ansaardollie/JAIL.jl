@@ -1,8 +1,8 @@
 
 # Overview
 
-AskAI.jl, as its name suggests, is a straightforward tool for querying Large Language Models. 
-Currently supporting ollama and Google's Gemini model API. it's designed to be simple and direct: send prompts and questions to AI provider, and optionally execute the included code within a sandboxed "playground" to avoid affecting the main scope.
+AskAI.jl, as its name suggests, is a straightforward tool for querying Large Language Models.
+It supports Ollama, Google's Gemini API, and OpenAI-compatible chat-completions APIs, including locally hosted models. It is designed to be simple and direct: send prompts and questions to an AI provider, and optionally execute the included code within a sandboxed "playground" to avoid affecting the main scope.
 
 The main macro, `@ai`, retrieves results from a large language model, while `@AI` executes the code within the "playground" scope and displays the output(or any errors.)
 
@@ -13,7 +13,22 @@ a REPL mode was also support. Press `}` to enter and backspace to exit
 
 
 !!! note
-    as most of the AI tool, it needs the api key or similar configure, in AskAI it follow the rule: "providerg|model|api". eg, For the Gemini it would be "Gemini|gemini-2.0-flash|1234567890abcdef1234567890abcdef" and for ollama it would be something likes "ollama|qwen2.5:72b|http://localhost:11434". you can put it in the `ENV["AskAI_config"]` or use `AskAI.setapi("providerg|model|api")` to apply your setting. Please also add a module called playground: `module playground end` in your main scope for the code execute just in case you want to use the `@AI` macro. 
+    AskAI uses the configuration format `provider|model|apiOrURL`. For Gemini, use `"Gemini|gemini-2.0-flash|your-api-key"`; for Ollama, use `"ollama|qwen2.5:72b|http://localhost:11434"`; for a local OpenAI-compatible server, use `"openai-compatible|gpt-oss-20b|key@http://localhost:8000"`. Set it in `ENV["AskAI_config"]` or call `AskAI.setapi(...)`. Please also add a module called `playground`: `module playground end` in your main scope if you want to use the `@AI` macro.
+
+!!! note
+    A local OpenAI-compatible server must expose `/v1/models` and `/v1/chat/completions`. The URL may be a full URL or a bare hostname; AskAI appends `/v1` automatically.
+
+    ```julia
+    ENV["AskAI_config"] = "openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000"
+    using AskAI
+
+    AskAI.avaliableModels()
+    @ai "Reply with one sentence about Julia."
+    AskAI.Brain.stream = false # optional: disable streaming
+    ```
+
+    Use `@http://localhost:8000` when authentication is disabled. For backward compatibility,
+    a URL-only third field is supported and uses `ENV["AskAI_key"]` when set.
 
 !!! note
     A convenient way is to put below code in your Julia `startup.jl` configuration file.
@@ -36,6 +51,8 @@ julia> using AskAI
 julia> AskAI.setapi("ollama|glm4:latest|http://localhost:11434")
 # or Gemini
 julia> AskAI.setapi("Gemini|modelName|your API key")
+# or a local OpenAI-compatible server using key@url
+julia> AskAI.setapi("openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000")
 ```
 
 !!! note

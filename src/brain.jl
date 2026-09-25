@@ -19,7 +19,7 @@ end
 
 (m::AIBrain)( question::AbstractString ) = begin
     checkConfig(m.model)
-    headers = Dict("Content-Type" => "application/json")
+    headers = _requestHeaders(m.model)
     url = getRESTURL(m.model)
     body = question2JSONString(m.model,question)
     if !m.stream
@@ -63,6 +63,7 @@ end
                 lines = String.(filter(!isempty, split(chunk, "\n")))
                 for line in lines
                     currentText = getAnswer(m.model,line)
+                    isempty(currentText) && continue
                     # If the model falls into a repetitive loop, I should stop it
                     if last_str === currentText
                          EOF_signal += 1
@@ -85,8 +86,7 @@ end
         showStreamStringFromChannel(channel) # show in the terminal
         streamToMemory(m,channel2)
         @async checkMemory!(m)
-        # final reflash and print output
-        print("\033c")
+        # print the final output without clearing the terminal
         replace(Brain.history["ans"][end], r"^ans: " => "# Final Output \n\n" ) |> MD
 
       end;

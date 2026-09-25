@@ -29,6 +29,10 @@ ENV["AskAI_config"]="Gemini|gemini-2.0-flash|1234567890abcdef1234567890abcdef"
 # for ollama
 ENV["AskAI_config"]="ollama|qwen2.5:72b|http://localhost:11434"
 
+# for a local OpenAI-compatible server
+ENV["AskAI_config"]="openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000"
+# A URL-only third field uses ENV["AskAI_key"] as a backward-compatible fallback.
+
 ```
 
 or set it through function `setapi()`
@@ -36,6 +40,8 @@ or set it through function `setapi()`
 $(@__MODULE__).setapi("Gemini|gemini-2.0-flash|1234567890abcdef1234567890abcdef")
 # or
 $(@__MODULE__).setapi("ollama|qwen2.5:72b|http://localhost:11434")
+# or a local OpenAI-compatible server using key@url in the third field
+$(@__MODULE__).setapi("openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000")
 ```
 """
         setapi("Gemini|noModel|noAPI|")
@@ -57,16 +63,22 @@ end
 ```julia
 setapi("ollama|modelName|URL")
 setapi("gemini|modelName|api")
+setapi("openai-compatible|modelName|key@URL")
 ```
 """
 function setapi( api::String )
     provider, model, apiOrURL = split(api,"|")
     provider = lowercase(provider)
-    @assert lowercase(provider) in ["gemini", "ollama"]
+    @assert lowercase(provider) in ["gemini", "ollama", "openai", "openai-compatible"]
     if provider == "gemini"
         global Brain = AIBrain( model = Gemini(model,apiOrURL), prompt = prompt_to_get_code  )
-    else
+    elseif provider == "ollama"
         global Brain = AIBrain( model = ollama(model,apiOrURL), prompt = prompt_to_get_code  )
+    else
+        config = split(apiOrURL, "@"; limit=2)
+        api = length(config) == 2 ? config[1] : get(ENV, "AskAI_key", "")
+        baseurl = length(config) == 2 ? config[2] : apiOrURL
+        global Brain = AIBrain( model = OpenAICompatible(model=model, baseurl=baseurl, api=api), prompt = prompt_to_get_code  )
     end
 end
 
