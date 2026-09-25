@@ -32,6 +32,17 @@ Base.@kwdef mutable struct OpenAICompatible <: ModelProvider
 end
 
 """
+model::String: name of the model provided by Anthropic
+url::String: Anthropic API host URL, with or without the `/v1` path
+api::String: Anthropic API key
+"""
+Base.@kwdef mutable struct Anthropic <: ModelProvider
+    model::String
+    url::String
+    api::String
+end
+
+"""
 placeholder provider used until `setapi` succeeds
 """
 Base.@kwdef mutable struct NotConfigured <: ModelProvider
@@ -65,6 +76,7 @@ function _list_models(m::Gemini)
 end
 _list_models(m::Ollama) = [String(i[:name]) for i in _get_json(m, "$(_base_url(m))/api/tags")[:models]]
 _list_models(m::OpenAICompatible) = [String(i[:id]) for i in _get_json(m, "$(_base_url(m))/v1/models")[:data]]
+_list_models(m::Anthropic) = [String(i[:id]) for i in _get_json(m, "$(_base_url(m))/v1/models")[:data]]
 
 """
 throw an error if the model provider is unconfigured or has empty required values
@@ -79,6 +91,7 @@ end
 _required_config(m::Gemini) = ["model (ASK_AI_MODEL)" => m.model, "API key (ASK_AI_API_KEY or GEMINI_API_KEY)" => m.api]
 _required_config(m::Ollama) = ["model (ASK_AI_MODEL)" => m.model, "URL (ASK_AI_BASE_URL)" => m.url]
 _required_config(m::OpenAICompatible) = ["model (ASK_AI_MODEL)" => m.model, "URL (ASK_AI_BASE_URL)" => m.url]
+_required_config(m::Anthropic) = ["model (ASK_AI_MODEL)" => m.model, "API key (ASK_AI_API_KEY or ANTHROPIC_API_KEY)" => m.api]
 
 function _terminal_prompt_context()
     rows, columns = displaysize(stdout)
@@ -135,6 +148,25 @@ function request_body(m::OpenAICompatible, b, question::AbstractString)
     push!(messages, Dict("role" => "user", "content" => question))
     return JSON3.write(Dict("model" => m.model, "messages" => messages, "stream" => b.stream))
 end
+function request_body(m::Anthropic, b, question::AbstractString)
+    asks, answers = b.history["ask"], b.history["ans"]
+    first_turn = max(1, length(answers) - b.max_turns + 1)
+    system = _system_prompt(b; memory = first_turn > 1)
+    messages = Dict{String,String}[]
+    for i in first_turn:length(answers)
+        push!(messages, Dict("role" => "user", "content" => asks[i]),
+                       Dict("role" => "assistant", "content" => answers[i]))
+    end
+    push!(messages, Dict("role" => "user", "content" => question))
+    body = Dict{String,Any}(
+        "model" => m.model,
+        "max_tokens" => 1024,
+        "messages" => messages,
+        "stream" => b.stream,
+    )
+    isempty(system) || (body["system"] = system)
+    return JSON3.write(body)
+end
 
 """
 construct the URL for HTTP request, based on model provider
@@ -146,6 +178,7 @@ function request_url(m::Gemini, stream::Bool)
 end
 request_url(m::Ollama, stream::Bool) = "$(_base_url(m))/api/generate"
 request_url(m::OpenAICompatible, stream::Bool) = "$(_base_url(m))/v1/$(m.chat_completions ? "chat/completions" : "responses")"
+request_url(m::Anthropic, stream::Bool) = "$(_base_url(m))/v1/messages"
 
 _request_headers(m::ModelProvider) = Dict("Content-Type" => "application/json")
 _request_headers(m::Gemini) = Dict("Content-Type" => "application/json", "x-goog-api-key" => m.api)
@@ -154,10 +187,19 @@ function _request_headers(m::OpenAICompatible)
     isempty(strip(m.api)) || (headers["Authorization"] = "Bearer $(m.api)")
     return headers
 end
+_request_headers(m::Anthropic) = Dict(
+    "Content-Type" => "application/json",
+    "x-api-key" => m.api,
+    "anthropic-version" => "2023-06-01",
+)
 
 _base_url(m::Ollama) = rstrip(strip(m.url), '/')
 function _base_url(m::OpenAICompatible)
     url = replace(rstrip(strip(m.url), '/'), r"/v1$" => "") # accept OPENAI_BASE_URL-style values ending in /v1
+    return startswith(url, "http://") || startswith(url, "https://") ? url : "https://$(url)"
+end
+function _base_url(m::Anthropic)
+    url = replace(rstrip(strip(m.url), '/'), r"/v1$" => "")
     return startswith(url, "http://") || startswith(url, "https://") ? url : "https://$(url)"
 end
 
@@ -188,6 +230,31 @@ function parse_answer(m::OpenAICompatible, resp, stream::Bool)
     data = try JSON3.read(chopprefix(resp, "data: ")) catch; return "" end
     _throw_api_error(data)
     return _choice_content(data, :delta)
+end
+
+function parse_answer(m::Anthropic, resp, stream::Bool)
+    if !stream
+        data = JSON3.read(resp.body)
+        _throw_anthropic_error(data)
+        content = get(data, :content, nothing)
+        (content === nothing || isempty(content)) && return ""
+        return String(get(content[1], :text, ""))
+    end
+    startswith(resp, "data: ") || return ""
+    data = try JSON3.read(chopprefix(resp, "data: ")) catch; return "" end
+    _throw_anthropic_error(data)
+    get(data, :type, "") == "content_block_delta" || return ""
+    delta = get(data, :delta, nothing)
+    get(delta, :type, "") == "text_delta" || return ""
+    return String(get(delta, :text, ""))
+end
+
+function _throw_anthropic_error(data)
+    api_error = get(data, :error, nothing)
+    api_error === nothing && return nothing
+    message = get(api_error, :message, nothing)
+    detail = message isa AbstractString ? String(message) : JSON3.write(api_error)
+    error("Anthropic API error: $(detail)")
 end
 
 function _throw_api_error(data)

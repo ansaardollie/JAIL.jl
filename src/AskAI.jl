@@ -7,7 +7,7 @@ include("brain.jl")
 
 const DEFAULT_PROMPT = "if the answer contains code, only output the raw code in julia"
 
-const PROVIDERS = ["gemini", "ollama", "openai", "openai-compatible"]
+const PROVIDERS = ["gemini", "ollama", "openai", "openai-compatible", "anthropic"]
 
 const CONFIG_HELP = """
 AskAI is not configured. Set these environment variables before `using AskAI`:
@@ -17,13 +17,14 @@ AskAI is not configured. Set these environment variables before `using AskAI`:
 | `ASK_AI_PROVIDER` | one of $(join("`" .* PROVIDERS .* "`", ", ")) |
 | `ASK_AI_MODEL` | model name, e.g. `gemini-2.0-flash`, `qwen2.5:72b`, `gpt-4o-mini` |
 | `ASK_AI_BASE_URL` | server URL; optional for `ollama` (`http://localhost:11434`) and `openai` (`https://api.openai.com`) |
-| `ASK_AI_API_KEY` | API key; optional for local servers. OpenAI providers also read `OPENAI_API_KEY`, then `OPENAPI_API_KEY`; `gemini` reads `GEMINI_API_KEY` |
+| `ASK_AI_API_KEY` | API key; optional for local servers. OpenAI providers also read `OPENAI_API_KEY`, then `OPENAPI_API_KEY`; `gemini` reads `GEMINI_API_KEY`; `anthropic` reads `ANTHROPIC_API_KEY` |
 | `ASK_AI_CHAT_COMPLETIONS` | `true` to use `/v1/chat/completions` instead of the default `/v1/responses` API (`openai`, `openai-compatible` only) |
 
 or configure it at runtime, where omitted keywords fall back to the variables above:
 ```julia
 AskAI.setapi("ollama", "qwen2.5:72b")
 AskAI.setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", api = "local-key")
+AskAI.setapi("anthropic", "claude-3-5-sonnet-20241022"; api = "your-api-key")
 ```
 """
 
@@ -67,6 +68,7 @@ setapi("gemini", "gemini-2.0-flash"; api = "your-key")
 setapi("openai", "gpt-4o-mini")  # reads OPENAI_API_KEY
 setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000")
 setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", chat_completions = true)
+setapi("anthropic", "claude-3-5-sonnet-20241022")  # reads ANTHROPIC_API_KEY
 ```
 """
 function setapi(provider::AbstractString, model::AbstractString; url = nothing, api = nothing, chat_completions = nothing)
@@ -76,11 +78,14 @@ function setapi(provider::AbstractString, model::AbstractString; url = nothing, 
     url = String(something(url, get(ENV, "ASK_AI_BASE_URL", provider == "openai" ? get(ENV, "OPENAI_BASE_URL", "") : "")))
     api = String(something(api, get(ENV, "ASK_AI_API_KEY",
         provider in ("openai", "openai-compatible") ? get(ENV, "OPENAI_API_KEY", get(ENV, "OPENAPI_API_KEY", "")) :
-        provider == "gemini" ? get(ENV, "GEMINI_API_KEY", "") : "")))
+        provider == "gemini" ? get(ENV, "GEMINI_API_KEY", "") :
+        provider == "anthropic" ? get(ENV, "ANTHROPIC_API_KEY", "") : "")))
     if provider == "gemini"
         Brain.model = Gemini(model, api)
     elseif provider == "ollama"
         Brain.model = Ollama(model, isempty(url) ? "http://localhost:11434" : url)
+    elseif provider == "anthropic"
+        Brain.model = Anthropic(model=model, url=isempty(url) ? "https://api.anthropic.com" : url, api=api)
     else
         isempty(url) && provider == "openai" && (url = "https://api.openai.com")
         chat_completions = something(chat_completions, lowercase(strip(get(ENV, "ASK_AI_CHAT_COMPLETIONS", ""))) in ("1", "true", "yes"))

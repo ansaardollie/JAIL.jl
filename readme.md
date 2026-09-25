@@ -4,7 +4,7 @@
 </a>
 
 AskAI.jl, as its name suggests, is a straightforward tool for querying Large Language Models.
-It supports Ollama, Google's Gemini API, and OpenAI-compatible chat-completions APIs, including locally hosted models. It is designed to be simple and direct: send prompts and questions to an AI provider, and optionally execute the included code within a sandboxed "playground" to avoid affecting the main scope.
+It supports Ollama, Google's Gemini API, Anthropic models, and OpenAI-compatible APIs, including locally hosted models. It is designed to be simple and direct: send prompts and questions to an AI provider, and optionally execute the included code within a sandboxed "playground" to avoid affecting the main scope.
 
 The main macro, `@ai`, retrieves results from a large language model, while `@AI` executes the code within the "playground" scope and displays the output(or any errors.)
 
@@ -16,10 +16,10 @@ Set these environment variables before `using AskAI` (e.g. in `startup.jl` or yo
 
 | Variable | Meaning |
 |---|---|
-| `ASK_AI_PROVIDER` | `gemini`, `ollama`, `openai` or `openai-compatible` |
-| `ASK_AI_MODEL` | model name, e.g. `gpt-oss-20b` |
-| `ASK_AI_BASE_URL` | server URL, with or without `/v1`; optional for `ollama` and `openai` |
-| `ASK_AI_API_KEY` | API key; optional for local servers. OpenAI providers also read `OPENAI_API_KEY`, then `OPENAPI_API_KEY`; `gemini` reads `GEMINI_API_KEY` |
+| `ASK_AI_PROVIDER` | `gemini`, `ollama`, `anthropic`, `openai` or `openai-compatible` |
+| `ASK_AI_MODEL` | model name, e.g. `claude-3-5-sonnet-20241022` or `gpt-oss-20b` |
+| `ASK_AI_BASE_URL` | server URL, with or without `/v1`; optional for `ollama`, `openai`, and `anthropic` |
+| `ASK_AI_API_KEY` | API key; optional for local servers. OpenAI providers also read `OPENAI_API_KEY`, then `OPENAPI_API_KEY`; `gemini` reads `GEMINI_API_KEY`; `anthropic` reads `ANTHROPIC_API_KEY` |
 | `ASK_AI_CHAT_COMPLETIONS` | `true` to use `/v1/chat/completions` instead of the default `/v1/responses` API (`openai`, `openai-compatible` only) |
 
 ```julia
@@ -32,11 +32,25 @@ available_models()
 @ai "Explain Julia multiple dispatch in one sentence."
 ```
 
+For Anthropic, set `ANTHROPIC_API_KEY` and select an Anthropic model. The default API URL is
+`https://api.anthropic.com`; `ASK_AI_BASE_URL` is only needed for a compatible proxy or custom endpoint:
+
+```julia
+ENV["ASK_AI_PROVIDER"] = "anthropic"
+ENV["ASK_AI_MODEL"] = "claude-3-5-sonnet-20241022"
+ENV["ANTHROPIC_API_KEY"] = "your-anthropic-api-key"
+
+using AskAI
+available_models()
+@ai "Explain Julia multiple dispatch in one sentence."
+```
+
 or at runtime, where omitted keywords fall back to the variables above:
 
 ```julia
 setapi("ollama", "qwen2.5:72b")
 setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", api = "local-key")
+setapi("anthropic", "claude-3-5-sonnet-20241022"; api = "your-anthropic-api-key")
 ```
 
 The old `ENV["AskAI_config"] = "provider|model|key@url"` form still works but is deprecated.
