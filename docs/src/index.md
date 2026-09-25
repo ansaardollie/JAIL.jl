@@ -13,31 +13,31 @@ a REPL mode was also support. Press `}` to enter and backspace to exit
 
 
 !!! note
-    AskAI uses the configuration format `provider|model|apiOrURL`. For Gemini, use `"Gemini|gemini-2.0-flash|your-api-key"`; for Ollama, use `"ollama|qwen2.5:72b|http://localhost:11434"`; for a local OpenAI-compatible server, use `"openai-compatible|gpt-oss-20b|key@http://localhost:8000"`. Set it in `ENV["AskAI_config"]` or call `AskAI.setapi(...)`. Please also add a module called `playground`: `module playground end` in your main scope if you want to use the `@AI` macro.
+    AskAI is configured with the environment variables `ASK_AI_PROVIDER` (`gemini`, `ollama`, `openai` or `openai-compatible`), `ASK_AI_MODEL`, `ASK_AI_BASE_URL` (optional for `ollama` and `openai`) and `ASK_AI_API_KEY` (optional for local servers; `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY`). Alternatively call `setapi(provider, model; url, api)`, where omitted keywords fall back to those variables. The old `ENV["AskAI_config"] = "provider|model|key@url"` form is deprecated. Please also add a module called `playground`: `module playground end` in your main scope if you want to use the `@AI` macro.
 
 !!! note
-    A local OpenAI-compatible server must expose `/v1/models` and `/v1/chat/completions`. The URL may be a full URL or a bare hostname; AskAI appends `/v1` automatically.
+    A local OpenAI-compatible server must expose `/v1/models` and `/v1/chat/completions`. The URL may be a full URL (with or without `/v1`) or a bare hostname.
 
     ```julia
-    ENV["AskAI_config"] = "openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000"
+    ENV["ASK_AI_PROVIDER"] = "openai-compatible"
+    ENV["ASK_AI_MODEL"] = "gpt-oss-20b"
+    ENV["ASK_AI_BASE_URL"] = "http://localhost:8000"
     using AskAI
 
-    AskAI.avaliableModels()
+    available_models()
     @ai "Reply with one sentence about Julia."
     AskAI.Brain.stream = false # optional: disable streaming
     ```
 
-    Use `@http://localhost:8000` when authentication is disabled. For backward compatibility,
-    a URL-only third field is supported and uses `ENV["AskAI_key"]` when set.
-
     AskAI includes the current terminal rows and columns in each prompt and asks the model to
-    wrap output to the available width. This is guidance for the model, not a hard output limit.
+    wrap output to the available width (`AskAI.Brain.terminal_hint = false` disables this). This is guidance for the model, not a hard output limit.
     Oversized Markdown tables are also converted to wrapped labeled entries before display.
 
 !!! note
     A convenient way is to put below code in your Julia `startup.jl` configuration file.
     ```
-    ENV["AskAI_config"] =  "provider|model|api or URL"
+    ENV["ASK_AI_PROVIDER"] = "ollama"
+    ENV["ASK_AI_MODEL"] = "qwen2.5:72b"
     module playground end
     using AskAI
     ```
@@ -52,11 +52,11 @@ it starts as my persional AI tool in julia REP and only support the Gemini model
 (@v1.10) pkg> add https://github.com/AIBioLab/AskAI 
 julia> using AskAI
 # now you can configure it with your AI model provider; eg ollama
-julia> AskAI.setapi("ollama|glm4:latest|http://localhost:11434")
+julia> setapi("ollama", "glm4:latest")
 # or Gemini
-julia> AskAI.setapi("Gemini|modelName|your API key")
-# or a local OpenAI-compatible server using key@url
-julia> AskAI.setapi("openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000")
+julia> setapi("gemini", "gemini-2.0-flash"; api = "your API key")
+# or a local OpenAI-compatible server
+julia> setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", api = "your-local-api-key")
 ```
 
 !!! note
@@ -90,10 +90,10 @@ Here's an example of using AskAI to generate scatter and histogram plots and per
     ![result3](./result3.png)
 
 !!! note
-    some time you may get the wrong result from the LLM, LLM results aren't always perfect, so please double-check. You can use `@ai` instead of `@AI` for code checks. then use `exe()` to perform the code. Often the case I met is the necessary packages aren't installed.
+    some time you may get the wrong result from the LLM, LLM results aren't always perfect, so please double-check. You can use `@ai` instead of `@AI` for code checks. then use `AskAI.run_code()` to perform the code. Often the case I met is the necessary packages aren't installed.
     ```julia
     @ai "tell me the current date,install the package if it needs"
-    AskAI.exe(ans)
+    AskAI.run_code(ans)
     ```
 
 to review the conversation history

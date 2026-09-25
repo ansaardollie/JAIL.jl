@@ -1,3 +1,5 @@
+> **Superseded by:** `3_API_naming_and_env_config.md`
+
 # OpenAI-Compatible Provider Configuration
 
 | Field | Value |

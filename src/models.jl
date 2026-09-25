@@ -1,10 +1,10 @@
-abstract type modelProvider end
+abstract type ModelProvider end
 
 """
 model::String: name of the model provided in Google Gemini, like 'gemini-2.0-flash'
 api::String: your google gemini api key
 """
-Base.@kwdef mutable struct Gemini <: modelProvider
+Base.@kwdef mutable struct Gemini <: ModelProvider
     model::String
     api::String
 end
@@ -13,196 +13,162 @@ end
 model::String: name of the model provided in local ollama
 url::String: the url of ollama model, IP:port is needed
 """
-Base.@kwdef mutable struct ollama <: modelProvider
+Base.@kwdef mutable struct Ollama <: ModelProvider
     model::String
     url::String
 end
 
 """
 model::String: name of the model exposed by an OpenAI-compatible API
-baseurl::String: API host URL, without the `/v1` path
+url::String: API host URL, with or without the `/v1` path
 api::String: optional API key; blank is valid for local endpoints
 """
-Base.@kwdef mutable struct OpenAICompatible <: modelProvider
+Base.@kwdef mutable struct OpenAICompatible <: ModelProvider
     model::String
-    baseurl::String
+    url::String
     api::String = ""
 end
 
 """
-list avaliabel models in currrent provider
+placeholder provider used until `setapi` succeeds
+"""
+Base.@kwdef mutable struct NotConfigured <: ModelProvider
+    model::String = "not configured"
+end
+
+"""
+list available models in the current provider (or `m`); errors are thrown, not returned
 
 ```julia
-AskAI.setapi("Gemini|gemini-2.0-flash|AIzaSyBqwIWyterU29hkdUNkSHYoBRSi4AN4fgU")
-AskAI.avaliableModels(pretty=true) # pretty = false to return raw string vector
+AskAI.setapi("ollama", "glm4:latest")
+AskAI.available_models(pretty=true) # pretty = false to return raw string vector
 ```
-  avalibale models:
+  available models:
 
     •  glm4:latest
 
     •  deepseek-r1:70b
 """
-function avaliableModels end
-function avaliableModels(m::modelProvider; pretty::Bool = true )
-    if typeof(m) == Gemini
-        url = "https://generativelanguage.googleapis.com/v1beta/models?key=$(m.api)"
-        try
-            resp = HTTP.get(url)
-            if resp.status == 200
-                res =  JSON3.read(resp.body)[:models]
-                models = [replace(i["name"],"models/" => "") for i in res if "generateContent" in i["supportedGenerationMethods"]]
-                if pretty
-                    join( vcat(["avalibale models:"],models), "\n - ") |> MD
-                else
-                    models
-                end
-
-            end
-        catch error
-            return "error code $(resp.status)"
-        end
-
-    elseif typeof(m) == ollama
-        url = m.url * "/api/tags"
-        try
-            resp = HTTP.get(url)
-            if resp.status == 200
-                models = [i["name"] for i in JSON3.read(resp.body)[:models]]
-                if pretty
-                    join( vcat(["avalibale models:"],models), "\n - ") |> MD
-                else
-                    models
-                end
-            end
-        catch error
-            return "error code $(resp.status)"
-        end
-
-    elseif typeof(m) == OpenAICompatible
-        url = "$(_baseURL(m))/v1/models"
-        try
-            resp = HTTP.get(url, _requestHeaders(m))
-            if resp.status == 200
-                models = [i[:id] for i in JSON3.read(resp.body)[:data]]
-                if pretty
-                    join(vcat(["avalibale models:"], models), "\n - ") |> MD
-                else
-                    models
-                end
-            end
-        catch error
-            return "error: $(sprint(showerror, error))"
-        end
-
-    end
+function available_models(m::ModelProvider = Brain.model; pretty::Bool = true)
+    models = _list_models(m)
+    return pretty ? MD(join(vcat(["available models:"], models), "\n - ")) : models
 end
-avaliableModels(;kws...) = avaliableModels(Brain.model;kws...)
+
+_get_json(m::ModelProvider, url) = JSON3.read(HTTP.get(url, _request_headers(m); connect_timeout=10, retry=false).body)
+
+_list_models(::NotConfigured) = error(CONFIG_HELP)
+function _list_models(m::Gemini)
+    res = _get_json(m, "https://generativelanguage.googleapis.com/v1beta/models")[:models]
+    return [replace(i[:name], "models/" => "") for i in res if "generateContent" in i[:supportedGenerationMethods]]
+end
+_list_models(m::Ollama) = [String(i[:name]) for i in _get_json(m, "$(_base_url(m))/api/tags")[:models]]
+_list_models(m::OpenAICompatible) = [String(i[:id]) for i in _get_json(m, "$(_base_url(m))/v1/models")[:data]]
 
 """
-throw an error if the model provider still holds placeholder or empty config values
+throw an error if the model provider is unconfigured or has empty required values
 """
-function checkConfig(m::modelProvider)
-    target = m isa Gemini ? m.api : m isa ollama ? m.url : m.baseurl
-    if isempty(strip(m.model)) || m.model == "noModel" || isempty(strip(target)) || target == "noAPI"
-        error("AskAI is not configured. Set ENV[\"AskAI_config\"] before loading, or call AskAI.setapi(\"provider|model|apiOrURL\").")
-    end
+check_config(::NotConfigured) = error(CONFIG_HELP)
+function check_config(m::ModelProvider)
+    absent = [name for (name, value) in _required_config(m) if isempty(strip(value))]
+    isempty(absent) || error("AskAI is missing: $(join(absent, ", ")). Call AskAI.setapi(provider, model; url, api).")
     return nothing
 end
 
-"""
-warp question into json data
-"""
-function _terminalPromptContext()
+_required_config(m::Gemini) = ["model (ASK_AI_MODEL)" => m.model, "API key (ASK_AI_API_KEY or GEMINI_API_KEY)" => m.api]
+_required_config(m::Ollama) = ["model (ASK_AI_MODEL)" => m.model, "URL (ASK_AI_BASE_URL)" => m.url]
+_required_config(m::OpenAICompatible) = ["model (ASK_AI_MODEL)" => m.model, "URL (ASK_AI_BASE_URL)" => m.url]
+
+function _terminal_prompt_context()
     rows, columns = displaysize(stdout)
     return "The terminal is $(columns) columns wide and $(rows) rows high. Keep output lines within $(max(columns - 2, 1)) columns, wrap long lines, and avoid unnecessarily wide tables."
 end
 
-function question2JSONString(m::modelProvider, question::AbstractString)
-    question = _terminalPromptContext() * "\n" * Brain.RAG * "\n" * Brain.memory * "\n" * Brain.prompt * "\n" * question
-    if typeof(m) == Gemini
-        return JSON3.write(Dict("contents" => Dict("parts" => [Dict("text" => question)])))
+"""
+system instructions built from the brain's prompt, RAG context and conversation memory
+"""
+function _system_prompt(b)
+    parts = String[]
+    b.terminal_hint && push!(parts, _terminal_prompt_context())
+    isempty(b.prompt) || push!(parts, b.prompt)
+    isempty(b.rag) || push!(parts, "Reference material:\n" * b.rag)
+    isempty(b.memory) || push!(parts, "Conversation so far:\n" * b.memory)
+    return join(parts, "\n\n")
+end
 
-    elseif typeof(m) == ollama
-        return JSON3.write(Dict("model" => m.model,
-                                "prompt" => question,
-                                "stream" => Brain.stream))
-    elseif typeof(m) == OpenAICompatible
-        return JSON3.write(Dict("model" => m.model,
-                                "messages" => [Dict("role" => "user", "content" => question)],
-                                "stream" => Brain.stream))
-    end
-
-    @error "Error in converting question into json string"
+"""
+wrap the question, with the brain's context as system instructions, into the provider's JSON request body
+"""
+function request_body end
+function request_body(m::Gemini, b, question::AbstractString)
+    body = Dict{String,Any}("contents" => [Dict("role" => "user", "parts" => [Dict("text" => question)])])
+    system = _system_prompt(b)
+    isempty(system) || (body["systemInstruction"] = Dict("parts" => [Dict("text" => system)]))
+    return JSON3.write(body)
+end
+function request_body(m::Ollama, b, question::AbstractString)
+    body = Dict{String,Any}("model" => m.model, "prompt" => question, "stream" => b.stream)
+    system = _system_prompt(b)
+    isempty(system) || (body["system"] = system)
+    return JSON3.write(body)
+end
+function request_body(m::OpenAICompatible, b, question::AbstractString)
+    system = _system_prompt(b)
+    messages = [Dict("role" => "user", "content" => question)]
+    isempty(system) || pushfirst!(messages, Dict("role" => "system", "content" => system))
+    return JSON3.write(Dict("model" => m.model, "messages" => messages, "stream" => b.stream))
 end
 
 """
 construct the URL for HTTP request, based on model provider
 """
-function getRESTURL(m::modelProvider)
-    if typeof(m) == Gemini
-        if !Brain.stream
-            return  "https://generativelanguage.googleapis.com/v1beta/models/$(m.model):generateContent?key=$(m.api)"
-        else
-            return "https://generativelanguage.googleapis.com/v1beta/models/$(m.model):streamGenerateContent?alt=sse&key=$(m.api)"
-        end
-    elseif  typeof(m) == ollama
-        return "$(rstrip(m.url, '/'))/api/generate"
-    elseif typeof(m) == OpenAICompatible
-        return "$(_baseURL(m))/v1/chat/completions"
-    end
+function request_url end
+function request_url(m::Gemini, stream::Bool)
+    base = "https://generativelanguage.googleapis.com/v1beta/models/$(m.model)"
+    return stream ? "$(base):streamGenerateContent?alt=sse" : "$(base):generateContent"
 end
+request_url(m::Ollama, stream::Bool) = "$(_base_url(m))/api/generate"
+request_url(m::OpenAICompatible, stream::Bool) = "$(_base_url(m))/v1/chat/completions"
 
-function _requestHeaders(m::modelProvider)
+_request_headers(m::ModelProvider) = Dict("Content-Type" => "application/json")
+_request_headers(m::Gemini) = Dict("Content-Type" => "application/json", "x-goog-api-key" => m.api)
+function _request_headers(m::OpenAICompatible)
     headers = Dict("Content-Type" => "application/json")
-    if m isa OpenAICompatible && !isempty(strip(m.api))
-        headers["Authorization"] = "Bearer $(m.api)"
-    end
+    isempty(strip(m.api)) || (headers["Authorization"] = "Bearer $(m.api)")
     return headers
 end
 
-function _baseURL(m::OpenAICompatible)
-    url = strip(m.baseurl)
-    return startswith(url, "http://") || startswith(url, "https://") ? rstrip(url, '/') : "https://$(rstrip(url, '/'))"
+_base_url(m::Ollama) = rstrip(strip(m.url), '/')
+function _base_url(m::OpenAICompatible)
+    url = replace(rstrip(strip(m.url), '/'), r"/v1$" => "") # accept OPENAI_BASE_URL-style values ending in /v1
+    return startswith(url, "http://") || startswith(url, "https://") ? url : "https://$(url)"
 end
 
 """
-retrieve answer from AI response
+retrieve answer text from an AI response (non-stream) or a single stream line (stream);
+non-stream parse failures throw, unparseable stream lines yield ""
 """
-function getAnswer end
-function getAnswer(m::Gemini, resp)
-    if !AskAI.Brain.stream
-        return JSON3.read(resp.body)[:candidates][1][:content][:parts][1]["text"]
-    else
-        if startswith(resp, "data: ")
-            data = JSON3.read(replace(resp, r"^data: " => ""))
-            return data[:candidates][1][:content][:parts][1]["text"]
-        else
-            return ""
-        end
-    end
+function parse_answer end
+function parse_answer(m::Gemini, resp, stream::Bool)
+    stream || return _gemini_text(JSON3.read(resp.body))
+    startswith(resp, "data: ") || return ""
+    return try _gemini_text(JSON3.read(chopprefix(resp, "data: "))) catch; "" end
+end
+_gemini_text(data) = String(data[:candidates][1][:content][:parts][1][:text])
+
+function parse_answer(m::Ollama, resp, stream::Bool)
+    stream || return String(JSON3.read(resp.body)[:response])
+    return try String(JSON3.read(resp)[:response]) catch; "" end
 end
 
-function getAnswer(m::ollama, resp)
-    try
-        resp = !AskAI.Brain.stream ?  JSON3.read(resp.body)["response"] : JSON3.read(resp)["response"]
-    catch error
-        resp = ""
-    end
-    return resp
+function parse_answer(m::OpenAICompatible, resp, stream::Bool)
+    stream || return _choice_content(JSON3.read(resp.body), :message)
+    return try _choice_content(JSON3.read(chopprefix(resp, "data: ")), :delta) catch; "" end
 end
 
-function getAnswer(m::OpenAICompatible, resp)
-    try
-        data = !AskAI.Brain.stream ? JSON3.read(resp.body) : JSON3.read(replace(resp, r"^data: " => ""))
-        if !haskey(data, :choices) || isempty(data[:choices])
-            return ""
-        end
-        choice = data[:choices][1]
-        if AskAI.Brain.stream
-            return haskey(choice, :delta) && haskey(choice[:delta], :content) ? String(choice[:delta][:content]) : ""
-        end
-        return haskey(choice, :message) && haskey(choice[:message], :content) ? String(choice[:message][:content]) : ""
-    catch error
-        return ""
-    end
+# `content` is null or absent in role-only and reasoning-only chunks
+function _choice_content(data, key::Symbol)
+    choices = get(data, :choices, nothing)
+    (choices === nothing || isempty(choices)) && return ""
+    content = get(get(choices[1], key, Dict()), :content, nothing)
+    return content isa AbstractString ? String(content) : ""
 end

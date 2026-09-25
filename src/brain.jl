@@ -1,101 +1,113 @@
 Base.@kwdef mutable struct AIBrain
-    memory::AbstractString  = "" # summary of the past query
-    history::Dict = Dict("ask" => [], "ans" => []) # conversation history
-    prompt::AbstractString  = ""
-    stream::Bool=true # if the model returns the stream response
-    timeout::Int = 10 # set the timeout for the http request
-    model::modelProvider # = "gemini-2.0-flash" # the model
-    RAG::AbstractString = "" # to store RAG result
+    memory::String = "" # summary of the past queries, sent as system context
+    history::Dict{String,Vector{String}} = Dict("ask" => String[], "ans" => String[]) # conversation history
+    prompt::String = ""
+    stream::Bool = true # if the model returns the stream response
+    timeout::Int = 60 # seconds without data before a request is abandoned; local models may think for a while
+    model::ModelProvider
+    rag::String = "" # to store RAG result
+    terminal_hint::Bool = true # tell the model the terminal size so output fits
+    render_final::Bool = true # after streaming, also return the answer rendered as Markdown
 end
 
 
 """
-changeModels!(AskAI.Brain, "qwen2.5:72b")
+change_model!(AskAI.Brain, "qwen2.5:72b")
 """
-function changeModels!(m::AIBrain, model::String)
+function change_model!(m::AIBrain, model::String)
     m.model.model = model
 end
 
 
-(m::AIBrain)( question::AbstractString ) = begin
-    checkConfig(m.model)
-    headers = _requestHeaders(m.model)
-    url = getRESTURL(m.model)
-    body = question2JSONString(m.model,question)
-    if !m.stream
-        try
-            resp = HTTP.post(url, headers, body; read_idle_timeout=m.timeout, connect_timeout=m.timeout, retry=false)
-            if resp.status == 200
-                # text = JSON3.read(resp.body)[:candidates][1][:content][:parts][1]["text"]
-                text = getAnswer(m.model, resp)
-                m.memory *= "ask: $(question) \n ans: $(text) \n"
-                push!(m.history["ask"], question)
-                push!(m.history["ans"], text)
-                @async checkMemory!(m)
-                return Markdown.parse(_formatMarkdownForTerminal(text)) # show in the terminal
-            else
-                return "respond code: $(resp.status)🔗🚫"
-            end
-        catch err
-            error("AskAI request failed, please check the config (provider|model|apiOrURL): $(sprint(showerror, err))")
-        end
-    else
-        ##########################
-        # for streaming response #
-        ##########################
+_request_error(err) = ErrorException("AskAI request failed, please check the configuration (see AskAI.setapi): $(sprint(showerror, err))")
 
-        m.memory *= "ask: $(question) \n"
-        push!(m.history["ask"], question)
+(m::AIBrain)(question::AbstractString) = begin
+    check_config(m.model)
+    m.stream ? _ask_stream(m, question) : _ask_once(m, question)
+end
 
-        channel = Channel{String}(3000)
-        channel2 = Channel{String}(3000)
+"""
+send a single non-streaming request and return the raw answer text, without touching memory or history
+"""
+function _complete(m::AIBrain, question::AbstractString)
+    resp = HTTP.post(request_url(m.model, false), _request_headers(m.model), request_body(m.model, m, question);
+                     read_idle_timeout=m.timeout, connect_timeout=10, retry=false)
+    return parse_answer(m.model, resp, false)
+end
 
-        @async try
-          HTTP.open(:POST, url, headers; read_idle_timeout=m.timeout, connect_timeout=m.timeout, retry=false) do io
+function _remember!(m::AIBrain, question::AbstractString, text::AbstractString)
+    m.memory *= "ask: $(question) \n ans: $(text) \n"
+    push!(m.history["ask"], question)
+    push!(m.history["ans"], text)
+    errormonitor(@async check_memory!(m))
+    return nothing
+end
+
+function _ask_once(m::AIBrain, question::AbstractString)
+    text = try
+        _complete(m, question)
+    catch err
+        throw(_request_error(err))
+    end
+    _remember!(m, question, text)
+    return Markdown.parse(_format_markdown_for_terminal(text))
+end
+
+function _ask_stream(m::AIBrain, question::AbstractString)
+    url = request_url(m.model, true)
+    headers = _request_headers(m.model)
+    body = request_body(m.model, m, question)
+    channel = Channel{String}(3000)
+    failure = Ref{Any}(nothing)
+
+    @async try
+        HTTP.open(:POST, url, headers; read_idle_timeout=m.timeout, connect_timeout=10, retry=false) do io
             write(io, body)
             HTTP.closewrite(io)
             r = HTTP.startread(io)
             r.status == 200 || error("HTTP $(r.status): $(String(read(io)))")
-            EOF_signal = 0
-            last_str="EOF"
-            while EOF_signal <= 10 && !eof(io)
-                chunk = String(readavailable(io))
-                lines = String.(filter(!isempty, split(chunk, "\n")))
-                for line in lines
-                    currentText = getAnswer(m.model,line)
-                    isempty(currentText) && continue
-                    # If the model falls into a repetitive loop, I should stop it
-                    if last_str === currentText
-                         EOF_signal += 1
-                    end
-                    last_str = currentText
-                    push!(channel,currentText)
-                    push!(channel2,currentText)
-                end
+            repeats = 0
+            last_str = ""
+            emit(line) = begin
+                text = parse_answer(m.model, strip(line), true)
+                isempty(text) && return
+                # stop a model stuck emitting the same chunk over and over
+                repeats = text == last_str ? repeats + 1 : 0
+                last_str = text
+                put!(channel, text)
             end
+            buffer = ""
+            while repeats <= 10 && !eof(io)
+                lines = split(buffer * String(readavailable(io)), "\n")
+                buffer = String(pop!(lines)) # possibly incomplete line, finished by the next read
+                foreach(emit, lines)
+            end
+            emit(buffer)
             HTTP.closeread(io)
-          end
-          isopen(channel) && close(channel);
-          isopen(channel2) && close(channel2);
-        catch err
-            # closing with the exception makes take! in the main task rethrow instead of blocking
-            ex = ErrorException("AskAI request failed, please check the config (provider|model|apiOrURL): $(sprint(showerror, err))")
-            close(channel, ex)
-            close(channel2, ex)
         end
-        showStreamStringFromChannel(channel) # show in the terminal
-        streamToMemory(m,channel2)
-        @async checkMemory!(m)
-        flush(stdout)
-        println()
-        # Render the final Markdown below the preserved stream output.
-        final_text = replace(Brain.history["ans"][end], r"^ans: " => "# Final Output \n\n" )
-        MD(_formatMarkdownForTerminal(final_text))
+    catch err
+        failure[] = err
+    finally
+        close(channel)
+    end
 
-      end;
+    answer = IOBuffer()
+    for chunk in channel
+        position(answer) == 0 && print("\n\e[32m¬ \e[0m")
+        print(chunk)
+        flush(stdout)
+        write(answer, chunk)
+    end
+    failure[] === nothing || throw(_request_error(failure[]))
+    text = String(take!(answer))
+    _remember!(m, question, text)
+    println()
+    m.render_final || return nothing
+    # Render the final Markdown below the preserved stream output.
+    return MD(_format_markdown_for_terminal("# Final Output \n\n" * text))
 end
 
-function _wrapTerminalText(text::AbstractString, width::Int)
+function _wrap_terminal_text(text::AbstractString, width::Int)
     words = split(strip(text))
     isempty(words) && return [""]
     lines = String[]
@@ -114,28 +126,28 @@ function _wrapTerminalText(text::AbstractString, width::Int)
     return lines
 end
 
-function _tableCells(line::AbstractString)
+function _table_cells(line::AbstractString)
     value = strip(line)
     startswith(value, "|") && (value = value[2:end])
     endswith(value, "|") && (value = value[1:end-1])
     return strip.(split(value, "|"))
 end
 
-function _isTableSeparator(line::AbstractString)
-    cells = _tableCells(line)
+function _is_table_separator(line::AbstractString)
+    cells = _table_cells(line)
     !isempty(cells) && all(cell -> occursin(r"^:?-{3,}:?$", cell), cells)
 end
 
-function _isPipeTableHeader(lines, index::Int)
-    index < length(lines) && occursin("|", lines[index]) && _isTableSeparator(lines[index + 1])
+function _is_pipe_table_header(lines, index::Int)
+    index < length(lines) && occursin("|", lines[index]) && _is_table_separator(lines[index + 1])
 end
 
-function _formatWideTable(lines, width::Int)
-    headers = _tableCells(lines[1])
+function _format_wide_table(lines, width::Int)
+    headers = _table_cells(lines[1])
     column_count = length(headers)
     rows = Vector{Vector{String}}()
     for line in lines[3:end]
-        cells = _tableCells(line)
+        cells = _table_cells(line)
         isempty(cells) && continue
         values = if length(cells) == column_count
             cells
@@ -164,7 +176,7 @@ function _formatWideTable(lines, width::Int)
         for (index, value) in enumerate(values)
             label = index <= length(headers) ? headers[index] : "Column $(index)"
             prefix = "- **$(label):** "
-            wrapped = _wrapTerminalText(value, max(width - length(prefix), 10))
+            wrapped = _wrap_terminal_text(value, max(width - length(prefix), 10))
             push!(formatted, prefix * wrapped[1])
             for continuation in wrapped[2:end]
                 push!(formatted, "  " * continuation)
@@ -174,20 +186,20 @@ function _formatWideTable(lines, width::Int)
     return formatted
 end
 
-function _formatMarkdownForTerminal(text::AbstractString)
+function _format_markdown_for_terminal(text::AbstractString)
     width = max(displaysize(stdout)[2] - 2, 20)
     lines = split(String(text), "\n"; keepempty=true)
     formatted = String[]
     index = 1
     while index <= length(lines)
-        if _isPipeTableHeader(lines, index)
+        if _is_pipe_table_header(lines, index)
             stop = index + 2
             while stop <= length(lines) && occursin("|", lines[stop]) && !isempty(strip(lines[stop]))
                 stop += 1
             end
             table = lines[index:stop - 1]
             if maximum(length.(table)) > width
-                append!(formatted, _formatWideTable(table, width))
+                append!(formatted, _format_wide_table(table, width))
                 index = stop
                 continue
             end
@@ -199,52 +211,18 @@ function _formatMarkdownForTerminal(text::AbstractString)
 end
 
 """
-For stream mode, append each response chunk directly to the terminal.
+optimize the `memory` text: when it exceeds `L` characters, summarize it into about 300 words
 """
-function showStreamStringFromChannel(channel::Channel)
-    first_text = take!(channel)
-    println()
-    print("\e[32m¬ \e[0m")
-    print(first_text)
-    flush(stdout)
-    for chunk in channel
-        print(chunk)
-        flush(stdout)
-    end
-end
-
-
-"""
-for stream mode, take string from the channel, convert to markdown, and save as `memory` context
-"""
-function streamToMemory(m::AIBrain,channel::Channel)
-    first_text = take!(channel)
-    response = first_text
-
-    m.memory *= "ans: $(response)"
-    cache = "ans: $(response)"
-
-    for chunk in channel
-        m.memory *= "$(chunk)"
-        cache *= "$(chunk)"
-    end
-    push!(m.history["ans"], cache)
-end
-
-"""
-optimalize the `memory text`, when the memory words length exceeds 3000 words,  summary it into 300 words
-"""
-function checkMemory!(m::AIBrain,L = 3000)
+function check_memory!(m::AIBrain, L = 3000)
     if length(m.memory) > L
-        tmpBrain = AIBrain(api=AI_API_KEY,prompt = "summary below into 300 words:")
-        m.memory = tmpBrain( m.memory) |> string;
+        summarizer = AIBrain(model = m.model, prompt = "Summarize the following in about 300 words:", stream = false, timeout = m.timeout, terminal_hint = false)
+        m.memory = _complete(summarizer, m.memory)
     end
     return nothing
-end;
+end
 
-MD = Markdown.parse
-Base.show(io::IO, ::MIME"text/plain", m::AIBrain) = begin
-    MD("""
+const MD = Markdown.parse
+Base.show(io::IO, ::MIME"text/plain", m::AIBrain) = show(io, MIME"text/plain"(), MD("""
 $(m.model.model)
 
 \n for more \n
@@ -252,6 +230,5 @@ $(m.model.model)
 - history:  $(length(m.history["ans"])) conversation
 - prompt: $(m.prompt)
 
-""") |> show
-end
+"""))
 

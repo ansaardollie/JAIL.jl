@@ -10,25 +10,38 @@ The main macro, `@ai`, retrieves results from a large language model, while `@AI
 
 a REPL mode was also support. Press `}` to enter and backspace to exit
 
-## Local OpenAI-compatible models
+## Configuration
 
-For a local server exposing `/v1/chat/completions` and `/v1/models`, set the server URL in
-`AskAI_config`, using `key@url` in its third field:
+Set these environment variables before `using AskAI` (e.g. in `startup.jl` or your shell):
+
+| Variable | Meaning |
+|---|---|
+| `ASK_AI_PROVIDER` | `gemini`, `ollama`, `openai` or `openai-compatible` |
+| `ASK_AI_MODEL` | model name, e.g. `gpt-oss-20b` |
+| `ASK_AI_BASE_URL` | server URL, with or without `/v1`; optional for `ollama` and `openai` |
+| `ASK_AI_API_KEY` | API key; optional for local servers. `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY` |
 
 ```julia
-ENV["AskAI_config"] = "openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000"
+ENV["ASK_AI_PROVIDER"] = "openai-compatible"
+ENV["ASK_AI_MODEL"] = "gpt-oss-20b"
+ENV["ASK_AI_BASE_URL"] = "http://localhost:8000"
 
 using AskAI
-AskAI.avaliableModels()
+available_models()
 @ai "Explain Julia multiple dispatch in one sentence."
 ```
 
-Put the optional key and URL together as `key@url` in the third field. For an unauthenticated
-server, use `@url`. A URL-only third field is also supported and falls back to `AskAI_key`.
-The provider accepts a bare hostname as well as a full URL and appends `/v1` automatically.
+or at runtime, where omitted keywords fall back to the variables above:
+
+```julia
+setapi("ollama", "qwen2.5:72b")
+setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", api = "local-key")
+```
+
+The old `ENV["AskAI_config"] = "provider|model|key@url"` form still works but is deprecated.
 Use `AskAI.Brain.stream = false` to make a non-streaming request.
 AskAI also includes the current terminal dimensions in each prompt and asks the model to wrap
-output to the available width.
+output to the available width (disable with `AskAI.Brain.terminal_hint = false`).
 When a Markdown table is still too wide, the terminal renderer converts it to wrapped labeled
 entries instead of allowing it to overflow.
 

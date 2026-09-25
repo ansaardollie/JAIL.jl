@@ -5,51 +5,45 @@ using ReplMaker: initrepl
 include("models.jl")
 include("brain.jl")
 
-prompt_to_get_code = "if the answer contains code, only output the raw code in julia"
+const DEFAULT_PROMPT = "if the answer contains code, only output the raw code in julia"
 
-AskAI_config="provider|model|apiOrURL"
+const PROVIDERS = ["gemini", "ollama", "openai", "openai-compatible"]
 
-# AI_API_KEY = "API key not set"
+const CONFIG_HELP = """
+AskAI is not configured. Set these environment variables before `using AskAI`:
 
-function __init__()
-    global AI_Provider,AI_Model,AI_URL_Or_API
+| Variable | Meaning |
+|---|---|
+| `ASK_AI_PROVIDER` | one of $(join("`" .* PROVIDERS .* "`", ", ")) |
+| `ASK_AI_MODEL` | model name, e.g. `gemini-2.0-flash`, `qwen2.5:72b`, `gpt-4o-mini` |
+| `ASK_AI_BASE_URL` | server URL; optional for `ollama` (`http://localhost:11434`) and `openai` (`https://api.openai.com`) |
+| `ASK_AI_API_KEY` | API key; optional for local servers. `openai` also reads `OPENAI_API_KEY`, `gemini` reads `GEMINI_API_KEY` |
 
-    ######################################
-    # check for the required AI_API_KEY  #
-    ######################################
-    if haskey(ENV, "AskAI_config")
-        setapi(ENV["AskAI_config"])
-    else
-        msg = """
-AskAI_config is needed. please set it as an environment variable, follow the rule: "provider|model|api" :
+or configure it at runtime, where omitted keywords fall back to the variables above:
 ```julia
-# for Gemini
-ENV["AskAI_config"]="Gemini|gemini-2.0-flash|1234567890abcdef1234567890abcdef"
-
-# for ollama
-ENV["AskAI_config"]="ollama|qwen2.5:72b|http://localhost:11434"
-
-# for a local OpenAI-compatible server
-ENV["AskAI_config"]="openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000"
-# A URL-only third field uses ENV["AskAI_key"] as a backward-compatible fallback.
-
-```
-
-or set it through function `setapi()`
-```julia
-$(@__MODULE__).setapi("Gemini|gemini-2.0-flash|1234567890abcdef1234567890abcdef")
-# or
-$(@__MODULE__).setapi("ollama|qwen2.5:72b|http://localhost:11434")
-# or a local OpenAI-compatible server using key@url in the third field
-$(@__MODULE__).setapi("openai-compatible|gpt-oss-20b|your-local-api-key@http://localhost:8000")
+AskAI.setapi("ollama", "qwen2.5:72b")
+AskAI.setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000", api = "local-key")
 ```
 """
-        setapi("Gemini|noModel|noAPI|")
-        display(Markdown.parse(msg))
+
+const Brain = AIBrain(model = NotConfigured(), prompt = DEFAULT_PROMPT)
+
+function __init__()
+    try
+        if haskey(ENV, "ASK_AI_PROVIDER")
+            setapi(ENV["ASK_AI_PROVIDER"], get(ENV, "ASK_AI_MODEL", ""))
+        elseif haskey(ENV, "AskAI_config")
+            @warn "ENV[\"AskAI_config\"] is deprecated, set ASK_AI_PROVIDER, ASK_AI_MODEL, ASK_AI_BASE_URL and ASK_AI_API_KEY instead."
+            setapi(ENV["AskAI_config"])
+        else
+            display(Markdown.parse(CONFIG_HELP))
+        end
+    catch err
+        @error "AskAI configuration from the environment failed; call AskAI.setapi to configure it." exception = err
     end
 
     isinteractive() || return
-    initrepl(s -> Main.eval(Meta.parse("AskAI.@ai \"$s\""));
+    initrepl(s -> :($(@__MODULE__).Brain($s));
              prompt_text="ask ai> ",
              prompt_color=104,
              start_key='}',
@@ -61,37 +55,70 @@ end
 
 """
 ```julia
-setapi("ollama|modelName|URL")
-setapi("gemini|modelName|api")
-setapi("openai-compatible|modelName|key@URL")
+setapi(provider, model; url = nothing, api = nothing)
+```
+Configure the provider and clear the conversation (see `reset`). `url` and `api` that are `nothing` fall back to `ENV["ASK_AI_BASE_URL"]`
+and `ENV["ASK_AI_API_KEY"]`, then to provider defaults (see `AskAI.CONFIG_HELP`).
+```julia
+setapi("ollama", "qwen2.5:72b")
+setapi("gemini", "gemini-2.0-flash"; api = "your-key")
+setapi("openai", "gpt-4o-mini")  # reads OPENAI_API_KEY
+setapi("openai-compatible", "gpt-oss-20b"; url = "http://localhost:8000")
 ```
 """
-function setapi( api::String )
-    provider, model, apiOrURL = split(api,"|")
-    provider = lowercase(provider)
-    @assert lowercase(provider) in ["gemini", "ollama", "openai", "openai-compatible"]
+function setapi(provider::AbstractString, model::AbstractString; url = nothing, api = nothing)
+    provider = lowercase(strip(provider))
+    provider in PROVIDERS || throw(ArgumentError("unknown provider \"$(provider)\", expected one of: $(join(PROVIDERS, ", "))"))
+    model = String(strip(model))
+    url = String(something(url, get(ENV, "ASK_AI_BASE_URL", provider == "openai" ? get(ENV, "OPENAI_BASE_URL", "") : "")))
+    api = String(something(api, get(ENV, "ASK_AI_API_KEY",
+        provider == "openai" ? get(ENV, "OPENAI_API_KEY", "") :
+        provider == "gemini" ? get(ENV, "GEMINI_API_KEY", "") : "")))
     if provider == "gemini"
-        global Brain = AIBrain( model = Gemini(model,apiOrURL), prompt = prompt_to_get_code  )
+        Brain.model = Gemini(model, api)
     elseif provider == "ollama"
-        global Brain = AIBrain( model = ollama(model,apiOrURL), prompt = prompt_to_get_code  )
+        Brain.model = Ollama(model, isempty(url) ? "http://localhost:11434" : url)
     else
-        config = split(apiOrURL, "@"; limit=2)
-        api = length(config) == 2 ? config[1] : get(ENV, "AskAI_key", "")
-        baseurl = length(config) == 2 ? config[2] : apiOrURL
-        global Brain = AIBrain( model = OpenAICompatible(model=model, baseurl=baseurl, api=api), prompt = prompt_to_get_code  )
+        isempty(url) && provider == "openai" && (url = "https://api.openai.com")
+        Brain.model = OpenAICompatible(model=model, url=url, api=api)
     end
+    reset()
+    return nothing
+end
+
+"""
+Deprecated `"provider|model|apiOrURL"` form; for OpenAI-compatible providers the third field is `key@url`.
+"""
+function setapi(config::AbstractString)
+    Base.depwarn("setapi(\"provider|model|apiOrURL\") is deprecated, use setapi(provider, model; url, api).", :setapi)
+    parts = split(config, "|")
+    length(parts) == 3 || throw(ArgumentError("expected \"provider|model|apiOrURL\", got $(length(parts)) field(s)"))
+    provider, model, apiOrURL = String.(strip.(parts))
+    provider = lowercase(provider)
+    if provider == "gemini"
+        return setapi(provider, model; url = "", api = apiOrURL)
+    elseif provider == "ollama"
+        return setapi(provider, model; url = apiOrURL, api = "")
+    end
+    config = split(apiOrURL, "@"; limit=2)
+    api = length(config) == 2 ? String(config[1]) : get(ENV, "AskAI_key", "")
+    url = length(config) == 2 ? String(config[2]) : apiOrURL
+    return setapi(provider, model; url = url, api = api)
 end
 
 
 """
-Reset the AskAI, it will remove the conversation history, memory, prompt... and everything as default defined
+Clear the conversation: history, memory and RAG context. The provider, prompt, and
+`stream`/`timeout` settings are kept.
 ```julia
 AskAI.reset()
 ```
 """
 function reset()
-   global Brain = AIBrain(model = Brain.model,prompt = Brain.prompt)
-
+    Brain.memory = ""
+    Brain.rag = ""
+    foreach(empty!, values(Brain.history))
+    return nothing
 end
 
 
@@ -105,34 +132,28 @@ get the answer from the AI
 ```
 """
 macro ai(expr)
-    if isa(expr,String)
-        return  :(Brain($expr))
+    return :(Brain($(_question_expr(expr))))
+end
+
+# `@ai "a" + "b"` concatenates the parts; anything else is converted with `string`
+function _question_expr(expr)
+    if Meta.isexpr(expr, :call) && expr.args[1] == :+
+        return :(string($(esc.(expr.args[2:end])...)))
     end
-
-    # Create a list to hold the concatenated parts
-    parts = []
-
-    # Iterate over the arguments of the expression
-    for arg in expr.args
-        # Push each argument to the parts list
-        push!(parts, esc(arg))
-    end
-
-    # Create the expression to call f with the concatenated string
-    return :(Brain(string($(Expr(:call, Symbol("string"), parts...)))))
+    return :(string($(esc(expr))))
 end
 
 
 """
-execute the string as code
+execute the string as code in `Main.playground`
 
 ```julia
-"1 + 1" |> AskAI.exe
+"1 + 1" |> AskAI.run_code
 
-(@ai "1 + 1") |> AskAI.exe
+(@ai "1 + 1") |> AskAI.run_code
 ```
 """
-exe(x) = include_string(Main.playground,replace(string(x), "```julia" => "", "```" => ""))
+run_code(x) = include_string(Main.playground,replace(string(x), "```julia" => "", "```" => ""))
 
 
 """
@@ -148,6 +169,10 @@ the conversation history will stored in the `AskAI.Brain.history`
 ```
 """
 macro AI(expr)
+    return :(_ask_and_run($(_question_expr(expr))))
+end
+
+function _ask_and_run(question::AbstractString)
     if !isdefined(Main, :playground)
         msg = """
 please run
@@ -157,15 +182,23 @@ module playground end
 to add the module to the Main scope, which will be used by @AI to call julia code
 """
         Markdown.parse(msg) |> display
-    else
-        # does not support stream mode
-        # tmp = Brain.stream
-        Brain.stream = false
-        :( exe($(@ai($(expr)))))
-        # Brain.stream = tmp; # recover the stream setting
-        # res
+        return nothing
     end
+    stream = Brain.stream
+    Brain.stream = false # the code is executed, not displayed, so streaming is pointless
+    try
+        Brain(question)
+    finally
+        Brain.stream = stream
+    end
+    return run_code(Brain.history["ans"][end])
 end
 
-export setAPI, @ai, @AI, avaliableModels, changeModels!
+@deprecate avaliableModels(args...; kws...) available_models(args...; kws...)
+@deprecate changeModels!(m, model) change_model!(m, model)
+@deprecate exe(x) run_code(x) false
+Base.@deprecate_binding modelProvider ModelProvider false
+Base.@deprecate_binding ollama Ollama false
+
+export setapi, @ai, @AI, available_models, change_model!
 end
