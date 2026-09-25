@@ -72,6 +72,17 @@ end
 avaliableModels(;kws...) = avaliableModels(Brain.model;kws...)
 
 """
+throw an error if the model provider still holds placeholder or empty config values
+"""
+function checkConfig(m::modelProvider)
+    target = m isa Gemini ? m.api : m.url
+    if isempty(strip(m.model)) || m.model == "noModel" || isempty(strip(target)) || target == "noAPI"
+        error("AskAI is not configured. Set ENV[\"AskAI_config\"] before loading, or call AskAI.setapi(\"provider|model|apiOrURL\").")
+    end
+    return nothing
+end
+
+"""
 warp question into json data
 """
 function question2JSONString(m::modelProvider, question::AbstractString)

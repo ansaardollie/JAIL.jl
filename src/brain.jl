@@ -18,12 +18,13 @@ end
 
 
 (m::AIBrain)( question::AbstractString ) = begin
+    checkConfig(m.model)
     headers = Dict("Content-Type" => "application/json")
     url = getRESTURL(m.model)
     body = question2JSONString(m.model,question)
     if !m.stream
         try
-            resp = HTTP.post(url,body=body, headers=headers, timeout=m.timeout)
+            resp = HTTP.post(url, headers, body; read_idle_timeout=m.timeout, connect_timeout=m.timeout, retry=false)
             if resp.status == 200
                 # text = JSON3.read(resp.body)[:candidates][1][:content][:parts][1]["text"]
                 text = getAnswer(m.model, resp)
@@ -35,9 +36,8 @@ end
             else
                 return "respond code: $(resp.status)🔗🚫"
             end
-        catch error
-            @error "Unexpected response,Please check the model"
-            Brain
+        catch err
+            error("AskAI request failed, please check the config (provider|model|apiOrURL): $(sprint(showerror, err))")
         end
     else
         ##########################
@@ -50,13 +50,15 @@ end
         channel = Channel{String}(3000)
         channel2 = Channel{String}(3000)
 
-        @async HTTP.open(:POST, url, headers=headers, timeout=m.timeout) do io
+        @async try
+          HTTP.open(:POST, url, headers; read_idle_timeout=m.timeout, connect_timeout=m.timeout, retry=false) do io
             write(io, body)
             HTTP.closewrite(io)
             r = HTTP.startread(io)
+            r.status == 200 || error("HTTP $(r.status): $(String(read(io)))")
             EOF_signal = 0
             last_str="EOF"
-            while (EOF_signal > 10) || !eof(io)
+            while EOF_signal <= 10 && !eof(io)
                 chunk = String(readavailable(io))
                 lines = String.(filter(!isempty, split(chunk, "\n")))
                 for line in lines
@@ -71,8 +73,14 @@ end
                 end
             end
             HTTP.closeread(io)
-            isopen(channel) && close(channel);
-            isopen(channel2) && close(channel2);
+          end
+          isopen(channel) && close(channel);
+          isopen(channel2) && close(channel2);
+        catch err
+            # closing with the exception makes take! in the main task rethrow instead of blocking
+            ex = ErrorException("AskAI request failed, please check the config (provider|model|apiOrURL): $(sprint(showerror, err))")
+            close(channel, ex)
+            close(channel2, ex)
         end
         showStreamStringFromChannel(channel) # show in the terminal
         streamToMemory(m,channel2)
