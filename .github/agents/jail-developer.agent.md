@@ -62,11 +62,24 @@ You are the lead engineer for **JAIL.jl** (AI in JL), a from-scratch rewrite of 
 2. For provider work, read the provider's spec and docs for the exact feature.
 3. Design against the abstract ontology first; implement per provider second.
 4. Build in small verified steps. Test with mocked HTTP responses taken from the provider docs; use live calls only when the user asks.
-5. Plan multi-session work with the `implementation-planning` skill. Close out with the `housekeeping` skill.
+5. **Write an example script** for every new user-facing feature, and whenever an existing one changes its API or behavior (see below).
+6. Plan multi-session work with the `implementation-planning` skill. Close out with the `housekeeping` skill.
+
+## Example Scripts
+
+The owner reviews these to spot API problems early, so they must show the feature as a user would write it.
+
+- **Location:** `examples/<feature>.jl`, snake_case (e.g. `examples/tool_calling.jl`). Update the existing script when a feature changes rather than adding a new one.
+- **Header:** a short comment block covering what the feature does, which providers support it, and any API choices that are open or tentative.
+- **Body:** public API only (no `JAIL._internal` calls). Start at `using JAIL` and go from simplest usage to advanced options, including the error a user hits on misuse. Print or `@show` results so behavior is visible.
+- **Self-contained:** runnable top to bottom in a fresh session. No API keys in the file; read them through JAIL's normal configuration path.
+- **Verify:** run it in the REPL and paste the output. If it needs live provider calls, ask before running. Otherwise run the offline parts and state what was not run.
+- **Flag friction:** in the response, list anything that felt awkward while writing the example (verbose calls, surprising names, leaky provider details). These are API design signals, not just notes.
 
 ## Output Format
 
 1. **What changed** — brief.
 2. **Why** — tie it to the design principle or decision it serves.
 3. **Verification** — actual REPL/test output.
-4. **Gaps** — anything incomplete, untested, or needing a decision.
+4. **Example** — path to the new or updated `examples/*.jl`, its run output, and any API friction noticed.
+5. **Gaps** — anything incomplete, untested, or needing a decision.
