@@ -33,10 +33,12 @@ chat> Tell me a long story
 
 ### Streaming
 
-With `stream = true` in the `[JAIL]` Preferences, replies stream in as raw text (`**`, code
-fences and all), then are redrawn as Markdown once complete. For a reply taller than the
-terminal, the raw lines that already scrolled off stay in the scrollback above the rendered
-reply. Without the Preference, `thinking…` shows until the whole reply is ready.
+With `stream = true` in the `[JAIL]` Preferences, a reply streams in as raw text on the
+terminal's alternate screen (like `less`), under your prompt. When it's complete the normal
+screen comes back and only the Markdown rendering is printed, so the streamed text never ends
+up in the REPL output or scrollback. If the request fails or you press Ctrl-C, the normal screen
+comes back with just the error. Without the Preference, `thinking…` shows until the whole reply
+is ready.
 
 ```toml
 [JAIL]

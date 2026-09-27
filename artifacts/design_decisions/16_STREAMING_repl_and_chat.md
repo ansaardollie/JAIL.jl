@@ -65,6 +65,18 @@ the screen ends with the rendered reply and raw lines that scrolled off stay in 
 Also fixed: tabs counted as width 0 in `_rows_above_cursor`; they now advance to the next
 8-column stop.
 
+## Amendment 2 (2026-09-28, user request) — supersedes the redraw above
+
+"Is there a way to clear all the streaming output once the final output is ready so that the
+displayed output is the only thing in the repl output". Scrolled-off lines can't be erased and
+`\e[3J` would wipe the user's whole scrollback (not offered). User chose (over: hybrid, switch
+only when the text would overflow) **always stream on the alternate screen**: at the first delta
+`thinking…` is cleared and `\e[?1049h\e[H\e[2J` enters the alternate screen, which shows
+`chat> <prompt>` then the raw text; at the end (or on error / Ctrl-C, in a `finally`)
+`\e[?1049l` restores the REPL screen and only the Markdown rendering is printed.
+`_rows_above_cursor` and the row-count redraw were removed. Non-TTY output still streams raw.
+Consequence: the partial text of a failed stream is no longer visible afterwards.
+
 ## Revisit Trigger
 
 Redraw glitches reported in real terminals, tool-call streaming (needs argument deltas), or a

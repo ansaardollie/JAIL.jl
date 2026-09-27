@@ -64,49 +64,38 @@ function _stream_pref()
     return v
 end
 
-# Terminal rows between the start of `text` (printed from column 1) and the cursor after it.
-function _rows_above_cursor(text::AbstractString, cols::Integer)
-    function rows(line)
-        w = 0
-        for c in line
-            w = c == '\t' ? (w ÷ 8 + 1) * 8 : w + textwidth(c)
-        end
-        return max(1, cld(w, cols))
-    end
-    lines = split(text, '\n')
-    return sum(rows, lines[1:end-1]; init = 0) + rows(lines[end]) - 1
-end
+const _ALT_SCREEN_ON = "\e[?1049h\e[H\e[2J"
+const _ALT_SCREEN_OFF = "\e[?1049l"
 
-# Streams raw text, then replaces it with the Markdown rendering. Raw rows that scrolled off the
-# top can't be erased, so a tall reply leaves its first raw lines in the scrollback.
-function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY,
-                    screen = tty ? displaysize(io) : (24, 80))
+# On a terminal the reply streams on the alternate screen (like `less`), which never enters the
+# scrollback; switching back restores the REPL screen and only the Markdown rendering is printed.
+function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     s = active_session()
     s.model === nothing && throw(ArgumentError(
         "session \"$(s.name)\" has no model; choose one in the `|` mode with `use provider/model` or `select`"))
     stream = _stream_pref() && _supports_streaming(s.model.provider)
-    waiting = Ref(tty)
+    waiting, alt = Ref(tty), Ref(false)
     tty && printstyled(io, "thinking…"; color = :light_black)
     stop_waiting() = waiting[] && (print(io, "\r\e[2K"); waiting[] = false)
-    shown = IOBuffer()
-    on_text = stream ? (t -> (stop_waiting(); print(io, t); write(shown, t))) : nothing
-    reply = try
-        _chat!(s, line; on_text)
-    catch
+    function show_delta(t)
         stop_waiting()
-        position(shown) > 0 && println(io)
-        rethrow()
+        if tty && !alt[]
+            print(io, _ALT_SCREEN_ON)
+            alt[] = true
+            printstyled(io, _CHAT_PROMPT, line, "\n\n"; color = :light_black)
+        end
+        print(io, t)
     end
-    stop_waiting()
-    raw = String(take!(shown))
-    isempty(raw) && return _render_reply(io, reply)
-    if tty
-        up = min(_rows_above_cursor(raw, screen[2]), screen[1] - 1)
-        print(io, up > 0 ? "\e[$(up)A" : "", "\r\e[J")
-        return _render_reply(io, reply)
+    reply = try
+        _chat!(s, line; on_text = stream ? show_delta : nothing)
+    finally
+        stop_waiting()
+        alt[] && print(io, _ALT_SCREEN_OFF)
     end
-    endswith(raw, '\n') || println(io)
-    _render_stop(io, reply)
+    (tty || !stream) && return _render_reply(io, reply)
+    # Not a terminal: the streamed raw text stays as printed.
+    endswith(string(reply), '\n') || println(io)
+    return _render_stop(io, reply)
 end
 
 function _chat_command(line::AbstractString; io::IO = stdout)

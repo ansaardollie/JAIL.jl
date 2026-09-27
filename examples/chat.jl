@@ -94,7 +94,7 @@ delete_session!(s)
 # --- 5. The `}` chat REPL mode (interactive only) ---------------------------------------------
 #
 # Press `}` at an empty julia> prompt; backspace on an empty line returns. Replies render as
-# Markdown (with Preference `stream = true` they stream in as raw text first, then are redrawn); a line follows only if the reply didn't end normally. Enter sends; Ctrl+J (any
+# Markdown (with Preference `stream = true` they stream on the alternate screen first); a line follows only if the reply didn't end normally. Enter sends; Ctrl+J (any
 # terminal), Alt+Enter, or Shift/Ctrl/Cmd+Enter (where the terminal reports them; VS Code needs
 # the keybindings in docs/src/guide/repl.md) starts a new line.
 #
