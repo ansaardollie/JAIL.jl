@@ -6,6 +6,7 @@
 .Trashes
 vault/
 Manifest.toml
+LocalPreferences.toml
 .vscode/
 libs/
 vault/
