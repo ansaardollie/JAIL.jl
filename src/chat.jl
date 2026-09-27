@@ -34,30 +34,37 @@ function _chain_point(p::AbstractProvider, messages, store::Bool)
     return (reply.id, k)
 end
 
-function _send(p::AbstractProvider, req::_Request)
+function _send(p::AbstractProvider, req::_Request, on_text)
+    if req.stream
+        st = _stream_state(p, req)
+        _post_sse(data -> _stream_event!(st, data, on_text), p, _request_url(p), _request_body(p, req))
+        return _stream_finish(st, req)
+    end
     json = _post_json(p, _request_url(p), _request_body(p, req))
     return _parse_reply(p, req, json)
 end
 
 # The core every surface calls: one request for the given history, no session involved.
 # Continues from a stored reply (previous_response_id / previous_interaction_id) when possible.
+# With `on_text`, streams (if the provider can) and calls `on_text(delta)` per text chunk.
 function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
-                   system::Union{Nothing,AbstractString}; max_tokens = nothing)
+                   system::Union{Nothing,AbstractString}; max_tokens = nothing, on_text = nothing)
     p = model.provider
     n, store = _max_tokens(p, max_tokens), _store_requests()
-    full = _Request(model, messages, system, n, store, nothing)
+    stream = on_text !== nothing && _supports_streaming(p)
+    full = _Request(model, messages, system, n, store, nothing, stream)
     chain = _chain_point(p, messages, store)
     reply = if chain === nothing
-        _send(p, full)
+        _send(p, full, on_text)
     else
         id, k = chain
         try
-            _send(p, _Request(model, messages[k+1:end], system, n, store, id))
+            _send(p, _Request(model, messages[k+1:end], system, n, store, id, stream), on_text)
         catch e
             # The stored reply expired or was deleted: fall back to replaying everything.
             (e isa _APIError && e.status in (400, 404)) || rethrow()
             @debug "JAIL: previous id $id rejected, replaying full history" exception = e
-            _send(p, full)
+            _send(p, full, on_text)
         end
     end
     if store && _supports_chaining(p) && reply.id !== nothing
@@ -67,8 +74,8 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
 end
 
 """
-    chat!(session::Session, prompt; max_tokens = nothing) -> AssistantMessage
-    chat!(prompt; max_tokens = nothing)
+    chat!(session::Session, prompt; max_tokens = nothing, stream = false) -> AssistantMessage
+    chat!(prompt; max_tokens = nothing, stream = false)
 
 Send `prompt` (a `String` or [`UserMessage`](@ref)) as the next turn of `session`, or of the
 [`active_session`](@ref) when no session is given, with the session's `system` instructions.
@@ -84,14 +91,31 @@ Preference `store_requests = false` to send `store = false` and always replay th
 `max_tokens` caps the reply length. Without it the `max_tokens` Preference is used if set,
 else the provider's default (Anthropic requires one and uses 8192; others let the model decide).
 
+`stream = true` prints the reply's text to `stdout` as it arrives (all built-in providers can
+stream); the full reply is still returned. The `}` REPL mode streams when the Preference
+`stream = true` is set.
+
 ```julia
 s = Session("anthropic/claude-sonnet-4-5"; system = "Be terse.")
 reply = chat!(s, "Name a prime number.")
 string(reply)        # the text
 reply.stop_reason    # :end_turn
+chat!(s, "Another?"; stream = true)   # prints as it arrives
 ```
 """
-function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing)
+function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
+               stream::Bool = false)
+    stream || return _chat!(s, prompt; max_tokens)
+    ends_with_newline = Ref(true)
+    on_text = t -> (print(stdout, t); isempty(t) || (ends_with_newline[] = endswith(t, '\n')))
+    reply = _chat!(s, prompt; max_tokens, on_text)
+    ends_with_newline[] || println(stdout)
+    return reply
+end
+
+# `on_text` is the streaming hook shared by `chat!(; stream = true)` and the `}` REPL mode.
+function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
+                on_text = nothing)
     s.model === nothing && error(
         "session \"$(s.name)\" has no model; pick one with `set_model!(session, \"provider/model\")` " *
         "or `select_model!()`")
@@ -99,7 +123,7 @@ function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens
     isempty(strip(string(msg))) && throw(ArgumentError("prompt must not be empty"))
     push!(s.messages, msg)
     reply = try
-        _complete(s.model, s.messages, s.system; max_tokens)
+        _complete(s.model, s.messages, s.system; max_tokens, on_text)
     catch
         pop!(s.messages)
         rethrow()

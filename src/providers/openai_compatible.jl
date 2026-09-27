@@ -53,6 +53,7 @@ function _request_body(::_ChatCompletionsAPI, p, req::_Request)
     # Deprecated at OpenAI in favour of max_completion_tokens (#L42574-L42586), but it is the
     # field compatible servers accept. UNVERIFIED per server.
     req.max_tokens === nothing || (body["max_tokens"] = req.max_tokens)
+    req.stream && (body["stream"] = true)   # #L42521
     return body
 end
 
@@ -75,6 +76,45 @@ function _parse_reply(::_ChatCompletionsAPI, req::_Request, json)
     usage = _usage(get(json, "usage", nothing), "prompt_tokens", "completion_tokens")
     return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
                             id = get(json, "id", nothing))
+end
+
+# Chunks: CreateChatCompletionStreamResponse #L42853 (choices[].delta #L41065, finish_reason;
+# usage only with stream_options.include_usage, not sent). The stream ends with `data: [DONE]`.
+mutable struct _ChatStream
+    id::Any
+    content::IOBuffer
+    refusal::IOBuffer
+    finish_reason::Any
+    usage::Any
+end
+_stream_state(::_ChatCompletionsAPI, req::_Request) =
+    _ChatStream(nothing, IOBuffer(), IOBuffer(), nothing, nothing)
+
+function _stream_event!(st::_ChatStream, data::AbstractString, on_text)
+    strip(data) == "[DONE]" && return nothing
+    ev = JSON.parse(data)
+    st.id = something(get(ev, "id", nothing), Some(st.id))
+    u = get(ev, "usage", nothing)
+    u === nothing || (st.usage = u)
+    for c in something(get(ev, "choices", nothing), ())
+        d = something(get(c, "delta", nothing), Dict())
+        for (key, buf) in (("content", st.content), ("refusal", st.refusal))
+            t = get(d, key, nothing)
+            t isa AbstractString && !isempty(t) && (write(buf, t); on_text(t))
+        end
+        fr = get(c, "finish_reason", nothing)
+        fr === nothing || (st.finish_reason = fr)
+    end
+    return nothing
+end
+
+function _stream_finish(st::_ChatStream, req::_Request)
+    refusal = String(take!(st.refusal))
+    msg = Dict{String,Any}("content" => String(take!(st.content)),
+                           "refusal" => isempty(refusal) ? nothing : refusal)
+    json = Dict{String,Any}("id" => st.id, "usage" => st.usage,
+                            "choices" => [Dict("message" => msg, "finish_reason" => st.finish_reason)])
+    return _parse_reply(_ChatCompletionsAPI(), req, json)
 end
 
 function Base.show(io::IO, p::OpenAICompatible)

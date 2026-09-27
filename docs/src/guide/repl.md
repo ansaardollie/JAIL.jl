@@ -31,6 +31,18 @@ chat> Tell me a long story
 [stop reason: max_tokens]
 ```
 
+### Streaming
+
+With `stream = true` in the `[JAIL]` Preferences, replies stream in as raw text (`**`, code
+fences and all), then are redrawn as Markdown once complete. For a reply taller than the
+terminal, the raw lines that already scrolled off stay in the scrollback above the rendered
+reply. Without the Preference, `thinking…` shows until the whole reply is ready.
+
+```toml
+[JAIL]
+stream = true
+```
+
 ### Multi-line prompts
 
 Enter sends the prompt. To start a new line instead:

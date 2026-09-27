@@ -13,9 +13,10 @@
 # Preferences (in [JAIL] of LocalPreferences.toml):
 #   max_tokens = 2048        # default reply cap for every provider (else Anthropic: 8192, others: unset)
 #   store_requests = false   # OpenAI/Google: send store=false and the full history (default true)
+#   stream = true            # stream replies in the `}` REPL mode (default false)
 #
 # Open / tentative:
-# - No streaming, tools, images or reasoning yet. Reasoning/thought output (OpenAI reasoning
+# - No tools, images or reasoning yet. Reasoning/thought output (OpenAI reasoning
 #   items, Google thought steps and their signatures) is dropped, not replayed.
 # - OpenAI and Google continue from the last stored reply (`previous_response_id` /
 #   `previous_interaction_id` = `reply.id`) and send only the new turn; the full history is sent
@@ -53,6 +54,10 @@ if LIVE
     reply = chat!(s, "Now describe a forest in detail."; max_tokens = 20)
     @show reply.stop_reason                  # likely :max_tokens
 
+    # Stream: prints the text as it arrives, still returns the full reply
+    reply = chat!(s, "Name three trees, one per line."; stream = true)
+    @show reply.usage
+
     # Switch provider, keep the history:
     set_model!(s, "anthropic/claude-opus-5-5")
     @show chat!(s, "Colour of snow?")
@@ -89,7 +94,7 @@ delete_session!(s)
 # --- 5. The `}` chat REPL mode (interactive only) ---------------------------------------------
 #
 # Press `}` at an empty julia> prompt; backspace on an empty line returns. Replies render as
-# Markdown; a line follows only if the reply didn't end normally. Enter sends; Ctrl+J (any
+# Markdown (with Preference `stream = true` they stream in as raw text first, then are redrawn); a line follows only if the reply didn't end normally. Enter sends; Ctrl+J (any
 # terminal), Alt+Enter, or Shift/Ctrl/Cmd+Enter (where the terminal reports them; VS Code needs
 # the keybindings in docs/src/guide/repl.md) starts a new line.
 #

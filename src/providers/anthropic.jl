@@ -54,6 +54,7 @@ function _request_body(::Anthropic, req::_Request)
     body = Dict{String,Any}("model" => req.model.id, "messages" => messages,
                             "max_tokens" => req.max_tokens)
     req.system === nothing || (body["system"] = req.system)
+    req.stream && (body["stream"] = true)   # #L3287
     return body
 end
 
@@ -71,4 +72,54 @@ function _parse_reply(::Anthropic, req::_Request, json)
     usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L5172
     return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
                             id = get(json, "id", nothing))
+end
+
+# Stream events: claude-docs/claude-docs-15-streaming.md#L296-L306 (flow), #L318-L319 (error),
+# #L328-L336 (text_delta), #L539-L563 (full example). message_delta usage is cumulative.
+_supports_streaming(::Type{Anthropic}) = true
+
+mutable struct _AnthropicStream
+    id::Any
+    text::Dict{Int,IOBuffer}   # content block index => text (text blocks only)
+    stop_reason::Any
+    input_tokens::Int
+    output_tokens::Int
+    error::Union{Nothing,String}
+end
+_stream_state(::Anthropic, req::_Request) = _AnthropicStream(nothing, Dict(), nothing, 0, 0, nothing)
+
+function _stream_event!(st::_AnthropicStream, data::AbstractString, on_text)
+    ev = JSON.parse(data)
+    t = get(ev, "type", nothing)
+    if t == "message_start"
+        m = ev["message"]
+        st.id = get(m, "id", nothing)
+        u = something(get(m, "usage", nothing), Dict())
+        st.input_tokens = something(get(u, "input_tokens", 0), 0)
+        st.output_tokens = something(get(u, "output_tokens", 0), 0)
+    elseif t == "content_block_start"
+        get(ev["content_block"], "type", nothing) == "text" && (st.text[ev["index"]] = IOBuffer())
+    elseif t == "content_block_delta"
+        d = ev["delta"]
+        if get(d, "type", nothing) == "text_delta"
+            write(get!(IOBuffer, st.text, ev["index"]), d["text"])
+            on_text(d["text"])
+        end
+    elseif t == "message_delta"
+        st.stop_reason = something(get(ev["delta"], "stop_reason", nothing), Some(st.stop_reason))
+        u = get(ev, "usage", nothing)
+        u === nothing || (st.output_tokens = something(get(u, "output_tokens", st.output_tokens), 0))
+    elseif t == "error"
+        st.error = _error_message(get(ev, "error", nothing))
+    end
+    return nothing
+end
+
+function _stream_finish(st::_AnthropicStream, req::_Request)
+    st.error === nothing || error("anthropic stream error: ", st.error)
+    blocks = [Dict("type" => "text", "text" => String(take!(st.text[i]))) for i in sort!(collect(keys(st.text)))]
+    json = Dict{String,Any}("id" => st.id, "content" => blocks, "stop_reason" => st.stop_reason,
+                            "usage" => Dict("input_tokens" => st.input_tokens,
+                                            "output_tokens" => st.output_tokens))
+    return _parse_reply(req.model.provider, req, json)
 end

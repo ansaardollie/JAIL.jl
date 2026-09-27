@@ -78,6 +78,12 @@ Set the Preference `store_requests = false` to send `store = false` to OpenAI an
 always send the full history. Stored responses are kept by the provider (OpenAI: 30 days;
 Google: 55 days paid, 1 day free).
 
+## Streaming
+
+`chat!(s, prompt; stream = true)` prints the reply's text to `stdout` as it arrives and still
+returns the full [`AssistantMessage`](@ref). All built-in providers can stream. The `}` REPL
+mode streams when the Preference `stream = true` is set (see [REPL modes](repl.md)).
+
 ## Options and Preferences
 
 - `max_tokens` caps the reply length for one call: `chat!(s, "..."; max_tokens = 200)`.

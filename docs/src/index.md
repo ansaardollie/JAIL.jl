@@ -14,11 +14,11 @@ JAIL is an early rewrite. What works today:
   interactive selection with [`select_model!`](@ref).
 - **Sessions**: [`Session`](@ref)s that hold a conversation's model and history, with a
   `"default"` session started when JAIL loads.
-- **Chat**: [`chat!`](@ref) sends text turns on a session to any provider.
+- **Chat**: [`chat!`](@ref) sends text turns on a session to any provider, optionally streamed.
 - **REPL modes**: `|` for listing and switching providers, models and sessions, `}` for
   chatting with the active session's model.
 
-Not implemented yet: streaming, tool calling, images, reasoning output, the agentic (`&`) REPL
+Not implemented yet: tool calling, images, reasoning output, the agentic (`&`) REPL
 mode, and one-shot functions for text, code generation and extraction.
 
 ## Quick start

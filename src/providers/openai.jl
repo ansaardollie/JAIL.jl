@@ -39,6 +39,10 @@ _wire(::OpenAI) = _ResponsesAPI()
 _request_url(p::AbstractOpenAIProvider) = _request_url(_wire(p), p)
 _request_body(p::AbstractOpenAIProvider, req::_Request) = _request_body(_wire(p), p, req)
 _parse_reply(p::AbstractOpenAIProvider, req::_Request, json) = _parse_reply(_wire(p), req, json)
+_stream_state(p::AbstractOpenAIProvider, req::_Request) = _stream_state(_wire(p), req)
+
+# Both wire formats stream (`stream: true`): Responses #L45451 via ResponseProperties, Chat #L42331
+_supports_streaming(::Type{<:AbstractOpenAIProvider}) = true
 
 # openapi/api_spec.yaml#L45529-L45538 (store, default true)
 _has_store_field(::Type{OpenAI}) = true
@@ -57,6 +61,7 @@ function _request_body(::_ResponsesAPI, p, req::_Request)
     req.max_tokens === nothing || (body["max_output_tokens"] = req.max_tokens)  # #L45590
     _has_store_field(p) && (body["store"] = req.store)
     req.previous_id === nothing || (body["previous_response_id"] = req.previous_id)
+    req.stream && (body["stream"] = true)
     return body
 end
 
@@ -92,4 +97,33 @@ end
 function _incomplete_reason(details)
     r = details === nothing ? nothing : get(details, "reason", nothing)
     return r == "max_output_tokens" ? :max_tokens : r == "content_filter" ? :content_filter : :other
+end
+
+# Stream events: response.output_text.delta #L70512, response.refusal.delta #L69679; the terminal
+# response.completed #L67455 / .incomplete #L68572 / .failed #L67945 carry the full Response;
+# error #L67898. core-concepts/openai-core-concepts-04-streaming-20260926.md#L142-L228
+mutable struct _ResponsesStream
+    final::Any
+    error::Union{Nothing,String}
+end
+_stream_state(::_ResponsesAPI, req::_Request) = _ResponsesStream(nothing, nothing)
+
+function _stream_event!(st::_ResponsesStream, data::AbstractString, on_text)
+    ev = JSON.parse(data)
+    t = get(ev, "type", nothing)
+    if t in ("response.output_text.delta", "response.refusal.delta")
+        on_text(ev["delta"])
+    elseif t in ("response.completed", "response.incomplete", "response.failed")
+        st.final = ev["response"]
+    elseif t == "error"
+        st.error = string(get(ev, "message", data))
+    end
+    return nothing
+end
+
+function _stream_finish(st::_ResponsesStream, req::_Request)
+    name = provider_name(req.model.provider)
+    st.error === nothing || error("$name stream error: ", st.error)
+    st.final === nothing && error("$name stream ended without a final response")
+    return _parse_reply(_ResponsesAPI(), req, st.final)
 end

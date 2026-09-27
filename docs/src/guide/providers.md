@@ -123,6 +123,7 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic 8192, others none) |
 | `store_requests` | `true` / `false` | by hand | OpenAI and Google store replies and continue from them (default `true`); `false` sends `store = false` and the full history |
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
+| `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |
 
 For example:
 

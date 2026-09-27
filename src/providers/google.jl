@@ -67,6 +67,7 @@ function _request_body(p::Google, req::_Request)
     # GenerationConfig.max_output_tokens #L5314
     req.max_tokens === nothing ||
         (body["generation_config"] = Dict("max_output_tokens" => req.max_tokens))
+    req.stream && (body["stream"] = true)   # CreateModelInteractionParams.stream #L3983
     return body
 end
 
@@ -91,4 +92,52 @@ function _parse_reply(::Google, req::_Request, json)
     usage = _usage(get(json, "usage", nothing), "total_input_tokens", "total_output_tokens")
     return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
                             id = get(json, "id", nothing))
+end
+
+# InteractionSseEvent (discriminator event_type): interaction.created / .status_update /
+# .completed, step.start / .delta / .stop, error. Text arrives as step.delta `{type: "text"}`
+# inside a model_output step. gemini-docs/gemini-docs-070-streaming.md#L133-L184
+_supports_streaming(::Type{Google}) = true
+
+mutable struct _GoogleStream
+    steps::Dict{Int,String}      # step index => step type
+    text::Dict{Int,IOBuffer}     # model_output step index => text
+    interaction::Any             # partial Interaction from interaction.created / .completed
+    status::Any
+    error::Union{Nothing,String}
+end
+_stream_state(::Google, req::_Request) = _GoogleStream(Dict(), Dict(), nothing, nothing, nothing)
+
+function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
+    ev = JSON.parse(data)
+    t = get(ev, "event_type", nothing)
+    if t == "step.start"
+        st.steps[ev["index"]] = string(get(ev["step"], "type", ""))
+    elseif t == "step.delta"
+        d = ev["delta"]
+        if get(d, "type", nothing) == "text" && get(st.steps, ev["index"], "model_output") == "model_output"
+            write(get!(IOBuffer, st.text, ev["index"]), d["text"])
+            on_text(d["text"])
+        end
+    elseif t in ("interaction.created", "interaction.completed")
+        st.interaction = ev["interaction"]
+        st.status = get(st.interaction, "status", st.status)
+    elseif t == "interaction.status_update"
+        st.status = get(ev, "status", st.status)
+    elseif t == "error"
+        st.error = _error_message(get(ev, "error", nothing))
+    end
+    return nothing
+end
+
+function _stream_finish(st::_GoogleStream, req::_Request)
+    st.error === nothing || error("google stream error: ", st.error)
+    i = something(st.interaction, Dict())
+    steps = [Dict("type" => "model_output",
+                  "content" => [Dict("type" => "text", "text" => String(take!(st.text[k])))])
+             for k in sort!(collect(keys(st.text)))]
+    json = Dict{String,Any}("id" => get(i, "id", nothing), "status" => st.status,
+                            "usage" => get(i, "usage", nothing), "steps" => steps,
+                            "errors" => get(i, "errors", nothing))
+    return _parse_reply(req.model.provider, req, json)
 end

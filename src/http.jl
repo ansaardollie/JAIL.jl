@@ -18,6 +18,22 @@ function _post_json(p::AbstractProvider, url::AbstractString, body)
     return JSON.parse(text)
 end
 
+# Server-sent events: `on_data(data::String)` per event. Error statuses arrive as a normal body.
+function _post_sse(on_data, p::AbstractProvider, url::AbstractString, body)
+    payload = JSON.json(body)
+    @debug "JAIL request (stream)" provider = provider_name(p) url body = payload
+    resp = HTTP.post(url, [_auth_headers(p); "Content-Type" => "application/json";
+                           "Accept" => "text/event-stream"], payload;
+                     status_exception = false,
+                     sse_callback = ev -> (@debug "JAIL event" ev.event ev.data; on_data(ev.data)))
+    if !(200 <= resp.status < 300)
+        text = String(resp.body)
+        @debug "JAIL response" provider = provider_name(p) status = resp.status body = text
+        throw(_api_error(p, resp.status, text))
+    end
+    return nothing
+end
+
 struct _APIError <: Exception
     status::Int
     msg::String
