@@ -9,6 +9,8 @@
 #
 # Open / tentative:
 # - Messages are added by `chat!` (see examples/chat.jl); this script keeps history empty.
+# - Built-in system instructions: their environment line is captured at session creation, so the
+#   "default" session (created by `using JAIL`) lists only packages loaded before JAIL.
 # - No tools field yet; tools will be attached to sessions later.
 # - Sessions stay registered (and in memory) until `delete_session!`.
 # - Provider server-side conversation state (e.g. OpenAI `previous_response_id`) isn't stored yet.
@@ -40,6 +42,14 @@ set_default_model!("openai/gpt-5")
 @show default_model()           # unchanged: set_model! only touches the session
 
 empty!(s)                       # clear history, keep model and system
+
+# --- System instructions -------------------------------------------------------------------
+
+# Without `system`, sessions get JAIL's REPL instructions plus an environment line:
+println(active_session().system)
+@show Session("openai/gpt-5"; name = "no-system", system = "").system   # opt out
+delete_session!("no-system")
+# Preference `system_prompt = "..."` replaces the instructions for new sessions ("" = none).
 
 # Menus for one session (needs a terminal and API keys):
 #   select_model!(s)

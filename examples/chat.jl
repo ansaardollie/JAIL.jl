@@ -4,7 +4,8 @@
 # instructions) to the session's model, appends the prompt and the reply to `session.messages`,
 # and returns the reply as an `AssistantMessage`. `chat!(prompt)` does the same on the active
 # session. Messages are provider-agnostic (`UserMessage`, `AssistantMessage`, made of
-# `TextPart`s), so a session can switch provider mid-conversation.
+# `TextPart`s), so a session can switch provider mid-conversation. In the REPL, press `}` for
+# the chat mode: each line is `chat!` on the active session (section 5).
 #
 # Providers: OpenAI (Responses), OpenAICompatible (Responses, or Chat Completions with
 # `api = :chat_completions`), Anthropic (Messages), Google (Interactions). Text only.
@@ -82,3 +83,23 @@ show_error(() -> AssistantMessage("x"; stop_reason = :stop))     # unknown stop 
 
 use_session!("default")
 delete_session!(s)
+
+# --- 5. The `}` chat REPL mode (interactive only) ---------------------------------------------
+#
+# Press `}` at an empty julia> prompt; backspace on an empty line returns. Replies render as
+# Markdown; a line follows only if the reply didn't end normally. Enter sends; Ctrl+J (any
+# terminal), Alt+Enter, or Shift/Ctrl/Cmd+Enter (where the terminal reports them; VS Code needs
+# the keybindings in docs/src/guide/repl.md) starts a new line.
+#
+#   chat> Explain this error:
+#         ERROR: MethodError: no method matching +(::String, ::Int64)
+#     You're adding a String and an Int; ...
+#   chat> Tell me a long story
+#     Once upon
+#   [stop reason: max_tokens]
+#   chat> /clear
+#   Cleared 4 messages from session "default"
+#
+# The same from code:
+#   chat!("How do I append to a vector?")     # active session
+#   empty!(active_session())                  # /clear

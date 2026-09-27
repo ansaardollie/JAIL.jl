@@ -2,6 +2,7 @@ module JAIL
 
 using HTTP: HTTP
 using JSON: JSON
+using Markdown: Markdown
 using Preferences: load_preference, set_preferences!, delete_preferences!
 using REPL: REPL
 using REPL.TerminalMenus: TerminalMenus, RadioMenu, request
@@ -26,10 +27,12 @@ include("providers/openai_compatible.jl")
 include("providers/anthropic.jl")
 include("providers/google.jl")
 include("configuration.jl")
+include("system_prompt.jl")
 include("session.jl")
 include("chat.jl")
 include("select.jl")
 include("repl/model_mode.jl")
+include("repl/chat_mode.jl")
 include("repl/install.jl")
 
 function __init__()

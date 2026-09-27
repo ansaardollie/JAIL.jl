@@ -20,6 +20,14 @@ In a plain terminal `julia` (not the agent's tool REPL):
    (arrow keys, Enter, `q`), then use Tab completion and exit with backspace.
 3. `select_model!()` and `select_model!(Anthropic())` from `julia>`.
 4. With the owner's approval, set `LIVE = true` in `examples/providers_and_models.jl` and run it.
+5. `}` chat mode (see `design_decisions/14_REPL_chat_mode.md`): prompt shows
+   `chat> `; a question renders as Markdown; the dim `thinking…` line is
+   erased; Ctrl-C mid-request prints "Interrupted…" and leaves `length(active_session().messages)`
+   unchanged; `/clear`, `/help`, Tab on `/`; Ctrl+J / Alt+Enter / Shift+Enter (with the VS Code
+   keybinding from `docs/src/guide/repl.md`) insert a new line and Enter sends it all.
+6. Julia 1.13 bracket auto-close still works in `julia>` with `}` bound to the chat mode: type
+   `Dict{` then `}` and check no doubled `}` (ReplMaker keeps the original binding for
+   non-empty lines; not verified).
 
 ## Why
 

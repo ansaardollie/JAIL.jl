@@ -122,6 +122,7 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
 | `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic 8192, others none) |
 | `store_requests` | `true` / `false` | by hand | Let OpenAI and Google store requests server-side (default `false`) |
+| `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
 
 For example:
 

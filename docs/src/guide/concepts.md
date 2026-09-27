@@ -55,8 +55,8 @@ The full list of keys is in [Preferences keys](providers.md#Preferences-keys).
 
 JAIL will be used in two ways that share the same code:
 
-- **REPL modes**: `|` for model selection (available now), `}` for asking questions and `&`
-  for agentic work with tools and code generation (both planned). Each mode's prompt shows the
+- **REPL modes**: `|` for model selection and `}` for chatting (both available now), and `&`
+  for agentic work with tools and code generation (planned). Each mode's prompt shows the
   model it is using.
 - **Functions** for one-shot text, generated Julia code, and extracting Julia objects from
   natural language (planned).

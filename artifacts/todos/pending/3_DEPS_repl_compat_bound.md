@@ -31,4 +31,7 @@ which is pointless if 1.10 can't install the package.
 
 ## Notes
 
+`Markdown = "1.11.0"` (added for the chat mode, same `Pkg.add` behaviour) has the same problem
+and should get the same treatment.
+
 If `julia` is raised to 1.11, `_menu_terminal()` can be reduced to `TerminalMenus.default_terminal()`.

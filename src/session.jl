@@ -16,6 +16,11 @@ already in use gets a suffix (`"refactor-2"`). Names may only contain letters, d
 
 `model` is `nothing` only for the `"default"` session JAIL starts when no default model is
 saved (see [`active_session`](@ref)).
+
+Without `system`, the session gets JAIL's built-in REPL instructions (be concise, fence code in
+```` ``` ```` blocks) plus a line describing the environment at creation (Julia version, OS,
+active project, packages loaded in `Main`). The Preference `system_prompt` replaces the
+instructions. Pass `system = ""` for no system instructions.
 """
 mutable struct Session
     const name::String
@@ -36,6 +41,7 @@ const _ACTIVE = Ref{Session}()
 function Session(model::AbstractModel; name::Union{Nothing,AbstractString} = nothing,
                  system::Union{Nothing,AbstractString} = nothing)
     name === nothing || _check_session_name(name)
+    system = system === nothing ? _default_system() : isempty(system) ? nothing : system
     return Session(_Register(), something(name, "session"), model, system)
 end
 Session(model::AbstractString; kwargs...) = Session(Model(model); kwargs...)
@@ -133,7 +139,13 @@ function _start_default_session!()
         @warn "JAIL: saved default model \"$saved\" can't be used; the default session has no model" exception = e
         nothing
     end
-    _ACTIVE[] = Session(_Register(), "default", model, nothing)
+    system = try
+        _default_system()
+    catch e
+        @warn "JAIL: the default session has no system instructions" exception = e
+        nothing
+    end
+    _ACTIVE[] = Session(_Register(), "default", model, system)
     return nothing
 end
 
@@ -163,6 +175,12 @@ Base.show(io::IO, s::Session) = print(io, "Session(", repr(s.name), ", ",
 function Base.show(io::IO, ::MIME"text/plain", s::Session)
     println(io, "Session ", repr(s.name))
     println(io, "  model:    ", something(_model_string(s), "none"))
-    println(io, "  system:   ", s.system === nothing ? "none" : repr(s.system))
+    println(io, "  system:   ", s.system === nothing ? "none" : _system_preview(s.system))
     print(io, "  messages: ", length(s.messages))
+end
+
+function _system_preview(text::AbstractString, n = 60)
+    line = first(split(text, '\n'))
+    short = length(line) <= n ? line : first(line, n - 1) * "…"
+    return short == text ? repr(text) : string(repr(short), " (", length(text), " chars)")
 end

@@ -10,6 +10,18 @@ function _install_repl_modes(repl)
              mode_name = "jail_model",
              completion_provider = FunctionCompletionProvider(_complete_model_mode),
              startup_text = false)
+    # ReplMaker warns that '}' (bracket auto-close) is "overwritten"; it still runs on non-empty lines.
+    Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+        chat = initrepl(_chat_mode_parser;
+                        repl,
+                        prompt_text = _CHAT_PROMPT,
+                        prompt_color = :cyan,
+                        start_key = '}',
+                        mode_name = "jail_chat",
+                        completion_provider = FunctionCompletionProvider(_complete_chat_mode),
+                        startup_text = false)
+        _add_newline_keys!(chat)
+    end
     _REPL_INSTALLED[] = true
     return nothing
 end

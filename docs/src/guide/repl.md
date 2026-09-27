@@ -1,7 +1,83 @@
-# The model REPL mode
+# REPL modes
 
-Press `|` at an empty `julia>` prompt to enter the model mode. Press backspace on an empty
-line to return to `julia>`. The prompt shows the [`active_session`](@ref) and its model:
+JAIL adds two modes to the Julia REPL. Both act on the [`active_session`](@ref):
+
+| Key | Mode | Prompt |
+|---|---|---|
+| `\|` | Model: providers, models, sessions | `(default: openai/gpt-5) model> ` |
+| `}` | Chat: talk to the model | `chat> ` |
+
+The model mode's prompt shows the active session and its model; the chat prompt is kept short
+so it doesn't crowd the conversation (use `|` then `st` to check the model).
+
+Press the key at an empty `julia>` prompt to enter a mode, and backspace on an empty line to
+return to `julia>`.
+
+## The chat mode
+
+Each line is sent with [`chat!`](@ref) as the next turn of the active session, so the
+conversation carries on across lines and stays in `session.messages`. The reply is rendered
+as Markdown. While waiting, a dim `thinking…` shows; Ctrl-C cancels the request and leaves the
+history unchanged. A line is printed after the reply only when it didn't end normally:
+
+```text
+chat> How do I append to a vector?
+  Use push!:
+
+  v = [1, 2]
+  push!(v, 3)
+chat> Tell me a long story
+  Once upon
+[stop reason: max_tokens]
+```
+
+### Multi-line prompts
+
+Enter sends the prompt. To start a new line instead:
+
+| Keys | Works in |
+|---|---|
+| Ctrl+J | every terminal |
+| Alt+Enter (Option+Enter) | terminals that send Alt as Meta (macOS: enable "Use Option as Meta key") |
+| Shift+Enter, Ctrl+Enter, Cmd+Enter | terminals that report them: kitty, WezTerm, iTerm2 with CSI u, xterm with `modifyOtherKeys` |
+
+Pasted multi-line text is inserted without being sent.
+
+The VS Code terminal sends a plain Enter for Shift/Ctrl/Cmd+Enter, so no program in it can tell
+them apart. Add these to your `keybindings.json` to make them send Alt+Enter, which the chat
+mode and the `julia>` prompt treat as a new line. Put them at the **end** of the file: a later
+entry wins, and `terminalFocus` keeps editor bindings (e.g. the Julia extension's Shift+Enter)
+unchanged.
+
+```json
+{ "key": "shift+enter", "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "\u001b\r" }, "when": "terminalFocus" },
+{ "key": "ctrl+enter", "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "\u001b\r" }, "when": "terminalFocus" },
+{ "key": "cmd+enter", "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "\u001b\r" }, "when": "terminalFocus" }
+```
+
+In other programs running in the terminal these keys then act as Alt+Enter.
+
+Lines starting with `/` are commands (Tab completes them):
+
+| Command | Does | Same as |
+|---|---|---|
+| `/clear` | Clear the active session's history | `empty!(active_session())` |
+| `/help` | Show help | |
+
+To switch model or session, use the model mode (`|`). With no model on the active session:
+
+```text
+chat> hi
+ERROR: session "default" has no model; choose one in the `|` mode with `use provider/model` or `select`
+```
+
+## The model mode
+
+Press `|` at an empty `julia>` prompt to enter the model mode. The prompt shows the
+[`active_session`](@ref) and its model:
 
 ```text
 (default: openai/gpt-5) model>
@@ -12,6 +88,8 @@ It shows `(default: no model) model> ` when the active session has no model yet.
 Every command calls the same public functions you can use from code; the table lists them.
 
 ## Commands
+
+In the model mode:
 
 | Command | Does | Same as |
 |---|---|---|
@@ -92,7 +170,7 @@ Tab completes:
 
 ## Turning the modes off
 
-The mode is installed when JAIL loads in an interactive REPL. To turn off all of JAIL's REPL
+The modes are installed when JAIL loads in an interactive REPL. To turn off all of JAIL's REPL
 modes, set `repl_modes = false` in the `[JAIL]` table of the active project's
 `LocalPreferences.toml`:
 

@@ -17,6 +17,7 @@ ReplMaker = "b873ce64-0db9-51f5-a568-4457d8e49576"
 [compat]
 HTTP = "2"
 JSON = "1"
+Markdown = "1.11.0"
 Preferences = "1.4"
 REPL = "1.11.0"
 ReplMaker = "0.2.7"

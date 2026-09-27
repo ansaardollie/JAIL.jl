@@ -13,11 +13,7 @@ const _MODEL_HELP = """
 
     Press backspace on an empty line to leave this mode."""
 
-function _model_prompt()
-    isassigned(_ACTIVE) || return "model> "
-    s = active_session()
-    return string("(", s.name, ": ", something(_model_string(s), "no model"), ") model> ")
-end
+_model_prompt() = isassigned(_ACTIVE) ? _session_label(active_session()) * " model> " : "model> "
 
 function _nargs(cmd, args, n::UnitRange)
     length(args) in n && return nothing
