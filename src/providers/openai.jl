@@ -42,6 +42,8 @@ _parse_reply(p::AbstractOpenAIProvider, req::_Request, json) = _parse_reply(_wir
 
 # openapi/api_spec.yaml#L45529-L45538 (store, default true)
 _has_store_field(::Type{OpenAI}) = true
+# previous_response_id #L69250-L69257; conversation-state doc #L554-L602
+_supports_chaining(::Type{OpenAI}) = true
 
 # POST /responses. openapi/api_spec.yaml#L21038, CreateResponse #L45451-L45600
 _request_url(::_ResponsesAPI, p) = p.base_url * "/responses"
@@ -54,6 +56,7 @@ function _request_body(::_ResponsesAPI, p, req::_Request)
     req.system === nothing || (body["instructions"] = req.system)          # #L45539
     req.max_tokens === nothing || (body["max_output_tokens"] = req.max_tokens)  # #L45590
     _has_store_field(p) && (body["store"] = req.store)
+    req.previous_id === nothing || (body["previous_response_id"] = req.previous_id)
     return body
 end
 
@@ -81,7 +84,8 @@ function _parse_reply(::_ResponsesAPI, req::_Request, json)
              status == "incomplete" ? _incomplete_reason(get(json, "incomplete_details", nothing)) :
              :other
     usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L70636
-    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage)
+    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
+                            id = get(json, "id", nothing))
 end
 
 # incomplete_details.reason, #L66944-L66965

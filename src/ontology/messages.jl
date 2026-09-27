@@ -54,12 +54,13 @@ const _STOP_REASONS = (:end_turn, :max_tokens, :stop_sequence, :tool_use, :refus
                       :content_filter, :other)
 
 """
-    AssistantMessage(text; model = nothing, stop_reason = nothing, usage = nothing)
+    AssistantMessage(text; model = nothing, stop_reason = nothing, usage = nothing, id = nothing)
     AssistantMessage(parts::Vector{<:AbstractContentPart}; ...)
 
 A turn written by the model. Replies from [`chat!`](@ref) carry the `model` that produced them,
-a `stop_reason` and the token `usage`. Hand-written ones (e.g. few-shot examples) may leave
-those as `nothing`.
+a `stop_reason`, the token `usage`, and the provider's `id` for the reply (OpenAI response id,
+Google interaction id, Anthropic message id). Hand-written ones (e.g. few-shot examples) may
+leave those as `nothing`.
 
 `stop_reason` is one of `:end_turn`, `:max_tokens`, `:stop_sequence`, `:tool_use`, `:refusal`,
 `:content_filter` or `:other`.
@@ -69,13 +70,15 @@ struct AssistantMessage <: AbstractMessage
     model::Union{Nothing,AbstractModel}
     stop_reason::Union{Nothing,Symbol}
     usage::Union{Nothing,Usage}
+    id::Union{Nothing,String}
     function AssistantMessage(content::Union{AbstractString,AbstractVector};
                               model::Union{Nothing,AbstractModel} = nothing,
                               stop_reason::Union{Nothing,Symbol} = nothing,
-                              usage::Union{Nothing,Usage} = nothing)
+                              usage::Union{Nothing,Usage} = nothing,
+                              id::Union{Nothing,AbstractString} = nothing)
         stop_reason === nothing || stop_reason in _STOP_REASONS || throw(ArgumentError(
             "stop_reason must be one of :$(join(_STOP_REASONS, ", :")); got :$stop_reason"))
-        return new(_parts(content), model, stop_reason, usage)
+        return new(_parts(content), model, stop_reason, usage, id === nothing ? nothing : String(id))
     end
 end
 

@@ -69,5 +69,6 @@ function _parse_reply(::Anthropic, req::_Request, json)
                                 if get(b, "type", nothing) == "text"]
     reason = get(_ANTHROPIC_STOP, something(get(json, "stop_reason", nothing), ""), :other)
     usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L5172
-    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage)
+    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
+                            id = get(json, "id", nothing))
 end

@@ -3,7 +3,8 @@
 [`chat!`](@ref) sends the next turn of a [`Session`](@ref):
 
 1. The prompt is appended to `session.messages` as a [`UserMessage`](@ref).
-2. The whole history and the session's `system` instructions go to the session's model.
+2. The history and the session's `system` instructions go to the session's model (see
+   [What gets sent](#What-gets-sent)).
 3. The reply is appended as an [`AssistantMessage`](@ref) and returned.
 
 If the request fails, the history is left as it was.
@@ -61,13 +62,28 @@ s.messages
 | `:content_filter` | The provider filtered the output. |
 | `:other` | Anything else. |
 
+## What gets sent
+
+`session.messages` is always the full conversation, but not every turn resends it:
+
+- **OpenAI and Google** store each reply server-side. The next turn sends only the new prompt
+  plus the stored reply's id (`previous_response_id` / `previous_interaction_id`, taken from
+  `reply.id`). The model may change between turns, as long as the provider stays the same.
+- The full history is sent instead when the history was changed since that reply (edited,
+  seeded, or `empty!`), the provider changed, or the stored reply is gone (the provider answers
+  HTTP 400/404; JAIL retries once with the full history).
+- **Anthropic and OpenAI-compatible servers** always get the full history.
+
+Set the Preference `store_requests = false` to send `store = false` to OpenAI and Google and
+always send the full history. Stored responses are kept by the provider (OpenAI: 30 days;
+Google: 55 days paid, 1 day free).
+
 ## Options and Preferences
 
 - `max_tokens` caps the reply length for one call: `chat!(s, "..."; max_tokens = 200)`.
   Without it, the `max_tokens` Preference applies to every provider if it's set. Otherwise
   Anthropic uses 8192 (it requires a value) and the other providers let the model decide.
-- OpenAI and Google keep requests server-side by default. JAIL keeps the history itself and
-  sends `store = false` unless the Preference `store_requests = true` is set.
+- `store_requests` (default `true`): see above.
 
 ```toml
 [JAIL]

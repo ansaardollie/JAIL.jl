@@ -13,7 +13,7 @@
 #   "default" session (created by `using JAIL`) lists only packages loaded before JAIL.
 # - No tools field yet; tools will be attached to sessions later.
 # - Sessions stay registered (and in memory) until `delete_session!`.
-# - Provider server-side conversation state (e.g. OpenAI `previous_response_id`) isn't stored yet.
+# - Sessions are not persisted across Julia restarts.
 
 using JAIL
 

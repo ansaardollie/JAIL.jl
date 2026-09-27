@@ -1,3 +1,7 @@
+> **Partly superseded by:** `15_MESSAGES_server_side_chaining.md` (`store_requests` now defaults
+> to true; OpenAI/Google chain via previous ids instead of always replaying the full history;
+> `AssistantMessage` gains `id`).
+
 # Decision: Message types, `chat!`, stop reasons, and request Preferences
 
 | Field | Value |

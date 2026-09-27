@@ -73,7 +73,8 @@ function _parse_reply(::_ChatCompletionsAPI, req::_Request, json)
              fr in ("tool_calls", "function_call") ? :tool_use :
              fr == "content_filter" ? :content_filter : :other
     usage = _usage(get(json, "usage", nothing), "prompt_tokens", "completion_tokens")
-    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage)
+    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
+                            id = get(json, "id", nothing))
 end
 
 function Base.show(io::IO, p::OpenAICompatible)

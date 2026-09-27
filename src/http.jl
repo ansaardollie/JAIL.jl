@@ -18,6 +18,12 @@ function _post_json(p::AbstractProvider, url::AbstractString, body)
     return JSON.parse(text)
 end
 
+struct _APIError <: Exception
+    status::Int
+    msg::String
+end
+Base.showerror(io::IO, e::_APIError) = print(io, e.msg)
+
 # OpenAI, Anthropic and Google all nest the human-readable message at `error.message`.
 function _api_error(p::AbstractProvider, status::Integer, body::AbstractString)
     msg = try
@@ -26,7 +32,7 @@ function _api_error(p::AbstractProvider, status::Integer, body::AbstractString)
     catch
         isempty(body) ? "(empty response body)" : body
     end
-    return ErrorException("$(provider_name(p)) API error (HTTP $status): $msg")
+    return _APIError(status, "$(provider_name(p)) API error (HTTP $status): $msg")
 end
 
 # An error object inside a successful (HTTP 2xx) body, e.g. a failed response or interaction.

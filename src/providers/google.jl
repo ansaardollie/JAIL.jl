@@ -46,6 +46,8 @@ end
 # CreateModelInteractionParams.store, google/interactions.openapi.json#L3850;
 # stored by default: gemini-docs/gemini-docs-069-interactions-overview.md#L16-L19
 _has_store_field(::Type{Google}) = true
+# previous_interaction_id #L3904; gemini-docs-069-interactions-overview.md#L147-L152, #L295-L300
+_supports_chaining(::Type{Google}) = true
 
 # POST /{api_version}/interactions, google/interactions.openapi.json#L1142
 _request_url(p::Google) = string(p.base_url, "/", api_version(Google), "/interactions")
@@ -61,6 +63,7 @@ function _request_body(p::Google, req::_Request)
              for m in _replayable(req.messages)]
     body = Dict{String,Any}("model" => req.model.id, "input" => input, "store" => req.store)
     req.system === nothing || (body["system_instruction"] = req.system)
+    req.previous_id === nothing || (body["previous_interaction_id"] = req.previous_id)
     # GenerationConfig.max_output_tokens #L5314
     req.max_tokens === nothing ||
         (body["generation_config"] = Dict("max_output_tokens" => req.max_tokens))
@@ -86,5 +89,6 @@ function _parse_reply(::Google, req::_Request, json)
              status == "incomplete" ? :max_tokens :
              status == "requires_action" ? :tool_use : :other
     usage = _usage(get(json, "usage", nothing), "total_input_tokens", "total_output_tokens")
-    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage)
+    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
+                            id = get(json, "id", nothing))
 end

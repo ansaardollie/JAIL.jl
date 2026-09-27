@@ -1,10 +1,12 @@
 # Everything a provider needs to build one request, already resolved from kwargs and Preferences.
+# With `previous_id` set, `messages` holds only the turns after that stored reply.
 struct _Request
     model::Model
     messages::Vector{AbstractMessage}
     system::Union{Nothing,String}
     max_tokens::Union{Nothing,Int}
     store::Bool
+    previous_id::Union{Nothing,String}
 end
 
 # Request interface: each provider implements these.
@@ -19,8 +21,11 @@ function _parse_reply end
 default_max_tokens(::Type{<:AbstractProvider}) = nothing
 # Whether the wire format has a `store` field that JAIL should send.
 _has_store_field(::Type{<:AbstractProvider}) = false
+# Whether a stored reply's id can continue the conversation server-side.
+_supports_chaining(::Type{<:AbstractProvider}) = false
 
 _has_store_field(p::AbstractProvider) = _has_store_field(typeof(p))
+_supports_chaining(p::AbstractProvider) = _supports_chaining(typeof(p))
 
 # Messages with no text (e.g. a reply that only hit max_tokens) are skipped when replaying.
 _replayable(messages) = (m for m in messages if !isempty(string(m)))

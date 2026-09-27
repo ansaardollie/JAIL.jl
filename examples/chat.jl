@@ -12,13 +12,15 @@
 #
 # Preferences (in [JAIL] of LocalPreferences.toml):
 #   max_tokens = 2048        # default reply cap for every provider (else Anthropic: 8192, others: unset)
-#   store_requests = true    # let OpenAI/Google keep requests server-side (default false)
+#   store_requests = false   # OpenAI/Google: send store=false and the full history (default true)
 #
 # Open / tentative:
 # - No streaming, tools, images or reasoning yet. Reasoning/thought output (OpenAI reasoning
 #   items, Google thought steps and their signatures) is dropped, not replayed.
-# - History is always replayed in full; provider-side state (previous_response_id,
-#   previous_interaction_id) is not used.
+# - OpenAI and Google continue from the last stored reply (`previous_response_id` /
+#   `previous_interaction_id` = `reply.id`) and send only the new turn; the full history is sent
+#   when it was edited, the provider changed, or the stored reply expired. Anthropic and
+#   OpenAI-compatible servers always get the full history.
 # - Seeding a history (few-shot) is done by pushing onto `session.messages` directly.
 # - Troubleshooting: `ENV["JULIA_DEBUG"] = "JAIL"` logs each request and response body.
 
@@ -45,7 +47,7 @@ push!(s.messages, UserMessage("Colour of the sky?"), AssistantMessage("Blue"))
 if LIVE
     reply = chat!(s, "Colour of grass?")
     show(stdout, MIME"text/plain"(), reply); println()
-    @show reply.stop_reason reply.usage reply.model
+    @show reply.stop_reason reply.usage reply.model reply.id   # id: what the next turn chains from
 
     # Cap the reply length for one call:
     reply = chat!(s, "Now describe a forest in detail."; max_tokens = 20)

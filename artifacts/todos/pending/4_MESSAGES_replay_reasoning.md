@@ -35,5 +35,9 @@ OpenAI with `store=false` needs `include: ["reasoning.encrypted_content"]` to re
 
 ## Notes
 
+Since `design_decisions/15_MESSAGES_server_side_chaining.md`, chained OpenAI/Google turns keep
+reasoning/thought steps server-side; this todo now concerns full replays only (history edited,
+provider switched, stored reply expired, `store_requests = false`).
+
 Use a provider review first (skill `provider-docs-review`), covering doc 034 (Google), Anthropic
 doc 21 (thinking), and OpenAI reasoning items.
