@@ -43,8 +43,12 @@ end
     configure_provider!(p::OpenAICompatible; base_url, api_key_env, api)
 
 Persist connection settings for `p` in Preferences and return the reloaded provider. Keywords
-override `p`'s fields; `nothing` resets a field to its default. `api_key_env` is the *name* of
-the ENV var holding the key; the key itself is never stored.
+override `p`'s fields; `nothing` removes the saved value, so a built-in provider falls back to
+its default and an [`OpenAICompatible`](@ref) endpoint to no key (`api_key_env`) or
+`:responses` (`api`). An `OpenAICompatible` endpoint must be registered first with
+[`register_provider!`](@ref), and its `base_url` can't be `nothing`.
+
+`api_key_env` is the *name* of the ENV var holding the key; the key itself is never stored.
 
 ```julia
 configure_provider!(Anthropic(); api_key_env = "MY_ANTHROPIC_KEY")
@@ -93,6 +97,9 @@ end
     set_default_model!(model::Union{AbstractString,Model}) -> Model
 
 Persist the default model in Preferences, e.g. `set_default_model!("anthropic/claude-sonnet-4-5")`.
+New sessions start with it, and so does the `"default"` session the next time JAIL loads;
+existing sessions are not changed (use [`set_model!`](@ref)).
+
 Only the provider name and model id are stored; provider settings come from
 [`configure_provider!`](@ref). The model id is not checked against the provider.
 """
@@ -110,6 +117,7 @@ end
     default_model() -> Model
 
 The model saved with [`set_default_model!`](@ref), resolved against current Preferences.
+Throws if no default model is saved.
 """
 function default_model()
     s = _load_pref("default_model")
@@ -142,7 +150,8 @@ end
 Ask the provider's API which models are available, sorted alphabetically by id (ignoring case)
 with version numbers in numeric order (`gemini-3.9-flash` before `gemini-3.10-flash`).
 Needs network access and, for providers that require one, the API key in the configured ENV var.
-Google results are limited to models that support text generation.
+Google results are limited to models whose `supportedGenerationMethods` include
+`generateContent`.
 """
 list_models(p::AbstractProvider) =
     sort!(_list_models(p, (url; query = nothing) -> _get_json(p, url; query));

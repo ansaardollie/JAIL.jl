@@ -1,8 +1,10 @@
 """
     Anthropic(; base_url, api_key_env)
 
-The Anthropic Messages API. Unset fields come from Preferences, then from the defaults
+The Anthropic API. Unset fields come from Preferences, then from the defaults
 `https://api.anthropic.com` and `ANTHROPIC_API_KEY`.
+
+Only [`list_models`](@ref) is implemented so far; requests will use the Messages API.
 """
 struct Anthropic <: AbstractProvider
     base_url::String

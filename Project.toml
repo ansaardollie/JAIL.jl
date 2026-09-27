@@ -3,6 +3,9 @@ uuid = "b2a1f7b2-bb5e-426e-a351-8e8ab6c5361a"
 version = "0.2.0"
 authors = ["Ansaar Dollie <me@ansaardollie.com>"]
 
+[workspace]
+projects = ["docs"]
+
 [deps]
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"

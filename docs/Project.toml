@@ -1,0 +1,7 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+JAIL = "b2a1f7b2-bb5e-426e-a351-8e8ab6c5361a"
+LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
+
+[sources]
+JAIL = {path = ".."}

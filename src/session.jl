@@ -10,8 +10,12 @@ without one the saved [`default_model`](@ref) is used, and an error is thrown if
 
 Every session is registered (see [`sessions`](@ref)) so the REPL can switch to it, and stays
 registered until [`delete_session!`](@ref). Without a `name` it is called `"session"`; a name
-already in use gets a suffix (`"refactor-2"`). History is provider-agnostic, so the model can be
-switched with [`set_model!`](@ref) at any time.
+already in use gets a suffix (`"refactor-2"`). Names may only contain letters, digits, `.`,
+`_` and `-`. History is provider-agnostic, so the model can be switched with
+[`set_model!`](@ref) at any time.
+
+`model` is `nothing` only for the `"default"` session JAIL starts when no default model is
+saved (see [`active_session`](@ref)).
 """
 mutable struct Session
     const name::String

@@ -1,8 +1,10 @@
 """
     Google(; base_url, api_key_env)
 
-The Google Gemini Interactions API. Unset fields come from Preferences, then from the defaults
+The Google Gemini API. Unset fields come from Preferences, then from the defaults
 `https://generativelanguage.googleapis.com` and `GEMINI_API_KEY`.
+
+Only [`list_models`](@ref) is implemented so far; requests will use the Interactions API.
 """
 struct Google <: AbstractProvider
     base_url::String

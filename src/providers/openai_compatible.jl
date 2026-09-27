@@ -5,7 +5,8 @@
 A server speaking the OpenAI wire format (LM Studio, vLLM, OpenRouter, ...). `name` is how the
 endpoint is referred to in model strings (`"lmstudio/llama-3.1-8b"`). `api_key_env` is the name
 of the ENV var holding the key, or `nothing` for servers without auth. `api` is `:responses`
-(default) or `:chat_completions` for servers that lack the Responses API.
+(default) or `:chat_completions` for servers that lack the Responses API; it is stored now but
+only takes effect once requests are implemented (today only [`list_models`](@ref) is).
 
 `OpenAICompatible(name)` loads an endpoint saved with [`register_provider!`](@ref).
 """

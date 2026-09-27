@@ -1,8 +1,10 @@
 """
     OpenAI(; base_url, api_key_env)
 
-The OpenAI API (Responses API only). Unset fields come from Preferences, then from the defaults
+The OpenAI API. Unset fields come from Preferences, then from the defaults
 `https://api.openai.com/v1` and `OPENAI_API_KEY`.
+
+Only [`list_models`](@ref) is implemented so far; requests will use the Responses API only.
 """
 struct OpenAI <: AbstractOpenAIProvider
     base_url::String

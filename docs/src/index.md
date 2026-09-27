@@ -1,0 +1,50 @@
+# JAIL.jl
+
+JAIL (AI in Julia) gives Julia one API for talking to LLM providers. Provider APIs differ in
+shape; JAIL hides that behind Julia types, so your code works the same whether the model
+comes from OpenAI, Anthropic, Google, or an OpenAI-compatible server.
+
+## Status
+
+JAIL is an early rewrite. What works today:
+
+- **Providers**: [`OpenAI`](@ref), [`Anthropic`](@ref), [`Google`](@ref) and
+  [`OpenAICompatible`](@ref) servers, configured through Preferences.
+- **Models**: typed [`Model`](@ref)s, live model listing with [`list_models`](@ref), and
+  interactive selection with [`select_model!`](@ref).
+- **Sessions**: [`Session`](@ref)s that hold a conversation's model and history, with a
+  `"default"` session started when JAIL loads.
+- **The `|` REPL mode** for listing and switching providers, models and sessions.
+
+Not implemented yet: sending messages to a model (so session history is always empty),
+streaming, tool calling, the ask (`}`) and agentic (`&`) REPL modes, and one-shot functions
+for text, code generation and extraction.
+
+## Quick start
+
+```julia
+using JAIL
+
+set_default_model!("anthropic/claude-sonnet-4-5")   # saved in Preferences
+```
+
+API keys are read from ENV (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` by
+default) and are never written to disk by JAIL.
+
+In the Julia REPL, press `|` at an empty `julia>` prompt to open the model mode:
+
+```text
+(default: anthropic/claude-sonnet-4-5) model> models
+(default: anthropic/claude-sonnet-4-5) model> use openai/gpt-5
+```
+
+## Where to go next
+
+- [Concepts](guide/concepts.md): providers, models, sessions, and how configuration works.
+- [Providers and configuration](guide/providers.md)
+- [Models](guide/models.md)
+- [Sessions](guide/sessions.md)
+- [The model REPL mode](guide/repl.md)
+- [Reference](reference.md): every exported name.
+
+Runnable scripts for each feature are in the repository's `examples/` folder.
