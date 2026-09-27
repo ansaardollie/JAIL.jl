@@ -6,6 +6,18 @@ function _get_json(p::AbstractProvider, url::AbstractString; query = nothing)
     return JSON.parse(body)
 end
 
+# Set ENV["JULIA_DEBUG"] = "JAIL" to log request and response bodies (headers, and so keys, never).
+function _post_json(p::AbstractProvider, url::AbstractString, body)
+    payload = JSON.json(body)
+    @debug "JAIL request" provider = provider_name(p) url body = payload
+    resp = HTTP.post(url, [_auth_headers(p); "Content-Type" => "application/json"], payload;
+                     status_exception = false)
+    text = String(resp.body)
+    @debug "JAIL response" provider = provider_name(p) status = resp.status body = text
+    200 <= resp.status < 300 || throw(_api_error(p, resp.status, text))
+    return JSON.parse(text)
+end
+
 # OpenAI, Anthropic and Google all nest the human-readable message at `error.message`.
 function _api_error(p::AbstractProvider, status::Integer, body::AbstractString)
     msg = try
@@ -16,3 +28,8 @@ function _api_error(p::AbstractProvider, status::Integer, body::AbstractString)
     end
     return ErrorException("$(provider_name(p)) API error (HTTP $status): $msg")
 end
+
+# An error object inside a successful (HTTP 2xx) body, e.g. a failed response or interaction.
+_error_message(::Nothing) = "(no error details)"
+_error_message(e::AbstractString) = e
+_error_message(e) = string(get(e, "message", JSON.json(e)))

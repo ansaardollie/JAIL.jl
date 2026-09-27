@@ -8,7 +8,7 @@
 # Providers: all (history is provider-agnostic, so a session can switch provider mid-conversation).
 #
 # Open / tentative:
-# - No concrete message types yet, so `messages` stays empty until request/response work lands.
+# - Messages are added by `chat!` (see examples/chat.jl); this script keeps history empty.
 # - No tools field yet; tools will be attached to sessions later.
 # - Sessions stay registered (and in memory) until `delete_session!`.
 # - Provider server-side conversation state (e.g. OpenAI `previous_response_id`) isn't stored yet.
@@ -49,6 +49,8 @@ empty!(s)                       # clear history, keep model and system
 
 w = new_session!("work"; model = "anthropic/claude-sonnet-4-5")   # create + activate
 @show active_session() === w
+@show set_model!("openai/gpt-5")          # no session: the active one ("work")
+@show w.model
 
 use_session!("review")          # by name, or use_session!(s)
 @show active_session().name

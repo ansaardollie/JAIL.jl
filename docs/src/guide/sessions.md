@@ -1,10 +1,8 @@
 # Sessions
 
 A [`Session`](@ref) holds one conversation: a `name`, the active `model`, optional `system`
-instructions, and the typed message history in `messages`.
-
-!!! note
-    Sending messages isn't implemented yet, so `messages` is always empty for now.
+instructions, and the typed message history in `messages`. [`chat!`](@ref) sends turns on a
+session (see [Chat](chat.md)).
 
 ## The default session
 
@@ -80,12 +78,18 @@ from menus, use `select_model!(s)` (see [Models](models.md)).
 
 ## The active session
 
-The REPL modes and session-less calls such as `select_model!()` act on the
-[`active_session`](@ref).
+The REPL modes and session-less calls act on the [`active_session`](@ref). Every function
+that takes a session also works without one: `set_model!(model)`, `select_model!()` and
+`chat!(prompt)`.
 
 ```@example sessions
 w = new_session!("work"; model = "anthropic/claude-sonnet-4-5")   # create and activate
 active_session() === w
+```
+
+```@example sessions
+set_model!("openai/gpt-5")   # the active session, "work"
+w
 ```
 
 ```@example sessions

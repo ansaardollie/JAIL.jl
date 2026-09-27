@@ -12,12 +12,14 @@ export AbstractModel, Model
 export configure_provider!, register_provider!, providers
 export set_default_model!, default_model, list_models, select_model!
 export AbstractMessage, Session, set_model!
+export AbstractContentPart, TextPart, UserMessage, AssistantMessage, Usage, chat!
 export sessions, active_session, new_session!, use_session!, delete_session!
 
 include("preferences.jl")
 include("ontology/providers.jl")
 include("ontology/models.jl")
 include("ontology/messages.jl")
+include("ontology/requests.jl")
 include("http.jl")
 include("providers/openai.jl")
 include("providers/openai_compatible.jl")
@@ -25,6 +27,7 @@ include("providers/anthropic.jl")
 include("providers/google.jl")
 include("configuration.jl")
 include("session.jl")
+include("chat.jl")
 include("select.jl")
 include("repl/model_mode.jl")
 include("repl/install.jl")

@@ -34,8 +34,9 @@ session called `"default"`, which is the **active session**: the one the REPL mo
 session-less calls like `select_model!()` act on. See [Sessions](sessions.md).
 
 History is stored as typed messages, not strings, and is independent of the provider, so a
-session can switch model (even provider) mid-conversation. Concrete message types don't exist
-yet, so history is currently always empty.
+session can switch model (even provider) mid-conversation. A history holds
+[`UserMessage`](@ref)s and [`AssistantMessage`](@ref)s; system instructions live on the
+session, not in the history. See [Chat](chat.md).
 
 ## Configuration lives in Preferences
 
@@ -60,6 +61,6 @@ JAIL will be used in two ways that share the same code:
 - **Functions** for one-shot text, generated Julia code, and extracting Julia objects from
   natural language (planned).
 
-Requests will use each provider's multi-turn API: OpenAI Responses, Anthropic Messages and
+Requests use each provider's multi-turn API: OpenAI Responses, Anthropic Messages and
 Google Interactions. `OpenAICompatible` servers default to Responses and can be switched to
 Chat Completions for servers that lack it.

@@ -141,11 +141,14 @@ _model_string(s::Session) = s.model === nothing ? nothing : string(s.model)
 
 """
     set_model!(session::Session, model::Union{AbstractString,Model}) -> Model
+    set_model!(model::Union{AbstractString,Model}) -> Model
 
-Switch the session's model, keeping its history. Does not change the default model.
+Switch the session's model, or the [`active_session`](@ref)'s when no session is given,
+keeping its history. Does not change the default model.
 """
 set_model!(s::Session, m::AbstractModel) = (s.model = m)
 set_model!(s::Session, m::AbstractString) = set_model!(s, Model(m))
+set_model!(m::Union{AbstractString,AbstractModel}) = set_model!(active_session(), m)
 
 """
     empty!(session::Session)

@@ -69,6 +69,14 @@ set_default_model!(m)                              # saved default for new sessi
   are gone.
 - Scripts that create many sessions accumulate them until deleted.
 
+## Amendment (2026-09-27, user request)
+
+"Make sure that all appropriate functions when called without a session get run on the active
+session." Rule: every public function whose first argument is a `Session` also has a
+session-less form acting on `active_session()`: `set_model!(model)` (added),
+`select_model!()` / `select_model!(p)`, `chat!(prompt)`. Exception: `Base.empty!` gets no
+zero-argument method, since `Base.empty!()` involves no JAIL type (type piracy).
+
 ## Revisit Trigger
 
 Registry growth becoming a problem in scripts (consider weak references for code-created

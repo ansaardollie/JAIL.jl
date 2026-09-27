@@ -120,6 +120,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `providers.<name>.type` | `"openai_compatible"` | [`register_provider!`](@ref) | Marks a registered compatible endpoint |
 | `providers.<name>.api` | `"chat_completions"` | same | Only written when not `:responses` |
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
+| `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic 8192, others none) |
+| `store_requests` | `true` / `false` | by hand | Let OpenAI and Google store requests server-side (default `false`) |
 
 For example:
 

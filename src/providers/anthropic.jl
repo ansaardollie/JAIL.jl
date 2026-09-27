@@ -4,7 +4,7 @@
 The Anthropic API. Unset fields come from Preferences, then from the defaults
 `https://api.anthropic.com` and `ANTHROPIC_API_KEY`.
 
-Only [`list_models`](@ref) is implemented so far; requests will use the Messages API.
+Requests use the Messages API (`POST /v1/messages`).
 """
 struct Anthropic <: AbstractProvider
     base_url::String
@@ -38,4 +38,36 @@ function _list_models(p::Anthropic, fetch)
         (get(page, "has_more", false) === true && last_id !== nothing) || return models
         query = Dict("limit" => "1000", "after_id" => String(last_id))
     end
+end
+
+# max_tokens is required: anthropic/api_spec.yaml#L3688-L3691
+default_max_tokens(::Type{Anthropic}) = 8192
+
+# POST /v1/messages. anthropic/api_spec.yaml#L6, CreateMessageParams #L3437-L3692
+_request_url(p::Anthropic) = p.base_url * "/v1/messages"
+
+function _request_body(::Anthropic, req::_Request)
+    # InputMessage #L3745-L3785: role user|assistant, content blocks; system is top-level
+    messages = [Dict("role" => _role(m),
+                     "content" => [Dict("type" => "text", "text" => string(m))])
+                for m in _replayable(req.messages)]
+    body = Dict{String,Any}("model" => req.model.id, "messages" => messages,
+                            "max_tokens" => req.max_tokens)
+    req.system === nothing || (body["system"] = req.system)
+    return body
+end
+
+# Message #L3823-L3960. The spec's stop_reason enum is stale; the full list is in
+# claude-docs/claude-docs-07-handling-stop-reasons.md#L13-L21 (pause_turn -> :other for now)
+const _ANTHROPIC_STOP = Dict(
+    "end_turn" => :end_turn, "max_tokens" => :max_tokens, "stop_sequence" => :stop_sequence,
+    "tool_use" => :tool_use, "refusal" => :refusal,
+    "model_context_window_exceeded" => :max_tokens)
+
+function _parse_reply(::Anthropic, req::_Request, json)
+    parts = AbstractContentPart[TextPart(b["text"]) for b in json["content"]
+                                if get(b, "type", nothing) == "text"]
+    reason = get(_ANTHROPIC_STOP, something(get(json, "stop_reason", nothing), ""), :other)
+    usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L5172
+    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage)
 end

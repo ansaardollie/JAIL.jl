@@ -33,7 +33,6 @@ default_model
 
 ```@docs
 Session
-AbstractMessage
 set_model!
 Base.empty!(::Session)
 sessions
@@ -41,4 +40,16 @@ active_session
 new_session!
 use_session!
 delete_session!
+```
+
+## Messages and chat
+
+```@docs
+chat!
+AbstractMessage
+UserMessage
+AssistantMessage
+Usage
+AbstractContentPart
+TextPart
 ```
