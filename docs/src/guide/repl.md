@@ -4,8 +4,8 @@ JAIL adds two modes to the Julia REPL. Both act on the [`active_session`](@ref):
 
 | Key | Mode | Prompt |
 |---|---|---|
-| `\|` | Model: providers, models, sessions | `(default: openai/gpt-5) model> ` |
-| `}` | Chat: talk to the model | `chat> ` |
+| `\|` | Model: providers, models, sessions, tools | `(default: openai/gpt-5) model> ` |
+| `}` | Chat: talk to the model, which may call tools | `chat> ` |
 
 The model mode's prompt shows the active session and its model; the chat prompt is kept short
 so it doesn't crowd the conversation (use `|` then `st` to check the model).
@@ -31,11 +31,26 @@ chat> Tell me a long story
 [stop reason: max_tokens]
 ```
 
+When the model calls tools, each call and its result is shown as a dim line between the
+reply's text (see [Tools](tools.md)). Without streaming, `thinking…` shows again while the
+results are sent back. If the tool round limit is reached, the turn ends with
+`[stop reason: tool_use]`.
+
+```text
+chat> Should I pack an umbrella for Paris?
+→ get_weather(city = "Paris")
+← Sunny for 3 days in Paris
+  No, it will be sunny for the next three days.
+```
+
+This transcript is illustrative; the reply text depends on the model.
+
 ### Streaming
 
 With `stream = true` in the `[JAIL]` Preferences, a reply streams in as raw text on the
-terminal's alternate screen (like `less`), under your prompt. When it's complete the normal
-screen comes back and only the Markdown rendering is printed, so the streamed text never ends
+terminal's alternate screen (like `less`), under your prompt, with tool call and result lines
+as they happen. When it's complete the normal screen comes back and only the rendered turn
+(Markdown text plus the tool lines) is printed, so the streamed text never ends
 up in the REPL output or scrollback. If the request fails or you press Ctrl-C, the normal screen
 comes back with just the error. Without the Preference, `thinking…` shows until the whole reply
 is ready.
@@ -117,6 +132,11 @@ In the model mode:
 | `session new [name] [provider/model]` | Start a session and make it active | [`new_session!`](@ref) |
 | `session use <name>` | Switch the active session | [`use_session!`](@ref) |
 | `session rm <name>` | Delete a session (not the active one) | [`delete_session!`](@ref) |
+| `tools` | List registered tools; `*` marks those the active session uses | [`tools`](@ref) |
+| `tools show <name>` | Show a tool's description and parameters | |
+| `tools use <name>...` | Restrict the active session to these tools | [`set_tools!`](@ref) |
+| `tools add <name>...`, `tools drop <name>...` | Add tools to, or remove them from, the active session | [`set_tools!`](@ref) |
+| `tools all`, `tools none` | Every registered tool (the default), or none | `set_tools!(nothing)`, `set_tools!([])` |
 | `help`, `?` | Show the command list | |
 
 `use` and `select` change only the active session. The saved default changes only with
@@ -160,6 +180,28 @@ Active session: default (lmstudio/qwen3-8b)
 Deleted session "work"
 ```
 
+With two tools registered (`@tool get_weather list_directory`) on a session called `demo`:
+
+```text
+(demo: anthropic/claude-sonnet-4-5) model> tools
+Session "demo" uses every registered tool:
+  * get_weather     Get the weather forecast for a city.
+  * list_directory  List the names of the files and folders in the current work…
+(demo: anthropic/claude-sonnet-4-5) model> tools use get_weather
+Session "demo" tools: get_weather
+(demo: anthropic/claude-sonnet-4-5) model> tools
+Session "demo" uses 1 of 2 tools:
+  * get_weather     Get the weather forecast for a city.
+    list_directory  List the names of the files and folders in the current work…
+(demo: anthropic/claude-sonnet-4-5) model> tools show get_weather
+ToolSpec get_weather(city::String, days::Int64 = …)
+  Get the weather forecast for a city.
+  • city::String
+  • days::Int64 (optional)
+(demo: anthropic/claude-sonnet-4-5) model> tools all
+Session "demo" tools: all (get_weather, list_directory)
+```
+
 Errors are printed without a stack trace:
 
 ```text
@@ -181,6 +223,7 @@ Tab completes:
   models have been listed in this Julia process (by `models`, `select` or `select_model!`).
   Pressing Tab never fetches models.
 - session names after `session use` and `session rm`
+- `show`, `use`, `add`, `drop`, `all`, `none` after `tools`, then tool names
 
 ## Turning the modes off
 

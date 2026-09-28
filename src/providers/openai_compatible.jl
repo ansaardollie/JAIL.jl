@@ -44,17 +44,34 @@ _wire(p::OpenAICompatible) = p.api === :chat_completions ? _ChatCompletionsAPI()
 _request_url(::_ChatCompletionsAPI, p) = p.base_url * "/chat/completions"
 
 function _request_body(::_ChatCompletionsAPI, p, req::_Request)
-    messages = Dict{String,String}[]
+    messages = Dict{String,Any}[]
     req.system === nothing || push!(messages, Dict("role" => "system", "content" => req.system))
-    for m in _replayable(req.messages)
-        push!(messages, Dict("role" => _role(m), "content" => string(m)))
-    end
+    foreach(m -> _chat_messages!(messages, m), _replayable(req.messages))
     body = Dict{String,Any}("model" => req.model.id, "messages" => messages)
     # Deprecated at OpenAI in favour of max_completion_tokens (#L42574-L42586), but it is the
     # field compatible servers accept. UNVERIFIED per server.
     req.max_tokens === nothing || (body["max_tokens"] = req.max_tokens)
     req.stream && (body["stream"] = true)   # #L42521
+    # ChatCompletionTool #L41167-L41183 wrapping FunctionObject #L49838-L49870
+    isempty(req.tools) || (body["tools"] = [Dict("type" => "function", "function" => _function_json(t))
+                                            for t in req.tools])
     return body
+end
+
+_chat_messages!(ms, m::UserMessage) = push!(ms, Dict{String,Any}("role" => "user", "content" => string(m)))
+
+# Assistant message with tool_calls #L40454-L40520 (ChatCompletionMessageToolCall #L40242-L40277)
+function _chat_messages!(ms, m::AssistantMessage)
+    text, calls = string(m), _tool_calls(m)
+    d = Dict{String,Any}("role" => "assistant", "content" => isempty(text) && !isempty(calls) ? nothing : text)
+    isempty(calls) || (d["tool_calls"] = [Dict("id" => c.id, "type" => "function",
+        "function" => Dict("name" => c.name, "arguments" => JSON.json(c.arguments))) for c in calls])
+    push!(ms, d)
+end
+
+# ChatCompletionRequestToolMessage #L40800-L40830, one per result
+_chat_messages!(ms, m::ToolResultMessage) = foreach(m.content) do r
+    push!(ms, Dict{String,Any}("role" => "tool", "tool_call_id" => r.call_id, "content" => r.content))
 end
 
 # CreateChatCompletionResponse #L42695 (finish_reason enum #L42733-L42738);
@@ -67,12 +84,17 @@ function _parse_reply(::_ChatCompletionsAPI, req::_Request, json)
     content === nothing || isempty(content) || push!(parts, TextPart(content))
     refusal = get(msg, "refusal", nothing)
     refusal === nothing || push!(parts, TextPart(refusal))
+    for tc in something(get(msg, "tool_calls", nothing), ())
+        f = tc["function"]
+        push!(parts, ToolCall(tc["id"], f["name"], _arguments(get(f, "arguments", nothing))))
+    end
     fr = get(choice, "finish_reason", nothing)
     reason = refusal !== nothing ? :refusal :
              fr == "stop" ? :end_turn :
              fr == "length" ? :max_tokens :
              fr in ("tool_calls", "function_call") ? :tool_use :
              fr == "content_filter" ? :content_filter : :other
+    reason = _stop_reason(parts, reason)
     usage = _usage(get(json, "usage", nothing), "prompt_tokens", "completion_tokens")
     return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
                             id = get(json, "id", nothing))
@@ -80,15 +102,17 @@ end
 
 # Chunks: CreateChatCompletionStreamResponse #L42853 (choices[].delta #L41065, finish_reason;
 # usage only with stream_options.include_usage, not sent). The stream ends with `data: [DONE]`.
+# Tool calls arrive as delta.tool_calls chunks keyed by `index` (#L40278-L40310).
 mutable struct _ChatStream
     id::Any
     content::IOBuffer
     refusal::IOBuffer
+    calls::Dict{Int,Vector{Any}}   # index => [id, name, arguments buffer]
     finish_reason::Any
     usage::Any
 end
 _stream_state(::_ChatCompletionsAPI, req::_Request) =
-    _ChatStream(nothing, IOBuffer(), IOBuffer(), nothing, nothing)
+    _ChatStream(nothing, IOBuffer(), IOBuffer(), Dict(), nothing, nothing)
 
 function _stream_event!(st::_ChatStream, data::AbstractString, on_text)
     strip(data) == "[DONE]" && return nothing
@@ -102,6 +126,16 @@ function _stream_event!(st::_ChatStream, data::AbstractString, on_text)
             t = get(d, key, nothing)
             t isa AbstractString && !isempty(t) && (write(buf, t); on_text(t))
         end
+        for tc in something(get(d, "tool_calls", nothing), ())
+            call = get!(() -> Any[nothing, nothing, IOBuffer()], st.calls, something(get(tc, "index", 0), 0))
+            id = get(tc, "id", nothing)
+            id === nothing || (call[1] = id)
+            f = something(get(tc, "function", nothing), Dict())
+            name = get(f, "name", nothing)
+            name === nothing || (call[2] = name)
+            args = get(f, "arguments", nothing)
+            args isa AbstractString && write(call[3], args)
+        end
         fr = get(c, "finish_reason", nothing)
         fr === nothing || (st.finish_reason = fr)
     end
@@ -111,7 +145,11 @@ end
 function _stream_finish(st::_ChatStream, req::_Request)
     refusal = String(take!(st.refusal))
     msg = Dict{String,Any}("content" => String(take!(st.content)),
-                           "refusal" => isempty(refusal) ? nothing : refusal)
+                           "refusal" => isempty(refusal) ? nothing : refusal,
+                           "tool_calls" => [Dict("id" => string(something(c[1], "call_$i")),
+                                                 "function" => Dict("name" => string(c[2]),
+                                                                    "arguments" => String(take!(c[3]))))
+                                            for (i, c) in sort!(collect(st.calls); by = first)])
     json = Dict{String,Any}("id" => st.id, "usage" => st.usage,
                             "choices" => [Dict("message" => msg, "finish_reason" => st.finish_reason)])
     return _parse_reply(_ChatCompletionsAPI(), req, json)

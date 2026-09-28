@@ -3,11 +3,14 @@
 [`chat!`](@ref) sends the next turn of a [`Session`](@ref):
 
 1. The prompt is appended to `session.messages` as a [`UserMessage`](@ref).
-2. The history and the session's `system` instructions go to the session's model (see
-   [What gets sent](#What-gets-sent)).
-3. The reply is appended as an [`AssistantMessage`](@ref) and returned.
+2. The history, the session's `system` instructions and its tools go to the session's model
+   (see [What gets sent](#What-gets-sent)).
+3. The reply is appended as an [`AssistantMessage`](@ref). If it calls tools, JAIL runs them,
+   appends a [`ToolResultMessage`](@ref) and asks again, until a reply calls no tools (see
+   [Tools](tools.md)).
+4. The last reply is returned.
 
-If the request fails, the history is left as it was.
+If a request fails, the history is left as it was.
 
 ```julia
 s = Session("anthropic/claude-sonnet-4-5"; system = "Answer with one word.")
@@ -19,15 +22,17 @@ reply.usage            # Usage(21 in, 4 out)
 chat!("Colour of coal?")   # on the active session
 ```
 
-Every provider is supported, text only for now: OpenAI (Responses API), Anthropic
-(Messages API), Google (Interactions API), and OpenAI-compatible servers (Responses, or Chat
-Completions when registered with `api = :chat_completions`).
+Every provider is supported: OpenAI (Responses API), Anthropic (Messages API), Google
+(Interactions API), and OpenAI-compatible servers (Responses, or Chat Completions when
+registered with `api = :chat_completions`). The model may call the session's tools; see
+[Tools](tools.md).
 
 ## Messages
 
 History is provider-agnostic, so a session can switch model or provider between turns with
-[`set_model!`](@ref). A message's `content` is a vector of content parts. [`TextPart`](@ref)
-is the only one so far. `string(msg)` returns the text.
+[`set_model!`](@ref). A message's `content` is a vector of content parts: [`TextPart`](@ref),
+and [`ToolCall`](@ref) / [`ToolResult`](@ref) when tools are used. `string(msg)` returns the
+text.
 
 ```@example chat
 using JAIL
@@ -57,7 +62,7 @@ s.messages
 | `:end_turn` | The model finished its turn. |
 | `:max_tokens` | The reply hit `max_tokens` or the context window. |
 | `:stop_sequence` | A stop sequence was generated (Anthropic only). |
-| `:tool_use` | The model wants to call a tool. |
+| `:tool_use` | The model called tools (the reply holds [`ToolCall`](@ref)s). |
 | `:refusal` | The model declined. |
 | `:content_filter` | The provider filtered the output. |
 | `:other` | Anything else. |
@@ -66,9 +71,10 @@ s.messages
 
 `session.messages` is always the full conversation, but not every turn resends it:
 
-- **OpenAI and Google** store each reply server-side. The next turn sends only the new prompt
-  plus the stored reply's id (`previous_response_id` / `previous_interaction_id`, taken from
-  `reply.id`). The model may change between turns, as long as the provider stays the same.
+- **OpenAI and Google** store each reply server-side. The next request sends only what came
+  after the stored reply (the new prompt, or the results of the tools it called) plus that
+  reply's id (`previous_response_id` / `previous_interaction_id`, taken from `reply.id`). The
+  model may change between turns, as long as the provider stays the same.
 - The full history is sent instead when the history was changed since that reply (edited,
   seeded, or `empty!`), the provider changed, or the stored reply is gone (the provider answers
   HTTP 400/404; JAIL retries once with the full history).
@@ -78,18 +84,26 @@ Set the Preference `store_requests = false` to send `store = false` to OpenAI an
 always send the full history. Stored responses are kept by the provider (OpenAI: 30 days;
 Google: 55 days paid, 1 day free).
 
+A full-history request to Google drops the model's `thought` steps, which Google asks clients
+to resend; thinking models may reject such a request when it contains tool calls. Stored,
+chained turns (the default) are not affected.
+
 ## Streaming
 
 `chat!(s, prompt; stream = true)` prints the reply's text to `stdout` as it arrives and still
-returns the full [`AssistantMessage`](@ref). All built-in providers can stream. The `}` REPL
-mode streams when the Preference `stream = true` is set (see [REPL modes](repl.md)).
+returns the full [`AssistantMessage`](@ref). Tool calls and their results are printed as
+`→ name(args)` and `← result` lines between the text. All built-in providers can stream. The
+`}` REPL mode streams when the Preference `stream = true` is set (see [REPL modes](repl.md)).
 
 ## Options and Preferences
 
 - `max_tokens` caps the reply length for one call: `chat!(s, "..."; max_tokens = 200)`.
   Without it, the `max_tokens` Preference applies to every provider if it's set. Otherwise
   Anthropic uses 8192 (it requires a value) and the other providers let the model decide.
+- `max_tool_rounds` caps tool rounds for one call: `chat!(s, "..."; max_tool_rounds = 2)`.
+  Without it, the `max_tool_rounds` Preference applies (default 10).
 - `store_requests` (default `true`): see above.
+- `confirm_tools` (default `false`): see [Tools](tools.md#Preferences).
 
 ```toml
 [JAIL]

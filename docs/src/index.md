@@ -15,11 +15,13 @@ JAIL is an early rewrite. What works today:
 - **Sessions**: [`Session`](@ref)s that hold a conversation's model and history, with a
   `"default"` session started when JAIL loads.
 - **Chat**: [`chat!`](@ref) sends text turns on a session to any provider, optionally streamed.
-- **REPL modes**: `|` for listing and switching providers, models and sessions, `}` for
+- **Tools**: Julia functions registered with [`register_tool!`](@ref) or [`@tool`](@ref);
+  `chat!` runs the calls the model makes and sends the results back.
+- **REPL modes**: `|` for listing and switching providers, models, sessions and tools, `}` for
   chatting with the active session's model.
 
-Not implemented yet: tool calling, images, reasoning output, the agentic (`&`) REPL
-mode, and one-shot functions for text, code generation and extraction.
+Not implemented yet: images, reasoning output, the agentic (`&`) REPL mode, built-in tools,
+and one-shot functions for text, code generation and extraction.
 
 ## Quick start
 

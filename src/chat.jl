@@ -16,8 +16,12 @@ end
 # history edited since then is replayed in full instead of chained.
 const _CHAIN_STATE = Dict{String,UInt}()
 
-# Text-only for now: extend when content parts other than TextPart are replayed.
-_fingerprint(messages) = hash([(_role(m), string(m)) for m in messages])
+# Everything that is replayed: text, tool calls and tool results.
+_fp_part(p::TextPart) = p.text
+_fp_part(c::ToolCall) = (c.id, c.name, c.arguments)
+_fp_part(r::ToolResult) = (r.call_id, r.content, r.is_error)
+_fp_part(p::AbstractContentPart) = p
+_fingerprint(messages) = hash([(_role(m), map(_fp_part, m.content)) for m in messages])
 
 _same_endpoint(a::AbstractProvider, b::AbstractProvider) =
     typeof(a) === typeof(b) && a.base_url == b.base_url
@@ -48,18 +52,19 @@ end
 # Continues from a stored reply (previous_response_id / previous_interaction_id) when possible.
 # With `on_text`, streams (if the provider can) and calls `on_text(delta)` per text chunk.
 function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
-                   system::Union{Nothing,AbstractString}; max_tokens = nothing, on_text = nothing)
+                   system::Union{Nothing,AbstractString}; max_tokens = nothing, on_text = nothing,
+                   tools::Vector{ToolSpec} = ToolSpec[])
     p = model.provider
     n, store = _max_tokens(p, max_tokens), _store_requests()
     stream = on_text !== nothing && _supports_streaming(p)
-    full = _Request(model, messages, system, n, store, nothing, stream)
+    full = _Request(model, messages, system, n, store, nothing, stream, tools)
     chain = _chain_point(p, messages, store)
     reply = if chain === nothing
         _send(p, full, on_text)
     else
         id, k = chain
         try
-            _send(p, _Request(model, messages[k+1:end], system, n, store, id, stream), on_text)
+            _send(p, _Request(model, messages[k+1:end], system, n, store, id, stream, tools), on_text)
         catch e
             # The stored reply expired or was deleted: fall back to replaying everything.
             (e isa _APIError && e.status in (400, 404)) || rethrow()
@@ -74,13 +79,21 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
 end
 
 """
-    chat!(session::Session, prompt; max_tokens = nothing, stream = false) -> AssistantMessage
-    chat!(prompt; max_tokens = nothing, stream = false)
+    chat!(session::Session, prompt; max_tokens = nothing, stream = false, max_tool_rounds = nothing) -> AssistantMessage
+    chat!(prompt; max_tokens = nothing, stream = false, max_tool_rounds = nothing)
 
 Send `prompt` (a `String` or [`UserMessage`](@ref)) as the next turn of `session`, or of the
-[`active_session`](@ref) when no session is given, with the session's `system` instructions.
-The prompt and the reply are appended to `session.messages` and the reply is returned. If the
-request fails, the history is left as it was.
+[`active_session`](@ref) when no session is given, with the session's `system` instructions
+and [`tools`](@ref). The prompt and the reply are appended to `session.messages` and the reply
+is returned. If a request fails, the history is left as it was.
+
+When the model calls tools, JAIL runs them (in order), sends a [`ToolResultMessage`](@ref)
+back and asks again, until a reply calls no tools; every step is added to the history and the
+last reply is returned. Errors (unknown tool, bad arguments, a tool that throws) are sent to
+the model as error results rather than thrown. After `max_tool_rounds` rounds (default: the
+Preference `max_tool_rounds`, else 10) further calls are answered with "not run" results and
+the last reply (`stop_reason = :tool_use`) is returned. With the Preference
+`confirm_tools = true`, each call is confirmed on the terminal first.
 
 OpenAI and Google store replies server-side, and the next turn continues from the last one
 (`previous_response_id` / `previous_interaction_id`) so only the new turns are sent. The full
@@ -92,8 +105,8 @@ Preference `store_requests = false` to send `store = false` and always replay th
 else the provider's default (Anthropic requires one and uses 8192; others let the model decide).
 
 `stream = true` prints the reply's text to `stdout` as it arrives (all built-in providers can
-stream); the full reply is still returned. The `}` REPL mode streams when the Preference
-`stream = true` is set.
+stream), plus a line per tool call and result; the full reply is still returned. The `}` REPL
+mode streams when the Preference `stream = true` is set.
 
 ```julia
 s = Session("anthropic/claude-sonnet-4-5"; system = "Be terse.")
@@ -104,32 +117,81 @@ chat!(s, "Another?"; stream = true)   # prints as it arrives
 ```
 """
 function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
-               stream::Bool = false)
-    stream || return _chat!(s, prompt; max_tokens)
+               stream::Bool = false, max_tool_rounds = nothing)
+    stream || return _chat!(s, prompt; max_tokens, max_tool_rounds)
     ends_with_newline = Ref(true)
     on_text = t -> (print(stdout, t); isempty(t) || (ends_with_newline[] = endswith(t, '\n')))
-    reply = _chat!(s, prompt; max_tokens, on_text)
+    function on_step(x)
+        x isa AssistantMessage && return
+        ends_with_newline[] || println(stdout)
+        _print_tool(stdout, x)
+        ends_with_newline[] = true
+    end
+    reply = _chat!(s, prompt; max_tokens, on_text, on_step, max_tool_rounds)
     ends_with_newline[] || println(stdout)
     return reply
 end
 
-# `on_text` is the streaming hook shared by `chat!(; stream = true)` and the `}` REPL mode.
+function _max_tool_rounds(kw)
+    n = something(kw, _load_pref("max_tool_rounds", 10))
+    n isa Integer && n >= 0 || throw(ArgumentError(
+        "max_tool_rounds must be a non-negative integer, got $(repr(n))"))
+    return Int(n)
+end
+
+_print_tool(io::IO, c::ToolCall) = printstyled(io, "→ ", _call_signature(c), "\n"; color = :light_black)
+function _print_tool(io::IO, r::ToolResult)
+    line = _short(first(split(r.content, '\n'; limit = 2)), 70)
+    printstyled(io, "← ", r.is_error ? "error: " : "", line, "\n"; color = r.is_error ? :red : :light_black)
+end
+
+# `on_text` is the streaming hook shared by `chat!(; stream = true)` and the `}` REPL mode;
+# `on_step` sees each AssistantMessage as it arrives, each ToolCall before it runs and its
+# ToolResult after.
 function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
-                on_text = nothing)
+                on_text = nothing, on_step = nothing, max_tool_rounds = nothing)
     s.model === nothing && error(
         "session \"$(s.name)\" has no model; pick one with `set_model!(session, \"provider/model\")` " *
         "or `select_model!()`")
     msg = prompt isa UserMessage ? prompt : UserMessage(prompt)
     isempty(strip(string(msg))) && throw(ArgumentError("prompt must not be empty"))
+    limit, confirm = _max_tool_rounds(max_tool_rounds), _confirm_tools()
+    n0 = length(s.messages)
     push!(s.messages, msg)
-    reply = try
-        _complete(s.model, s.messages, s.system; max_tokens, on_text)
+    try
+        return _tool_loop!(s, limit, confirm; max_tokens, on_text, on_step)
     catch
-        pop!(s.messages)
+        resize!(s.messages, n0)
         rethrow()
     end
-    push!(s.messages, reply)
-    return reply
+end
+
+function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text, on_step)
+    step(x) = on_step === nothing || on_step(x)
+    rounds = 0
+    while true
+        specs = tools(s)
+        reply = _complete(s.model, s.messages, s.system; max_tokens, on_text, tools = specs)
+        push!(s.messages, reply)
+        step(reply)
+        calls = _tool_calls(reply)
+        isempty(calls) && return reply
+        if rounds >= limit
+            push!(s.messages, ToolResultMessage([ToolResult(c.id, c.name,
+                "Not run: the limit of $limit tool rounds for this turn was reached."; is_error = true)
+                for c in calls]))
+            return reply
+        end
+        rounds += 1
+        results = ToolResult[]
+        for c in calls
+            step(c)
+            r = _run_tool(c, specs; confirm)
+            step(r)
+            push!(results, r)
+        end
+        push!(s.messages, ToolResultMessage(results))
+    end
 end
 
 chat!(prompt::Union{AbstractString,UserMessage}; kwargs...) = chat!(active_session(), prompt; kwargs...)

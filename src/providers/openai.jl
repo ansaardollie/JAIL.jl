@@ -55,15 +55,43 @@ _request_url(::_ResponsesAPI, p) = p.base_url * "/responses"
 function _request_body(::_ResponsesAPI, p, req::_Request)
     # EasyInputMessage with string content, #L47189-L47240; history replay as in
     # core-concepts/openai-core-concepts-02-conversation-state-20260926.md#L40-L53
-    input = [Dict("role" => _role(m), "content" => string(m)) for m in _replayable(req.messages)]
+    input = Any[]
+    foreach(m -> _responses_items!(input, m), _replayable(req.messages))
     body = Dict{String,Any}("model" => req.model.id, "input" => input)
     req.system === nothing || (body["instructions"] = req.system)          # #L45539
     req.max_tokens === nothing || (body["max_output_tokens"] = req.max_tokens)  # #L45590
     _has_store_field(p) && (body["store"] = req.store)
     req.previous_id === nothing || (body["previous_response_id"] = req.previous_id)
     req.stream && (body["stream"] = true)
+    # FunctionTool #L79526-L79575; `strict` omitted so the server normalises when it can
+    # (tool-guides/openai-tool-guides-02-function-calling-20260926.md#L1045-L1053)
+    isempty(req.tools) || (body["tools"] = [_function_json(t; type = "function") for t in req.tools])
     return body
 end
+
+function _function_json(t::ToolSpec; type = nothing, schema_key = "parameters")
+    d = Dict{String,Any}("name" => t.name, schema_key => _parameters_schema(t))
+    type === nothing || (d["type"] = type)
+    isempty(t.description) || (d["description"] = t.description)
+    return d
+end
+
+_responses_items!(input, m::UserMessage) = push!(input, Dict("role" => "user", "content" => string(m)))
+
+# FunctionToolCall #L49877-L49935, re-sent without its `fc_` item id (its reasoning item is not kept).
+function _responses_items!(input, m::AssistantMessage)
+    text = string(m)
+    isempty(text) || push!(input, Dict("role" => "assistant", "content" => text))
+    for c in _tool_calls(m)
+        push!(input, Dict("type" => "function_call", "call_id" => c.id, "name" => c.name,
+                          "arguments" => JSON.json(c.arguments)))
+    end
+end
+
+# FunctionCallOutputItemParam #L81074-L81130 (no error flag: the text says what went wrong)
+_responses_items!(input, m::ToolResultMessage) =
+    foreach(r -> push!(input, Dict("type" => "function_call_output", "call_id" => r.call_id,
+                                   "output" => r.content)), m.content)
 
 # Response #L66872-L67060; output message #L54863-L54913; output_text #L78719, refusal #L78800
 function _parse_reply(::_ResponsesAPI, req::_Request, json)
@@ -73,7 +101,12 @@ function _parse_reply(::_ResponsesAPI, req::_Request, json)
     parts = AbstractContentPart[]
     refused = false
     for item in something(get(json, "output", nothing), ())
-        get(item, "type", nothing) == "message" || continue
+        t = get(item, "type", nothing)
+        if t == "function_call"
+            push!(parts, ToolCall(item["call_id"], item["name"], _arguments(get(item, "arguments", nothing))))
+            continue
+        end
+        t == "message" || continue
         for c in something(get(item, "content", nothing), ())
             t = get(c, "type", nothing)
             if t == "output_text"
@@ -88,6 +121,7 @@ function _parse_reply(::_ResponsesAPI, req::_Request, json)
              status == "completed" ? :end_turn :
              status == "incomplete" ? _incomplete_reason(get(json, "incomplete_details", nothing)) :
              :other
+    reason = _stop_reason(parts, reason)
     usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L70636
     return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
                             id = get(json, "id", nothing))

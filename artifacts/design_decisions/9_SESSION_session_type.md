@@ -1,5 +1,6 @@
 > **Superseded by:** `10_SESSION_registry_and_default_session.md` (REPL session, selection
 > semantics, `repl_session`). The fields, `set_model!`, `empty!` and `Session()`-throws still hold.
+> **Superseded in part by:** `18_TOOLS_session_tools_and_call_loop.md` (sessions gain a `tools` field).
 
 # Decision: The `Session` type and how selection interacts with it
 

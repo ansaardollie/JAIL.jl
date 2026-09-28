@@ -124,6 +124,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `store_requests` | `true` / `false` | by hand | OpenAI and Google store replies and continue from them (default `true`); `false` sends `store = false` and the full history |
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
 | `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |
+| `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`chat!`](@ref) call before further calls are answered "not run" (default 10) |
+| `confirm_tools` | `true` / `false` | by hand | Ask `[y/N]` on the terminal before each tool call (default `false`) |
 
 For example:
 

@@ -16,7 +16,7 @@
 #   stream = true            # stream replies in the `}` REPL mode (default false)
 #
 # Open / tentative:
-# - No tools, images or reasoning yet. Reasoning/thought output (OpenAI reasoning
+# - No images or reasoning yet (tools: examples/tools.jl). Reasoning/thought output (OpenAI reasoning
 #   items, Google thought steps and their signatures) is dropped, not replayed.
 # - OpenAI and Google continue from the last stored reply (`previous_response_id` /
 #   `previous_interaction_id` = `reply.id`) and send only the new turn; the full history is sent

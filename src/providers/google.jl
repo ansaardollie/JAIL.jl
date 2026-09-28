@@ -54,13 +54,29 @@ _request_url(p::Google) = string(p.base_url, "/", api_version(Google), "/interac
 
 # Stateless replay as a Step list: gemini-docs/gemini-docs-002-get-started.md#L656-L686.
 # UserInputStep #L9639, ModelOutputStep #L7523, TextContent #L8529
-_step_type(::UserMessage) = "user_input"
-_step_type(::AssistantMessage) = "model_output"
+_text_content(text) = [Dict("type" => "text", "text" => text)]
+
+_google_steps(m::UserMessage) = Any[Dict("type" => "user_input", "content" => _text_content(string(m)))]
+
+# FunctionCallStep #L5145 (thought steps are not kept: see todos/pending/4_MESSAGES_replay_reasoning.md)
+function _google_steps(m::AssistantMessage)
+    text = string(m)
+    steps = isempty(text) ? Any[] : Any[Dict("type" => "model_output", "content" => _text_content(text))]
+    for c in _tool_calls(m)
+        push!(steps, Dict("type" => "function_call", "id" => c.id, "name" => c.name, "arguments" => c.arguments))
+    end
+    return steps
+end
+
+# FunctionResultStep #L5239; gemini-docs/gemini-docs-036-function-calling.md#L1175-L1193
+_google_steps(m::ToolResultMessage) = Any[
+    merge(Dict{String,Any}("type" => "function_result", "call_id" => r.call_id, "name" => r.name,
+                           "result" => r.content),
+          r.is_error ? Dict{String,Any}("is_error" => true) : Dict{String,Any}()) for r in m.content]
 
 function _request_body(p::Google, req::_Request)
-    input = [Dict("type" => _step_type(m),
-                  "content" => [Dict("type" => "text", "text" => string(m))])
-             for m in _replayable(req.messages)]
+    input = Any[]
+    foreach(m -> append!(input, _google_steps(m)), _replayable(req.messages))
     body = Dict{String,Any}("model" => req.model.id, "input" => input, "store" => req.store)
     req.system === nothing || (body["system_instruction"] = req.system)
     req.previous_id === nothing || (body["previous_interaction_id"] = req.previous_id)
@@ -68,6 +84,9 @@ function _request_body(p::Google, req::_Request)
     req.max_tokens === nothing ||
         (body["generation_config"] = Dict("max_output_tokens" => req.max_tokens))
     req.stream && (body["stream"] = true)   # CreateModelInteractionParams.stream #L3983
+    # tools #L3992, Function #L5093-L5115; parameter-schema subset UNVERIFIED
+    # (provider_reviews/4_TOOLS_function_calling.md)
+    isempty(req.tools) || (body["tools"] = [_function_json(t; type = "function") for t in req.tools])
     return body
 end
 
@@ -81,7 +100,12 @@ function _parse_reply(::Google, req::_Request, json)
     end
     parts = AbstractContentPart[]
     for step in something(get(json, "steps", nothing), ())
-        get(step, "type", nothing) == "model_output" || continue
+        st = get(step, "type", nothing)
+        if st == "function_call"
+            push!(parts, ToolCall(step["id"], step["name"], _arguments(get(step, "arguments", nothing))))
+            continue
+        end
+        st == "model_output" || continue
         for c in something(get(step, "content", nothing), ())
             get(c, "type", nothing) == "text" && push!(parts, TextPart(c["text"]))
         end
@@ -89,6 +113,7 @@ function _parse_reply(::Google, req::_Request, json)
     reason = status == "completed" ? :end_turn :
              status == "incomplete" ? :max_tokens :
              status == "requires_action" ? :tool_use : :other
+    reason = _stop_reason(parts, reason)
     usage = _usage(get(json, "usage", nothing), "total_input_tokens", "total_output_tokens")
     return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
                             id = get(json, "id", nothing))
@@ -96,28 +121,35 @@ end
 
 # InteractionSseEvent (discriminator event_type): interaction.created / .status_update /
 # .completed, step.start / .delta / .stop, error. Text arrives as step.delta `{type: "text"}`
-# inside a model_output step. gemini-docs/gemini-docs-070-streaming.md#L133-L184
+# inside a model_output step. gemini-docs/gemini-docs-070-streaming.md#L133-L184. A function_call
+# step starts with `arguments: {}` and streams `arguments_delta` strings (#L207-L250).
 _supports_streaming(::Type{Google}) = true
 
 mutable struct _GoogleStream
     steps::Dict{Int,String}      # step index => step type
     text::Dict{Int,IOBuffer}     # model_output step index => text
+    calls::Dict{Int,Vector{Any}} # function_call step index => [id, name, start arguments, delta buffer]
     interaction::Any             # partial Interaction from interaction.created / .completed
     status::Any
     error::Union{Nothing,String}
 end
-_stream_state(::Google, req::_Request) = _GoogleStream(Dict(), Dict(), nothing, nothing, nothing)
+_stream_state(::Google, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), nothing, nothing, nothing)
 
 function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
     ev = JSON.parse(data)
     t = get(ev, "event_type", nothing)
     if t == "step.start"
-        st.steps[ev["index"]] = string(get(ev["step"], "type", ""))
+        step = ev["step"]
+        st.steps[ev["index"]] = string(get(step, "type", ""))
+        get(step, "type", nothing) == "function_call" && (st.calls[ev["index"]] =
+            Any[step["id"], step["name"], get(step, "arguments", nothing), IOBuffer()])
     elseif t == "step.delta"
         d = ev["delta"]
         if get(d, "type", nothing) == "text" && get(st.steps, ev["index"], "model_output") == "model_output"
             write(get!(IOBuffer, st.text, ev["index"]), d["text"])
             on_text(d["text"])
+        elseif get(d, "type", nothing) == "arguments_delta" && haskey(st.calls, ev["index"])
+            write(st.calls[ev["index"]][4], string(get(d, "arguments", "")))
         end
     elseif t in ("interaction.created", "interaction.completed")
         st.interaction = ev["interaction"]
@@ -133,9 +165,14 @@ end
 function _stream_finish(st::_GoogleStream, req::_Request)
     st.error === nothing || error("google stream error: ", st.error)
     i = something(st.interaction, Dict())
-    steps = [Dict("type" => "model_output",
-                  "content" => [Dict("type" => "text", "text" => String(take!(st.text[k])))])
-             for k in sort!(collect(keys(st.text)))]
+    function step(k)
+        haskey(st.text, k) && return Dict("type" => "model_output", "content" => _text_content(String(take!(st.text[k]))))
+        id, name, start, buf = st.calls[k]
+        streamed = String(take!(buf))
+        return Dict("type" => "function_call", "id" => id, "name" => name,
+                    "arguments" => isempty(streamed) ? start : streamed)
+    end
+    steps = [step(k) for k in sort!(collect(union(keys(st.text), keys(st.calls))))]
     json = Dict{String,Any}("id" => get(i, "id", nothing), "status" => st.status,
                             "usage" => get(i, "usage", nothing), "steps" => steps,
                             "errors" => get(i, "errors", nothing))

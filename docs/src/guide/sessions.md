@@ -1,8 +1,9 @@
 # Sessions
 
 A [`Session`](@ref) holds one conversation: a `name`, the active `model`, optional `system`
-instructions, and the typed message history in `messages`. [`chat!`](@ref) sends turns on a
-session (see [Chat](chat.md)).
+instructions, the `tools` its model may call, and the typed message history in `messages`.
+[`chat!`](@ref) sends turns on a session (see [Chat](chat.md)). A new session offers every
+registered tool; see [Tools on a session](tools.md#Tools-on-a-session) to restrict it.
 
 ## The default session
 
@@ -96,8 +97,10 @@ print(Session("openai/gpt-5"; name = "sys").system)
 ## The active session
 
 The REPL modes and session-less calls act on the [`active_session`](@ref). Every function
-that takes a session also works without one: `set_model!(model)`, `select_model!()` and
-`chat!(prompt)`.
+that changes or uses a session also works without one: `set_model!(model)`,
+`select_model!()`, `set_tools!(tools)` and `chat!(prompt)`. The exception is
+[`tools`](@ref): `tools()` lists the tool registry, so use `tools(active_session())` for the
+active session's tools.
 
 ```@example sessions
 w = new_session!("work"; model = "anthropic/claude-sonnet-4-5")   # create and activate

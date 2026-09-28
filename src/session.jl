@@ -1,12 +1,17 @@
 struct _Register end
 
 """
-    Session(model; name = nothing, system = nothing)
-    Session(; name = nothing, system = nothing)
+    Session(model; name = nothing, system = nothing, tools = nothing)
+    Session(; name = nothing, system = nothing, tools = nothing)
 
-One conversation: a `name`, the active `model`, optional `system` instructions, and the typed
-message history in `messages`. `model` may be a [`Model`](@ref) or a `"provider/model"` string;
-without one the saved [`default_model`](@ref) is used, and an error is thrown if none is set.
+One conversation: a `name`, the active `model`, optional `system` instructions, the tools the
+model may call, and the typed message history in `messages`. `model` may be a [`Model`](@ref)
+or a `"provider/model"` string; without one the saved [`default_model`](@ref) is used, and an
+error is thrown if none is set.
+
+`tools = nothing` gives the session every registered tool (see [`register_tool!`](@ref)),
+including ones registered later; a vector of tool names or functions restricts it (see
+[`set_tools!`](@ref)).
 
 Every session is registered (see [`sessions`](@ref)) so the REPL can switch to it, and stays
 registered until [`delete_session!`](@ref). Without a `name` it is called `"session"`; a name
@@ -26,10 +31,11 @@ mutable struct Session
     const name::String
     model::Union{Nothing,AbstractModel}
     system::Union{Nothing,String}
+    tools::Union{Nothing,Vector{String}}
     const messages::Vector{AbstractMessage}
-    function Session(::_Register, name::AbstractString, model, system)
+    function Session(::_Register, name::AbstractString, model, system, tools = nothing)
         s = new(_unique_session_name(name), model,
-                system === nothing ? nothing : String(system), AbstractMessage[])
+                system === nothing ? nothing : String(system), _tool_names(tools), AbstractMessage[])
         push!(_SESSIONS, s)
         return s
     end
@@ -39,10 +45,11 @@ const _SESSIONS = Session[]
 const _ACTIVE = Ref{Session}()
 
 function Session(model::AbstractModel; name::Union{Nothing,AbstractString} = nothing,
-                 system::Union{Nothing,AbstractString} = nothing)
+                 system::Union{Nothing,AbstractString} = nothing, tools = nothing)
     name === nothing || _check_session_name(name)
+    names = _tool_names(tools)
     system = system === nothing ? _default_system() : isempty(system) ? nothing : system
-    return Session(_Register(), something(name, "session"), model, system)
+    return Session(_Register(), something(name, "session"), model, system, names)
 end
 Session(model::AbstractString; kwargs...) = Session(Model(model); kwargs...)
 
@@ -105,12 +112,13 @@ function use_session!(x::Union{AbstractString,Session})
 end
 
 """
-    new_session!(name = nothing; model = nothing, system = nothing) -> Session
+    new_session!(name = nothing; model = nothing, system = nothing, tools = nothing) -> Session
 
 Create a session and make it the active one. `model` defaults to the saved default model.
 """
-function new_session!(name::Union{Nothing,AbstractString} = nothing; model = nothing, system = nothing)
-    s = model === nothing ? Session(; name, system) : Session(model; name, system)
+function new_session!(name::Union{Nothing,AbstractString} = nothing; model = nothing, system = nothing,
+                      tools = nothing)
+    s = model === nothing ? Session(; name, system, tools) : Session(model; name, system, tools)
     return _ACTIVE[] = s
 end
 
@@ -169,6 +177,42 @@ Clear the message history, keeping the model and system instructions.
 """
 Base.empty!(s::Session) = (empty!(s.messages); s)
 
+# nothing = every registered tool; otherwise registered names (functions are mapped to names).
+_tool_names(::Nothing) = nothing
+function _tool_names(xs)
+    names = String[x isa Function ? _tool_name(x) : x isa ToolSpec ? x.name : String(x) for x in xs]
+    for n in names
+        haskey(_TOOLS, n) || throw(ArgumentError(
+            "no tool named \"$n\" is registered (tools: $(join(sort!(collect(keys(_TOOLS))), ", ")))"))
+    end
+    return unique!(names)
+end
+
+"""
+    tools(session::Session) -> Vector{ToolSpec}
+
+The tools the session's model may call: every registered tool, or the subset chosen with
+[`set_tools!`](@ref). Tools unregistered since are left out.
+"""
+tools(s::Session) = s.tools === nothing ? tools() : ToolSpec[_TOOLS[n] for n in s.tools if haskey(_TOOLS, n)]
+
+"""
+    set_tools!(session::Session, tools) -> Vector{ToolSpec}
+    set_tools!(tools)
+
+Choose which registered tools the session (or the [`active_session`](@ref)) may use: a vector
+of tool names or functions restricts it, `[]` gives it none, and `nothing` gives it every
+registered tool (the default, which also includes tools registered later). Returns the
+session's tools.
+
+```julia
+set_tools!(s, [get_weather, "search_docs"])
+set_tools!(s, nothing)
+```
+"""
+set_tools!(s::Session, xs::Union{Nothing,AbstractVector}) = (s.tools = _tool_names(xs); tools(s))
+set_tools!(xs::Union{Nothing,AbstractVector}) = set_tools!(active_session(), xs)
+
 Base.show(io::IO, s::Session) = print(io, "Session(", repr(s.name), ", ",
     something(_model_string(s), "no model"), ", ", length(s.messages), " messages)")
 
@@ -176,7 +220,14 @@ function Base.show(io::IO, ::MIME"text/plain", s::Session)
     println(io, "Session ", repr(s.name))
     println(io, "  model:    ", something(_model_string(s), "none"))
     println(io, "  system:   ", s.system === nothing ? "none" : _system_preview(s.system))
+    println(io, "  tools:    ", _tools_label(s))
     print(io, "  messages: ", length(s.messages))
+end
+
+function _tools_label(s::Session)
+    ts = tools(s)
+    names = isempty(ts) ? "none" : join((t.name for t in ts), ", ")
+    return s.tools === nothing ? "all ($names)" : names
 end
 
 function _system_preview(text::AbstractString, n = 60)

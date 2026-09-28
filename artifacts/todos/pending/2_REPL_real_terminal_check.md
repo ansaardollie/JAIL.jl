@@ -32,6 +32,10 @@ In a plain terminal `julia` (not the agent's tool REPL):
 6. Julia 1.13 bracket auto-close still works in `julia>` with `}` bound to the chat mode: type
    `Dict{` then `}` and check no doubled `}` (ReplMaker keeps the original binding for
    non-empty lines; not verified).
+8. Tools (see `design_decisions/18_TOOLS_session_tools_and_call_loop.md`): in `|`, `tools`,
+   `tools show/use/add/drop/all/none` and Tab completion; in `}` with a registered tool, the
+   `→`/`←` lines appear (streamed and not); with `confirm_tools = true` the `[y/N]` prompt reads
+   input correctly inside the chat mode.
 
 ## Why
 

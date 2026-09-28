@@ -41,15 +41,30 @@ function _chat_slash(io::IO, line::AbstractString)
     end
 end
 
-function _render_reply(io::IO, reply::AssistantMessage)
+function _render_text(io::IO, reply::AssistantMessage)
     text = string(reply)
     if isempty(strip(text))
-        printstyled(io, "(empty reply)\n"; color = :light_black)
+        isempty(_tool_calls(reply)) && printstyled(io, "(empty reply)\n"; color = :light_black)
     else
         show(io, MIME"text/plain"(), Markdown.parse(text))
         println(io)
     end
-    _render_stop(io, reply)
+end
+
+# The whole turn after the prompt: reply text, then each call next to its result.
+function _render_turn(io::IO, messages)
+    for (i, m) in enumerate(messages)
+        if m isa AssistantMessage
+            _render_text(io, m)
+        elseif m isa ToolResultMessage
+            calls = i > 1 ? _tool_calls(messages[i-1]) : ToolCall[]
+            for r in m.content
+                j = findfirst(c -> c.id == r.call_id, calls)
+                j === nothing || _print_tool(io, calls[j])
+                _print_tool(io, r)
+            end
+        end
+    end
 end
 
 function _render_stop(io::IO, reply::AssistantMessage)
@@ -68,33 +83,58 @@ const _ALT_SCREEN_ON = "\e[?1049h\e[H\e[2J"
 const _ALT_SCREEN_OFF = "\e[?1049l"
 
 # On a terminal the reply streams on the alternate screen (like `less`), which never enters the
-# scrollback; switching back restores the REPL screen and only the Markdown rendering is printed.
+# scrollback; switching back restores the REPL screen and only the rendered turn is printed.
+# Without streaming, each reply is rendered as it arrives and tool calls are shown as they run.
 function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     s = active_session()
     s.model === nothing && throw(ArgumentError(
         "session \"$(s.name)\" has no model; choose one in the `|` mode with `use provider/model` or `select`"))
     stream = _stream_pref() && _supports_streaming(s.model.provider)
-    waiting, alt = Ref(tty), Ref(false)
-    tty && printstyled(io, "thinking…"; color = :light_black)
+    n0 = length(s.messages)
+    waiting, alt, line_start = Ref(false), Ref(false), Ref(true)
+    function start_waiting()
+        tty || return
+        printstyled(io, "thinking…"; color = :light_black)
+        waiting[] = true
+    end
     stop_waiting() = waiting[] && (print(io, "\r\e[2K"); waiting[] = false)
-    function show_delta(t)
-        stop_waiting()
+    function enter_alt()
         if tty && !alt[]
             print(io, _ALT_SCREEN_ON)
             alt[] = true
             printstyled(io, _CHAT_PROMPT, line, "\n\n"; color = :light_black)
         end
-        print(io, t)
     end
+    function show_delta(t)
+        stop_waiting()
+        enter_alt()
+        print(io, t)
+        isempty(t) || (line_start[] = endswith(t, '\n'))
+    end
+    function on_step(x)
+        stop_waiting()
+        if x isa AssistantMessage
+            stream || _render_text(io, x)
+            return
+        end
+        stream && enter_alt()
+        line_start[] || (println(io); line_start[] = true)
+        _print_tool(io, x)
+        x isa ToolResult && !stream && start_waiting()
+    end
+    start_waiting()
     reply = try
-        _chat!(s, line; on_text = stream ? show_delta : nothing)
+        _chat!(s, line; on_text = stream ? show_delta : nothing, on_step)
     finally
         stop_waiting()
         alt[] && print(io, _ALT_SCREEN_OFF)
     end
-    (tty || !stream) && return _render_reply(io, reply)
-    # Not a terminal: the streamed raw text stays as printed.
-    endswith(string(reply), '\n') || println(io)
+    if stream && tty
+        _render_turn(io, s.messages[n0+2:end])
+    elseif stream
+        # Not a terminal: the streamed raw text stays as printed.
+        line_start[] || println(io)
+    end
     return _render_stop(io, reply)
 end
 

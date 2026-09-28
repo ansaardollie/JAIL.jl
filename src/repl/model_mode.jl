@@ -9,6 +9,11 @@ const _MODEL_HELP = """
     session new [name] [provider/model]   start a session and make it active
     session use <name>                    switch the active session
     session rm <name>                     delete a session (not the active one)
+    tools                                 list tools (* = available to the active session)
+    tools show <name>                     a tool's description and parameters
+    tools use <name>...                   restrict the active session to these tools
+    tools add <name>... | drop <name>...  add to / remove from the active session's tools
+    tools all | none                      every registered tool (the default) | no tools
     help, ?                               show this help
 
     Press backspace on an empty line to leave this mode."""
@@ -21,7 +26,11 @@ function _nargs(cmd, args, n::UnitRange)
                  "use" => "use provider/model", "default" => "default [provider/model]",
                  "session" => "session new [name] [provider/model] | use <name> | rm <name>",
                  "session new" => "session new [name] [provider/model]",
-                 "session use" => "session use <name>", "session rm" => "session rm <name>")
+                 "session use" => "session use <name>", "session rm" => "session rm <name>",
+                 "tools" => "tools [show <name> | use|add|drop <name>... | all | none]",
+                 "tools show" => "tools show <name>", "tools use" => "tools use <name>...",
+                 "tools add" => "tools add <name>...", "tools drop" => "tools drop <name>...",
+                 "tools all" => "tools all", "tools none" => "tools none")
     throw(ArgumentError("usage: `$(get(usage, cmd, cmd))`"))
 end
 
@@ -37,6 +46,7 @@ function _cmd_status(args)
     end
     default = _load_pref("default_model")
     default == _model_string(s) || println("Default:  ", something(default, "none"))
+    println("Tools:    ", _tools_label(s))
 end
 
 function _cmd_providers(args)
@@ -121,11 +131,58 @@ end
 
 _cmd_help(args) = println(replace(_MODEL_HELP, r"^(?=.)"m => "  "))
 
+function _list_tools(s::Session)
+    all, mine = tools(), Set(t.name for t in tools(s))
+    isempty(all) && return println("No tools registered; use `register_tool!(f)` or `@tool f` in Julia mode.")
+    println("Session \"", s.name, "\" uses ", s.tools === nothing ? "every registered tool" :
+            "$(length(mine)) of $(length(all)) tools", ":")
+    width = maximum(t -> length(t.name), all)
+    for t in all
+        desc = isempty(t.description) ? "" : _short(first(split(t.description, '\n')), 60)
+        println(t.name in mine ? "  * " : "    ", rpad(t.name, width), "  ", desc)
+    end
+end
+
+function _session_tools_changed(s::Session)
+    println("Session \"", s.name, "\" tools: ", _tools_label(s))
+end
+
+function _cmd_tools(args)
+    s = active_session()
+    isempty(args) && return _list_tools(s)
+    sub, names = args[1], args[2:end]
+    if sub == "show"
+        _nargs("tools show", names, 1:1)
+        haskey(_TOOLS, names[1]) || throw(ArgumentError("no tool named \"$(names[1])\" is registered"))
+        show(stdout, MIME"text/plain"(), _TOOLS[names[1]])
+        println()
+    elseif sub in ("use", "add", "drop")
+        isempty(names) && _nargs("tools $sub", names, 1:typemax(Int))
+        _tool_names(names)
+        if sub == "use"
+            set_tools!(s, names)
+        elseif sub == "add"
+            s.tools === nothing &&
+                return println("Session \"", s.name, "\" already uses every registered tool")
+            set_tools!(s, [s.tools; names])
+        else
+            set_tools!(s, setdiff(s.tools === nothing ? [t.name for t in tools()] : s.tools, names))
+        end
+        _session_tools_changed(s)
+    elseif sub in ("all", "none")
+        _nargs("tools $sub", names, 0:0)
+        set_tools!(s, sub == "all" ? nothing : String[])
+        _session_tools_changed(s)
+    else
+        throw(ArgumentError("unknown `tools` subcommand `$sub`; use show, use, add, drop, all or none"))
+    end
+end
+
 const _MODEL_COMMANDS = Dict(
     "status" => _cmd_status, "st" => _cmd_status, "providers" => _cmd_providers,
     "models" => _cmd_models, "select" => _cmd_select, "use" => _cmd_use,
     "default" => _cmd_default, "sessions" => _cmd_sessions, "session" => _cmd_session,
-    "help" => _cmd_help, "?" => _cmd_help)
+    "tools" => _cmd_tools, "help" => _cmd_help, "?" => _cmd_help)
 
 function _model_command(line::AbstractString)
     words = split(strip(line))
@@ -167,6 +224,11 @@ function _complete_model_mode(before::AbstractString)
         n == 2 && return _matching(("new", "use", "rm"), partial)
         n == 3 && parts[2] in ("use", "rm") && return _matching((s.name for s in _SESSIONS), partial)
         n in (3, 4) && parts[2] == "new" && return _complete_model_spec(partial)
+    elseif cmd == "tools"
+        n == 2 && return _matching(("show", "use", "add", "drop", "all", "none"), partial)
+        sub = parts[2]
+        (sub in ("use", "add", "drop") || (sub == "show" && n == 3)) &&
+            return _matching(sort!(collect(keys(_TOOLS))), partial)
     end
     return (String[], partial)
 end

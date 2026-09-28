@@ -29,14 +29,23 @@ through a common parent type, [`AbstractOpenAIProvider`](@ref), rather than a fl
 ## Sessions
 
 A [`Session`](@ref) holds one conversation: a name, the active model, optional system
-instructions, and the message history. Any number can exist. When JAIL loads it starts a
-session called `"default"`, which is the **active session**: the one the REPL modes and
-session-less calls like `select_model!()` act on. See [Sessions](sessions.md).
+instructions, the tools its model may call, and the message history. Any number can exist.
+When JAIL loads it starts a session called `"default"`, which is the **active session**: the
+one the REPL modes and session-less calls like `select_model!()` act on. See
+[Sessions](sessions.md).
 
 History is stored as typed messages, not strings, and is independent of the provider, so a
 session can switch model (even provider) mid-conversation. A history holds
-[`UserMessage`](@ref)s and [`AssistantMessage`](@ref)s; system instructions live on the
-session, not in the history. See [Chat](chat.md).
+[`UserMessage`](@ref)s, [`AssistantMessage`](@ref)s and, when tools run,
+[`ToolResultMessage`](@ref)s; system instructions live on the session, not in the history.
+See [Chat](chat.md).
+
+## Tools are Julia functions
+
+A tool is a documented Julia function registered with [`register_tool!`](@ref) or
+[`@tool`](@ref). JAIL describes it to each provider in that provider's format, runs the calls
+the model makes, and sends the results back. Tool calls and results are content parts and
+messages like any other, so they stay in the provider-agnostic history. See [Tools](tools.md).
 
 ## Configuration lives in Preferences
 
@@ -55,9 +64,9 @@ The full list of keys is in [Preferences keys](providers.md#Preferences-keys).
 
 JAIL will be used in two ways that share the same code:
 
-- **REPL modes**: `|` for model selection and `}` for chatting (both available now), and `&`
-  for agentic work with tools and code generation (planned). Each mode's prompt shows the
-  model it is using.
+- **REPL modes**: `|` for model, session and tool selection and `}` for chatting, including
+  tool calls (both available now), and `&` for agentic work with code generation and built-in
+  tools (planned). Each mode's prompt shows the model it is using.
 - **Functions** for one-shot text, generated Julia code, and extracting Julia objects from
   natural language (planned).
 

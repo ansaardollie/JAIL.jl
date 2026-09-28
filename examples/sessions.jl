@@ -11,7 +11,7 @@
 # - Messages are added by `chat!` (see examples/chat.jl); this script keeps history empty.
 # - Built-in system instructions: their environment line is captured at session creation, so the
 #   "default" session (created by `using JAIL`) lists only packages loaded before JAIL.
-# - No tools field yet; tools will be attached to sessions later.
+# - Sessions offer every registered tool unless restricted (see examples/tools.jl).
 # - Sessions stay registered (and in memory) until `delete_session!`.
 # - Sessions are not persisted across Julia restarts.
 

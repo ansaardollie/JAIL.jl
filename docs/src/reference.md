@@ -52,4 +52,20 @@ AssistantMessage
 Usage
 AbstractContentPart
 TextPart
+ToolCall
+ToolResult
+ToolResultMessage
+```
+
+## Tools
+
+```@docs
+ToolSpec
+ToolParameter
+register_tool!
+@tool
+tools
+tools(::Session)
+set_tools!
+unregister_tool!
 ```

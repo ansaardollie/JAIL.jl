@@ -5,7 +5,7 @@ using Documenter
 const DOCS_PREFS = joinpath(@__DIR__, "LocalPreferences.toml")
 write(DOCS_PREFS, """
     [JAIL]
-    __clear__ = ["default_model", "providers", "repl_modes", "max_tokens", "store_requests", "system_prompt", "stream"]
+    __clear__ = ["default_model", "providers", "repl_modes", "max_tokens", "store_requests", "system_prompt", "stream", "max_tool_rounds", "confirm_tools"]
     """)
 
 using JAIL
@@ -25,6 +25,7 @@ makedocs(
             "guide/models.md",
             "guide/sessions.md",
             "guide/chat.md",
+            "guide/tools.md",
             "guide/repl.md",
         ],
         "Reference" => "reference.md",
