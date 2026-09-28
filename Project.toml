@@ -7,18 +7,24 @@ authors = ["Ansaar Dollie <me@ansaardollie.com>"]
 projects = ["docs"]
 
 [deps]
+Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Markdown = "d6f4376e-aef5-505a-96c1-9c027394607a"
+MbedTLS = "739be429-bea8-5141-9913-cc70e7f3736d"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 REPL = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 ReplMaker = "b873ce64-0db9-51f5-a568-4457d8e49576"
 
 [compat]
+Base64 = "1.11.0"
 HTTP = "2"
 JSON = "1"
 Markdown = "1.11.0"
+MbedTLS = "1.1.10"
 Preferences = "1.4"
 REPL = "1.11.0"
+Random = "1.11.0"
 ReplMaker = "0.2.7"
 julia = "1.10"
