@@ -115,6 +115,7 @@ above rather than editing by hand, though hand edits are picked up without a res
 | Key | Type | Written by | Meaning |
 |---|---|---|---|
 | `default_model` | `"provider/model-id"` | [`set_default_model!`](@ref) | Model for new sessions and for the `"default"` session at load |
+| `providers.<name>.default_model` | model id | [`set_default_model!`](@ref)`(p, id)` | That provider's own default, used by [`use_provider!`](@ref) and the REPL's `use provider` (no model id) |
 | `providers.<name>.base_url` | string | [`configure_provider!`](@ref), [`register_provider!`](@ref) | Base URL override (built-in) or endpoint URL (compatible) |
 | `providers.<name>.api_key_env` | string | same | Name of the ENV var holding the API key |
 | `providers.<name>.type` | `"openai_compatible"` | [`register_provider!`](@ref) | Marks a registered compatible endpoint |

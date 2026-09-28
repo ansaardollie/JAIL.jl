@@ -3,8 +3,10 @@ const _MODEL_HELP = """
     providers                             list providers and whether their API key is set
     models [provider]                     list models (default: the active model's provider)
     select [provider]                     choose the active session's model from menus
-    use provider/model                    set the active session's model
-    default [provider/model]              show or save the default model for new sessions
+    use provider/model | use provider     set the active session's model (provider alone needs
+                                           that provider's own default, see `default`)
+    default [provider/model]              show or save the global default model for new sessions
+    default provider [model-id]           show or save that provider's own default model
     sessions                              list sessions (* = active)
     session new [name] [provider/model]   start a session and make it active
     session use <name>                    switch the active session
@@ -23,7 +25,8 @@ _model_prompt() = isassigned(_ACTIVE) ? _session_label(active_session()) * " mod
 function _nargs(cmd, args, n::UnitRange)
     length(args) in n && return nothing
     usage = Dict("models" => "models [provider]", "select" => "select [provider]",
-                 "use" => "use provider/model", "default" => "default [provider/model]",
+                 "use" => "use provider/model | use provider",
+                 "default" => "default [provider/model | provider [model-id]]",
                  "session" => "session new [name] [provider/model] | use <name> | rm <name>",
                  "session new" => "session new [name] [provider/model]",
                  "session use" => "session use <name>", "session rm" => "session rm <name>",
@@ -80,18 +83,32 @@ end
 function _cmd_use(args)
     _nargs("use", args, 1:1)
     s = active_session()
-    println("Session \"", s.name, "\" now uses ", set_model!(s, args[1]))
+    arg = args[1]
+    m = occursin('/', arg) ? set_model!(s, arg) : use_provider!(s, _provider(arg))
+    println("Session \"", s.name, "\" now uses ", m)
 end
 
 function _cmd_default(args)
-    _nargs("default", args, 0:1)
+    _nargs("default", args, 0:2)
     if isempty(args)
         return println("Default model: ", something(_load_pref("default_model"), "none"))
     end
-    m = set_default_model!(args[1])
-    println("Default model saved: ", m, " (used by new sessions)")
-    active_session().model === nothing &&
-        println("The active session has no model; `use $m` to use it here.")
+    if length(args) == 2
+        p = _provider(args[1])
+        m = set_default_model!(p, args[2])
+        return println("Default model for ", provider_name(p), " saved: ", m.id)
+    end
+    arg = args[1]
+    if occursin('/', arg)
+        m = set_default_model!(arg)
+        println("Default model saved: ", m, " (used by new sessions)")
+        active_session().model === nothing &&
+            println("The active session has no model; `use $m` to use it here.")
+    else
+        p = _provider(arg)
+        id = get(_provider_prefs(provider_name(p)), "default_model", nothing)
+        println("Default model for ", provider_name(p), ": ", something(id, "none"))
+    end
 end
 
 function _cmd_sessions(args)
@@ -220,6 +237,8 @@ function _complete_model_mode(before::AbstractString)
         return _matching((provider_name(p) for p in providers()), partial)
     elseif n == 2 && cmd in ("use", "default")
         return _complete_model_spec(partial)
+    elseif n == 3 && cmd == "default"
+        return _matching(get(_MODEL_ID_CACHE, parts[2], String[]), partial)
     elseif cmd == "session"
         n == 2 && return _matching(("new", "use", "rm"), partial)
         n == 3 && parts[2] in ("use", "rm") && return _matching((s.name for s in _SESSIONS), partial)

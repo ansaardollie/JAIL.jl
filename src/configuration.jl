@@ -127,6 +127,41 @@ function default_model()
     return Model(s)
 end
 
+"""
+    set_default_model!(p::AbstractProvider, id::AbstractString) -> Model
+
+Persist `id` as `p`'s own default model, used by [`use_provider!`](@ref) and the REPL's
+`use provider` (no model id). This is separate from the global [`set_default_model!`](@ref
+set_default_model!(::Union{AbstractString,Model})), which stays the fallback for new sessions.
+An [`OpenAICompatible`](@ref) provider must be registered first with [`register_provider!`](@ref).
+"""
+function set_default_model!(p::AbstractProvider, id::AbstractString)
+    isempty(strip(id)) && throw(ArgumentError("model id must not be empty"))
+    name = provider_name(p)
+    if p isa OpenAICompatible && !haskey(_provider_prefs(), name)
+        throw(ArgumentError("\"$name\" is not registered; use `register_provider!` first"))
+    end
+    t = _provider_prefs(name)
+    t["default_model"] = String(id)
+    _save_provider_prefs!(name, t)
+    return Model(p, id)
+end
+
+"""
+    default_model(p::AbstractProvider) -> Model
+
+`p`'s own default model, saved with [`set_default_model!`](@ref)`(p, id)`. Throws if none is
+saved for this provider (the global [`default_model`](@ref)`()` is not used as a fallback).
+"""
+function default_model(p::AbstractProvider)
+    name = provider_name(p)
+    id = get(_provider_prefs(name), "default_model", nothing)
+    id === nothing && throw(ArgumentError(
+        "no default model is set for \"$name\"; choose one with e.g. " *
+        "`set_default_model!(p, \"<model-id>\")`, or `list_models(p)` to see options"))
+    return Model(p, id)
+end
+
 # Natural order: digit runs compare numerically, so "claude-opus-4-9" < "claude-opus-4-10".
 _natural_chunks(s::AbstractString) =
     [(isdigit(first(m.match)), lowercase(m.match)) for m in eachmatch(r"\d+|\D+", s)]

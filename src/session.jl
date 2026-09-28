@@ -171,6 +171,17 @@ set_model!(s::Session, m::AbstractString) = set_model!(s, Model(m))
 set_model!(m::Union{AbstractString,AbstractModel}) = set_model!(active_session(), m)
 
 """
+    use_provider!(session::Session, p::AbstractProvider) -> Model
+    use_provider!(p::AbstractProvider) -> Model
+
+Switch the session (or the [`active_session`](@ref) when none is given) to `p`'s own default
+model, saved with [`set_default_model!`](@ref)`(p, id)`. Throws if `p` has no default model
+saved. The imperative form of the REPL's `use provider` (no model id).
+"""
+use_provider!(s::Session, p::AbstractProvider) = set_model!(s, default_model(p))
+use_provider!(p::AbstractProvider) = use_provider!(active_session(), p)
+
+"""
     empty!(session::Session)
 
 Clear the message history, keeping the model and system instructions.

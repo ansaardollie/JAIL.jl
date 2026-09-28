@@ -34,6 +34,7 @@ default_model
 ```@docs
 Session
 set_model!
+use_provider!
 Base.empty!(::Session)
 sessions
 active_session

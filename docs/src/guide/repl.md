@@ -127,7 +127,9 @@ In the model mode:
 | `models [provider]` | List models (default: the active model's provider) | [`list_models`](@ref) |
 | `select [provider]` | Choose the active session's model from menus | [`select_model!`](@ref) |
 | `use provider/model` | Set the active session's model | [`set_model!`](@ref) |
-| `default [provider/model]` | Show or save the default model for new sessions | [`set_default_model!`](@ref) |
+| `use provider` | Set the active session's model to that provider's own default | [`use_provider!`](@ref) |
+| `default [provider/model]` | Show or save the global default model for new sessions | [`set_default_model!`](@ref) |
+| `default provider [model-id]` | Show or save that provider's own default model | [`set_default_model!`](@ref)`(p, id)` |
 | `sessions` | List sessions; `*` marks the active one | [`sessions`](@ref) |
 | `session new [name] [provider/model]` | Start a session and make it active | [`new_session!`](@ref) |
 | `session use <name>` | Switch the active session | [`use_session!`](@ref) |

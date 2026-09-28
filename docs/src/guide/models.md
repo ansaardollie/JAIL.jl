@@ -115,3 +115,31 @@ default_model()
 ```
 
 Only the provider name and model id are stored. The id isn't checked against the provider.
+
+## Per-provider default models
+
+Separate from the model above, each provider can have its own default, used by
+[`use_provider!`](@ref) and the REPL's `use provider` (no model id):
+
+```@example models
+set_default_model!(Anthropic(), "claude-sonnet-4-5")
+```
+
+```@example models
+default_model(Anthropic())
+```
+
+```@example models
+use_provider!(Anthropic())   # active session -> Anthropic's saved default
+```
+
+Calling either on a provider with nothing saved throws, rather than falling back to the global
+default model:
+
+```@example models
+try
+    default_model(OpenAICompatible("openrouter"))
+catch e
+    showerror(stdout, e)
+end
+```

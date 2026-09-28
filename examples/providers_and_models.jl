@@ -67,6 +67,17 @@ set_default_model!("anthropic/claude-sonnet-4-5")
 set_default_model!(Model("lmstudio/qwen3:8b"))
 @show default_model()
 
+# --- 5b. Each provider can also have its own default model ---------------------------------
+#
+# Separate from the global default above: `use_provider!` (and the REPL's `use provider`, no
+# model id) switch a session straight to *that provider's* saved default.
+
+set_default_model!(Anthropic(), "claude-sonnet-4-5")
+@show default_model(Anthropic())          # this provider's own default, not the global one
+
+use_provider!(Anthropic())                # active session -> Anthropic's saved default
+show_error(() -> use_provider!(lmstudio)) # ...unless nothing is saved for it yet
+
 # --- 6. Misuse -----------------------------------------------------------------------------
 
 function show_error(f)

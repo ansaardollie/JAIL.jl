@@ -44,7 +44,10 @@ end
 #   (default: anthropic/claude-sonnet-4-5) model> select              # menus, active session
 #   (default: anthropic/claude-sonnet-4-5) model> select openai
 #   (default: anthropic/claude-sonnet-4-5) model> use openai/gpt-5    # set directly
-#   (default: openai/gpt-5) model> default openai/gpt-5               # save for new sessions
+#   (default: openai/gpt-5) model> use anthropic                      # anthropic's own default
+#   (default: anthropic/claude-sonnet-4-5) model> default anthropic   # show that provider's default
+#   (default: anthropic/claude-sonnet-4-5) model> default anthropic claude-opus-4-5   # ...or save one
+#   (default: anthropic/claude-sonnet-4-5) model> default openai/gpt-5  # save the global default
 #   (default: openai/gpt-5) model> st
 #
 # Sessions (see examples/sessions.jl): `sessions`, `session new|use|rm`.
@@ -55,3 +58,15 @@ end
 
 # A provider whose key is missing: the error is printed and nothing is selected.
 @show select_model!(Google(api_key_env = "JAIL_EXAMPLE_UNSET_VAR"))
+
+# `use provider` / `use_provider!` need that provider's own default model saved first
+# (`set_default_model!(p, "model-id")`, or `default provider model-id` in the REPL mode):
+function show_error(f)
+    try
+        f()
+    catch e
+        println("  ", sprint(showerror, e))
+    end
+end
+register_provider!(OpenAICompatible("jail-example-misuse", "http://localhost:1234/v1"))
+show_error(() -> use_provider!(OpenAICompatible("jail-example-misuse")))
