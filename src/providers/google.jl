@@ -123,6 +123,7 @@ end
 # .completed, step.start / .delta / .stop, error. Text arrives as step.delta `{type: "text"}`
 # inside a model_output step. gemini-docs/gemini-docs-070-streaming.md#L133-L184. A function_call
 # step starts with `arguments: {}` and streams `arguments_delta` strings (#L207-L250).
+# The stream ends with a non-JSON sentinel `event: done` / `data: [DONE]` (#L168-L169).
 _supports_streaming(::Type{Google}) = true
 
 mutable struct _GoogleStream
@@ -136,6 +137,7 @@ end
 _stream_state(::Google, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), nothing, nothing, nothing)
 
 function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
+    strip(data) == "[DONE]" && return nothing
     ev = JSON.parse(data)
     t = get(ev, "event_type", nothing)
     if t == "step.start"
