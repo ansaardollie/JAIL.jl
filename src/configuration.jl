@@ -5,6 +5,7 @@ function _provider(name::AbstractString)
     for P in _FIRST_PARTY
         provider_name(P) == name && return P()
     end
+    name == provider_name(GoogleEnterprise) && haskey(_provider_prefs(), name) && return GoogleEnterprise()
     t = get(_provider_prefs(), name, nothing)
     t !== nothing && get(t, "type", nothing) == "openai_compatible" && return OpenAICompatible(name)
     known = join((provider_name(p) for p in providers()), ", ")
@@ -26,8 +27,15 @@ function _to_prefs(p::OpenAICompatible)
     return t
 end
 
+function _to_prefs(p::GoogleEnterprise)
+    t = Dict{String,Any}("project" => p.project, "location" => p.location)
+    p.service_account_path === nothing || (t["service_account_path"] = p.service_account_path)
+    return t
+end
+
 _settings(::_FirstParty) = (:base_url, :api_key_env)
 _settings(::OpenAICompatible) = (:base_url, :api_key_env, :api)
+_settings(::GoogleEnterprise) = (:project, :location, :service_account_path)
 
 # `nothing` means "back to the default"
 _with(p::P; base_url = p.base_url, api_key_env = p.api_key_env) where {P<:_FirstParty} =
@@ -38,15 +46,27 @@ function _with(p::OpenAICompatible; base_url = p.base_url, api_key_env = p.api_k
     return OpenAICompatible(p.name, base_url; api_key_env, api = something(api, :responses))
 end
 
+function _with(p::GoogleEnterprise; project = p.project, location = p.location,
+              service_account_path = p.service_account_path)
+    project === nothing && throw(ArgumentError("a GoogleEnterprise provider needs a project"))
+    location === nothing && throw(ArgumentError("a GoogleEnterprise provider needs a location"))
+    return GoogleEnterprise(String(project), String(location),
+                            service_account_path === nothing ? nothing : String(service_account_path),
+                            Ref{Union{Nothing,_GCPAccessKey}}(nothing))
+end
+
 """
     configure_provider!(p::AbstractProvider; base_url, api_key_env)
     configure_provider!(p::OpenAICompatible; base_url, api_key_env, api)
+    configure_provider!(p::GoogleEnterprise; project, location, service_account_path)
 
 Persist connection settings for `p` in Preferences and return the reloaded provider. Keywords
 override `p`'s fields; `nothing` removes the saved value, so a built-in provider falls back to
 its default and an [`OpenAICompatible`](@ref) endpoint to no key (`api_key_env`) or
 `:responses` (`api`). An `OpenAICompatible` endpoint must be registered first with
-[`register_provider!`](@ref), and its `base_url` can't be `nothing`.
+[`register_provider!`](@ref), and its `base_url` can't be `nothing`. A [`GoogleEnterprise`](@ref)
+has no default `project`/`location`, so those two can't be cleared to `nothing` either;
+`service_account_path` can.
 
 `api_key_env` is the *name* of the ENV var holding the key; the key itself is never stored.
 
@@ -87,6 +107,7 @@ with its current configuration.
 """
 function providers()
     ps = AbstractProvider[P() for P in _FIRST_PARTY]
+    haskey(_provider_prefs(), provider_name(GoogleEnterprise)) && push!(ps, GoogleEnterprise())
     for (name, t) in sort!(collect(_provider_prefs()); by = first)
         get(t, "type", nothing) == "openai_compatible" && push!(ps, OpenAICompatible(name))
     end
@@ -186,7 +207,11 @@ Ask the provider's API which models are available, sorted alphabetically by id (
 with version numbers in numeric order (`gemini-3.9-flash` before `gemini-3.10-flash`).
 Needs network access and, for providers that require one, the API key in the configured ENV var.
 Google results are limited to models whose `supportedGenerationMethods` include
-`generateContent`.
+`generateContent`; [`GoogleEnterprise`](@ref)'s results also include Vertex AI's partner
+(Model Garden) models — e.g. `"anthropic/claude-opus-4-5"` — with the id prefixed by publisher
+except for Google's own (kept bare, e.g. `"gemini-2.5-flash"`). Vertex's catalog has no
+capability field, so results are otherwise unfiltered (includes non-text models like embeddings
+and TTS).
 """
 list_models(p::AbstractProvider) =
     sort!(_list_models(p, (url; query = nothing) -> _get_json(p, url; query));

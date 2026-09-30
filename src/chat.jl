@@ -23,8 +23,7 @@ _fp_part(r::ToolResult) = (r.call_id, r.content, r.is_error)
 _fp_part(p::AbstractContentPart) = p
 _fingerprint(messages) = hash([(_role(m), map(_fp_part, m.content)) for m in messages])
 
-_same_endpoint(a::AbstractProvider, b::AbstractProvider) =
-    typeof(a) === typeof(b) && a.base_url == b.base_url
+_same_endpoint(a::AbstractProvider, b::AbstractProvider) = typeof(a) === typeof(b) && a == b
 
 # (previous_id, index of that reply) when the history can continue server-side, else nothing.
 function _chain_point(p::AbstractProvider, messages, store::Bool)

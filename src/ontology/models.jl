@@ -31,3 +31,7 @@ end
 
 Base.print(io::IO, m::Model) = print(io, provider_name(m.provider), '/', m.id)
 Base.show(io::IO, m::Model) = print(io, "Model(", repr(string(m)), ")")
+
+# Explicit, not the default egal fallback: a provider with internal mutable state (e.g.
+# GoogleEnterprise's cached access token) must compare by its own `==`, not object identity.
+Base.:(==)(a::Model, b::Model) = a.provider == b.provider && a.id == b.id

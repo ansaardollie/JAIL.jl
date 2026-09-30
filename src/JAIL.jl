@@ -8,7 +8,7 @@ using REPL: REPL
 using REPL.TerminalMenus: TerminalMenus, RadioMenu, request
 using ReplMaker: initrepl, FunctionCompletionProvider
 
-export AbstractProvider, AbstractOpenAIProvider, OpenAI, OpenAICompatible, Anthropic, Google
+export AbstractProvider, AbstractOpenAIProvider, OpenAI, OpenAICompatible, Anthropic, Google, GoogleEnterprise
 export AbstractModel, Model
 export configure_provider!, register_provider!, providers
 export set_default_model!, default_model, list_models, select_model!
@@ -25,6 +25,7 @@ include("ontology/messages.jl")
 include("ontology/tools.jl")
 include("ontology/requests.jl")
 include("http.jl")
+include("gcp_auth.jl")
 include("providers/openai.jl")
 include("providers/openai_compatible.jl")
 include("providers/anthropic.jl")

@@ -13,11 +13,17 @@ function _key_note(p::AbstractProvider)
     return "ENV[\"$env\"] not set"
 end
 
+# No ENV-var API key to check; GoogleEnterprise authenticates with an OAuth2 access token.
+_key_note(::GoogleEnterprise) = ""
+
+_endpoint(p::AbstractProvider) = p.base_url
+_endpoint(p::GoogleEnterprise) = _gcp_location_url(p.location)
+
 function _provider_labels(ps)
     width = maximum(p -> length(provider_name(p)), ps)
     return map(ps) do p
         note = _key_note(p)
-        string(rpad(provider_name(p), width), "  ", p.base_url, isempty(note) ? "" : "  ($note)")
+        string(rpad(provider_name(p), width), "  ", _endpoint(p), isempty(note) ? "" : "  ($note)")
     end
 end
 

@@ -6,15 +6,29 @@
 # and applies immediately, without restarting Julia. API keys stay in ENV; JAIL only stores
 # the *name* of the ENV var.
 #
-# Providers: OpenAI, Anthropic, Google, and any OpenAI-compatible server.
+# Providers: OpenAI, Anthropic, Google, GoogleEnterprise (Vertex AI), and any OpenAI-compatible
+# server.
 #
 # Open / tentative:
 # - The session type (per-conversation state, active model) doesn't exist yet;
 #   `default_model()` is what it will start from.
 # - `Model` holds only provider + id; listing metadata (display name, context window) is dropped.
-# - Google `list_models` keeps only models that support `generateContent`.
+# - Google `list_models` keeps only models that support `generateContent`; GoogleEnterprise's
+#   publisher catalog has no such capability field, so it comes back unfiltered (includes
+#   embeddings, TTS, etc.).
+# - GoogleEnterprise wire format (text turns), tool calling and streaming reuse Google's
+#   Interactions code (only auth, base URL and API version differ); tool calling and streaming
+#   haven't been exercised against a live Vertex AI project yet.
 
 using JAIL
+
+function show_error(f)
+    try
+        f()
+    catch e
+        println("  ", sprint(showerror, e))
+    end
+end
 
 const LIVE = true   # set to true to call the providers' list-models endpoints
 
@@ -26,6 +40,16 @@ const LIVE = true   # set to true to call the providers' list-models endpoints
 
 # An ad-hoc override, not persisted:
 @show Anthropic(base_url = "https://my-proxy.example.com")
+
+# GoogleEnterprise (Vertex AI on GCP) is a distinct provider, not a flag on Google: different
+# base URL, different auth (an OAuth2 access token, never an API key), same Interactions wire
+# format. Unlike the other providers it has no built-in default project/location.
+@show GoogleEnterprise(project = "example-project", location = "us-central1")
+
+# The access token is fetched lazily on first use and cached on the instance (refreshed a little
+# before its ~1h lifetime is up): `service_account_path`, then `GOOGLE_APPLICATION_CREDENTIALS`,
+# then Application Default Credentials (`gcloud auth application-default login`), then the
+# GCE/GKE metadata server.
 
 # --- 2. Models: typed, or "provider/model-id" -----------------------------------------------
 
@@ -43,6 +67,19 @@ m = Model(Anthropic(), "claude-sonnet-4-5")
 # `nothing` resets a setting to its default:
 @show configure_provider!(Anthropic(); api_key_env = nothing)
 
+# GoogleEnterprise has no built-in default project/location, so constructing it before one is
+# saved throws instead of silently picking something:
+show_error(() -> GoogleEnterprise())
+
+@show configure_provider!(GoogleEnterprise(project = "example-project", location = "us-central1"))
+@show GoogleEnterprise()   # now loads project/location from Preferences
+
+# `project` and `location` can't be reset to `nothing` (there's no default to fall back to);
+# `service_account_path` can:
+show_error(() -> configure_provider!(GoogleEnterprise(); project = nothing))
+@show configure_provider!(GoogleEnterprise(); service_account_path = "/path/to/key.json")
+@show configure_provider!(GoogleEnterprise(); service_account_path = nothing)
+
 # --- 4. OpenAI-compatible servers ----------------------------------------------------------
 
 lmstudio = register_provider!(
@@ -55,6 +92,7 @@ register_provider!(
 @show OpenAICompatible("openrouter")          # load a registered endpoint by name
 @show Model("openrouter/openai/gpt-5")        # split on the first '/': id is "openai/gpt-5"
 @show Model("lmstudio/qwen3:8b")
+@show Model("google_enterprise/gemini-2.5-flash")
 
 println("\nConfigured providers:")
 foreach(p -> println("  ", p), providers())
@@ -80,14 +118,6 @@ show_error(() -> use_provider!(lmstudio)) # ...unless nothing is saved for it ye
 
 # --- 6. Misuse -----------------------------------------------------------------------------
 
-function show_error(f)
-    try
-        f()
-    catch e
-        println("  ", sprint(showerror, e))
-    end
-end
-
 println("\nErrors:")
 show_error(() -> Model("claude-sonnet-4-5"))                          # no provider prefix
 show_error(() -> Model("mistral/large"))                              # unknown provider
@@ -96,7 +126,7 @@ show_error(() -> OpenAICompatible("anthropic", "http://localhost"))   # reserved
 show_error(() -> configure_provider!(OpenAI(); api_key_env = "sk-proj-abc123"))  # a key, not a name
 show_error(() -> configure_provider!(OpenAI(); model = "gpt-5"))      # model isn't provider config
 
-# --- 7. Listing models (network; needs API keys in ENV) ------------------------------------
+# --- 7. Listing models (network; needs API keys in ENV / a live GCP project) ---------------
 
 if LIVE
     for p in (OpenAI(), Anthropic(), Google())
@@ -104,6 +134,13 @@ if LIVE
         println("\n$(length(models)) models from $(p):")
         foreach(m -> println("  ", m), first(models, 5))
     end
+
+    # GoogleEnterprise: real project + location required; unfiltered publisher catalog (see the
+    # note above), so this includes non-text models.
+    ent = configure_provider!(GoogleEnterprise(project = "my-real-project", location = "global"))
+    models = list_models(ent)
+    println("\n$(length(models)) models from $(ent):")
+    foreach(m -> println("  ", m), first(models, 5))
 end
 
 # Missing key:

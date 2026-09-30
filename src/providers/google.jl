@@ -15,6 +15,34 @@ end
 Google(; base_url = nothing, api_key_env = nothing) =
     Google(_resolve_first_party(Google, base_url, api_key_env)...)
 
+"""
+    GoogleEnterprise(; project, location, service_account_path)
+
+The Gemini Enterprise Agent Platform (Vertex AI on Google Cloud). Unlike [`Google`](@ref),
+`project` and `location` have no built-in default: set them at least once as constructor kwargs
+or with `configure_provider!`, e.g. `configure_provider!(GoogleEnterprise(; project = "my-proj",
+location = "us-central1"))`.
+
+Authenticates with an OAuth2 access token, never an API key: `service_account_path` if given,
+then `ENV["GOOGLE_APPLICATION_CREDENTIALS"]`, then Application Default Credentials, then the
+GCE/GKE metadata server (see `gcp_auth.jl`). The token is cached on the provider instance and
+refreshed automatically shortly before it expires.
+
+Requests use the same Interactions API wire format as `Google`, at
+`https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/interactions`.
+"""
+struct GoogleEnterprise <: AbstractProvider
+    project::String
+    location::String
+    service_account_path::Union{Nothing,String}
+    _token::Base.RefValue{Union{Nothing,_GCPAccessKey}}
+end
+
+# The token cache is not part of a provider's identity.
+Base.:(==)(a::GoogleEnterprise, b::GoogleEnterprise) =
+    a.project == b.project && a.location == b.location &&
+    a.service_account_path == b.service_account_path
+
 # google/interactions.openapi.json#L9-L14
 provider_name(::Type{Google}) = "google"
 default_base_url(::Type{Google}) = "https://generativelanguage.googleapis.com"
@@ -74,7 +102,7 @@ _google_steps(m::ToolResultMessage) = Any[
                            "result" => r.content),
           r.is_error ? Dict{String,Any}("is_error" => true) : Dict{String,Any}()) for r in m.content]
 
-function _request_body(p::Google, req::_Request)
+function _request_body(p::Union{Google,GoogleEnterprise}, req::_Request)
     input = Any[]
     foreach(m -> append!(input, _google_steps(m)), _replayable(req.messages))
     body = Dict{String,Any}("model" => req.model.id, "input" => input, "store" => req.store)
@@ -91,7 +119,7 @@ function _request_body(p::Google, req::_Request)
 end
 
 # Interaction #L6412 (status enum, steps, usage); Usage #L9561; Error #L4795
-function _parse_reply(::Google, req::_Request, json)
+function _parse_reply(::Union{Google,GoogleEnterprise}, req::_Request, json)
     status = get(json, "status", nothing)
     if status == "failed"
         errs = something(get(json, "errors", nothing), [])
@@ -134,7 +162,7 @@ mutable struct _GoogleStream
     status::Any
     error::Union{Nothing,String}
 end
-_stream_state(::Google, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), nothing, nothing, nothing)
+_stream_state(::Union{Google,GoogleEnterprise}, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), nothing, nothing, nothing)
 
 function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
     strip(data) == "[DONE]" && return nothing
@@ -180,3 +208,80 @@ function _stream_finish(st::_GoogleStream, req::_Request)
                             "errors" => get(i, "errors", nothing))
     return _parse_reply(req.model.provider, req, json)
 end
+
+_coalesce(explicit, saved) = explicit === nothing ? saved : explicit
+
+function GoogleEnterprise(; project = nothing, location = nothing, service_account_path = nothing)
+    t = _provider_prefs(provider_name(GoogleEnterprise))
+    project = _coalesce(project, get(t, "project", nothing))
+    location = _coalesce(location, get(t, "location", nothing))
+    service_account_path = _coalesce(service_account_path, get(t, "service_account_path", nothing))
+    project === nothing && throw(ArgumentError(
+        "GoogleEnterprise needs a project; pass `project = \"my-project\"` or save one first " *
+        "with `configure_provider!(GoogleEnterprise(; project = \"my-project\", location = \"...\"))`"))
+    location === nothing && throw(ArgumentError(
+        "GoogleEnterprise needs a location, e.g. \"us-central1\" or \"global\""))
+    return GoogleEnterprise(String(project), String(location),
+                            service_account_path === nothing ? nothing : String(service_account_path),
+                            Ref{Union{Nothing,_GCPAccessKey}}(nothing))
+end
+
+provider_name(::Type{GoogleEnterprise}) = "google_enterprise"
+api_version(::Type{GoogleEnterprise}) = "v1beta1"
+
+# aiplatform.{location}.googleapis.com, except the "global" location which has no prefix.
+# aiplatform-spec.json#L36733 (rootUrl); regional routing per python-genai's _api_client.py.
+_gcp_location_url(location::AbstractString) =
+    location == "global" ? "https://aiplatform.googleapis.com" :
+                            "https://$(location)-aiplatform.googleapis.com"
+
+function _gcp_access_token(p::GoogleEnterprise)
+    key = p._token[]
+    key !== nothing && !_is_expired(key) && return key.token
+    token = _fetch_gcp_access_token(p.service_account_path)
+    p._token[] = _GCPAccessKey(token, Dates.now() + _GCP_TOKEN_LIFETIME)
+    return token
+end
+
+_auth_headers(p::GoogleEnterprise) = ["Authorization" => "Bearer $(_gcp_access_token(p))",
+                                      "x-goog-user-project" => p.project]
+
+# Same Interactions resource as Google, at the project/location-scoped Vertex AI path.
+_request_url(p::GoogleEnterprise) = string(_gcp_location_url(p.location), "/", api_version(GoogleEnterprise),
+                                           "/projects/", p.project, "/locations/", p.location, "/interactions")
+
+_has_store_field(::Type{GoogleEnterprise}) = true
+_supports_chaining(::Type{GoogleEnterprise}) = true
+_supports_streaming(::Type{GoogleEnterprise}) = true
+
+# "publishers/{publisher}/models/{id}" -> a Model id: bare for google (backward compatible with
+# ids already saved without a publisher prefix), "{publisher}/{id}" for partner models (Anthropic,
+# Mistral, xAI, ...), same compounding "provider/model" already uses for OpenAICompatible.
+function _publisher_model_id(name::AbstractString)
+    parts = split(name, '/')
+    publisher, id = parts[2], parts[4]
+    return publisher == "google" ? id : string(publisher, "/", id)
+end
+
+# GET /v1beta1/publishers/*/models, on the global host with no project/location path (billed via
+# the x-goog-user-project header instead); confirmed live, not in ai-platform-spec.json. The `*`
+# wildcard also returns Vertex AI's partner (Model Garden) models, not just Google's own. Page-token
+# pagination, same shape as Google's. Unlike the Developer API's /v1beta/models, there is no
+# supportedGenerationMethods (or any capability field) to filter on, so nothing is dropped here:
+# the full publisher catalog comes back, including non-text models.
+function _list_models(p::GoogleEnterprise, fetch)
+    url = "https://aiplatform.googleapis.com/v1beta1/publishers/*/models"
+    models = Model{GoogleEnterprise}[]
+    token = nothing
+    while true
+        query = Dict("pageSize" => "300")   # server-enforced max
+        token === nothing || (query["pageToken"] = token)
+        page = fetch(url; query)
+        for m in get(page, "publisherModels", ())
+            push!(models, Model(p, _publisher_model_id(m["name"])))
+        end
+        token = get(page, "nextPageToken", nothing)
+        (token === nothing || isempty(token)) && return models
+    end
+end
+
