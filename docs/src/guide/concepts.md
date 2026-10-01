@@ -2,12 +2,13 @@
 
 ## Provider and model are different things
 
-A **provider** is the API vendor: OpenAI, Anthropic, Google, or a server that speaks the
+A **provider** is the API vendor: OpenAI, Anthropic, Google (through the Gemini Developer API
+or, as [`GoogleEnterprise`](@ref), through Google Cloud), or a server that speaks the
 OpenAI wire format. A **model** is one of that provider's choices, such as a GPT, Claude or
 Gemini model. JAIL keeps them separate:
 
 - A provider is a value such as `Anthropic()` that carries connection settings (base URL and
-  the name of the ENV var holding the API key).
+  the name of the ENV var holding the API key; a project and location for `GoogleEnterprise`).
 - A [`Model`](@ref) pairs a provider with a provider-specific model id.
 
 ```@example concepts
@@ -71,5 +72,8 @@ JAIL will be used in two ways that share the same code:
   natural language (planned).
 
 Requests use each provider's multi-turn API: OpenAI Responses, Anthropic Messages and
-Google Interactions. `OpenAICompatible` servers default to Responses and can be switched to
-Chat Completions for servers that lack it.
+Google Interactions. There are two exceptions, each a setting on one provider type rather than a
+separate code path: `OpenAICompatible` servers default to Responses and can be switched to Chat
+Completions for servers that lack it, and `GoogleEnterprise` defaults to Vertex AI's
+`generateContent` (the full history is sent every turn) because the Interactions API there does
+not handle tool results reliably; it can be switched to Interactions.

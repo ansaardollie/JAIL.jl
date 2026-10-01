@@ -1,8 +1,9 @@
 """
     AbstractProvider
 
-An LLM API vendor such as [`OpenAI`](@ref), [`Anthropic`](@ref) or [`Google`](@ref).
-Concrete providers carry connection config (base URL, API-key ENV var name). Defaults and other
+An LLM API vendor such as [`OpenAI`](@ref), [`Anthropic`](@ref), [`Google`](@ref) or
+[`GoogleEnterprise`](@ref). Concrete providers carry connection config (base URL and API-key ENV
+var name; a Google Cloud project and location for `GoogleEnterprise`). Defaults and other
 reference data are functions over `Type{<:AbstractProvider}`.
 """
 abstract type AbstractProvider end

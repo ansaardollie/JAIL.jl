@@ -16,32 +16,65 @@ Google(; base_url = nothing, api_key_env = nothing) =
     Google(_resolve_first_party(Google, base_url, api_key_env)...)
 
 """
-    GoogleEnterprise(; project, location, service_account_path)
+    GoogleEnterprise(; project, location, service_account_path = nothing, api = :generate_content)
 
-The Gemini Enterprise Agent Platform (Vertex AI on Google Cloud). Unlike [`Google`](@ref),
-`project` and `location` have no built-in default: set them at least once as constructor kwargs
-or with `configure_provider!`, e.g. `configure_provider!(GoogleEnterprise(; project = "my-proj",
-location = "us-central1"))`.
+Gemini on Google Cloud: the Gemini Enterprise Agent Platform (Vertex AI). Unset keywords come
+from Preferences. `project` and `location` (e.g. `"us-central1"` or `"global"`) have no
+default, so the constructor throws until they are passed or saved with
+[`configure_provider!`](@ref).
 
-Authenticates with an OAuth2 access token, never an API key: `service_account_path` if given,
-then `ENV["GOOGLE_APPLICATION_CREDENTIALS"]`, then Application Default Credentials, then the
-GCE/GKE metadata server (see `gcp_auth.jl`). The token is cached on the provider instance and
-refreshed automatically shortly before it expires.
+It authenticates with a Google Cloud OAuth2 access token, never an API key. Credentials are
+looked up in order: the service-account key file at `service_account_path`, the file named by
+`ENV["GOOGLE_APPLICATION_CREDENTIALS"]`, Application Default Credentials (from
+`gcloud auth application-default login`), then the GCE/GKE metadata server. The token is
+fetched on first use, kept on the provider value, and fetched again before it expires.
 
-Requests use the same Interactions API wire format as `Google`, at
-`https://{location}-aiplatform.googleapis.com/v1beta1/projects/{project}/locations/{location}/interactions`.
+`api` picks the wire format:
+
+- `:generate_content` (default): Vertex AI's `generateContent`. The full history is sent every
+  turn.
+- `:interactions`: the Interactions API that [`Google`](@ref) uses, which continues from the
+  stored reply. On Vertex AI it does not handle tool results reliably.
+
+Only Google's own models are supported, not Vertex AI partner models.
+
+```julia
+configure_provider!(GoogleEnterprise(project = "my-project", location = "global"))
+chat!(Session("google_enterprise/gemini-2.5-flash"), "Hello")
+```
 """
 struct GoogleEnterprise <: AbstractProvider
     project::String
     location::String
     service_account_path::Union{Nothing,String}
+    api::Symbol
     _token::Base.RefValue{Union{Nothing,_GCPAccessKey}}
+    function GoogleEnterprise(project::AbstractString, location::AbstractString,
+                              service_account_path::Union{Nothing,AbstractString}, api::Symbol)
+        api in (:generate_content, :interactions) ||
+            throw(ArgumentError("api must be :generate_content or :interactions, got :$api"))
+        return new(String(project), String(location),
+                   service_account_path === nothing ? nothing : String(service_account_path), api,
+                   Ref{Union{Nothing,_GCPAccessKey}}(nothing))
+    end
 end
 
 # The token cache is not part of a provider's identity.
 Base.:(==)(a::GoogleEnterprise, b::GoogleEnterprise) =
     a.project == b.project && a.location == b.location &&
-    a.service_account_path == b.service_account_path
+    a.service_account_path == b.service_account_path && a.api == b.api
+
+# Also keeps the cached access token out of the REPL and logs.
+function Base.show(io::IO, p::GoogleEnterprise)
+    print(io, "GoogleEnterprise(project = ", repr(p.project), ", location = ", repr(p.location))
+    p.service_account_path === nothing || print(io, ", service_account_path = ", repr(p.service_account_path))
+    p.api === :generate_content || print(io, ", api = :", p.api)
+    print(io, ")")
+end
+
+# Wire formats the Google providers speak. Google itself only ever speaks Interactions.
+struct _InteractionsAPI end
+struct _GenerateContentAPI end
 
 # google/interactions.openapi.json#L9-L14
 provider_name(::Type{Google}) = "google"
@@ -102,7 +135,9 @@ _google_steps(m::ToolResultMessage) = Any[
                            "result" => r.content),
           r.is_error ? Dict{String,Any}("is_error" => true) : Dict{String,Any}()) for r in m.content]
 
-function _request_body(p::Union{Google,GoogleEnterprise}, req::_Request)
+_request_body(p::Google, req::_Request) = _request_body(_InteractionsAPI(), p, req)
+
+function _request_body(::_InteractionsAPI, p, req::_Request)
     input = Any[]
     foreach(m -> append!(input, _google_steps(m)), _replayable(req.messages))
     body = Dict{String,Any}("model" => req.model.id, "input" => input, "store" => req.store)
@@ -118,8 +153,10 @@ function _request_body(p::Union{Google,GoogleEnterprise}, req::_Request)
     return body
 end
 
+_parse_reply(::Google, req::_Request, json) = _parse_reply(_InteractionsAPI(), req, json)
+
 # Interaction #L6412 (status enum, steps, usage); Usage #L9561; Error #L4795
-function _parse_reply(::Union{Google,GoogleEnterprise}, req::_Request, json)
+function _parse_reply(::_InteractionsAPI, req::_Request, json)
     status = get(json, "status", nothing)
     if status == "failed"
         errs = something(get(json, "errors", nothing), [])
@@ -162,7 +199,8 @@ mutable struct _GoogleStream
     status::Any
     error::Union{Nothing,String}
 end
-_stream_state(::Union{Google,GoogleEnterprise}, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), nothing, nothing, nothing)
+_stream_state(::Google, req::_Request) = _stream_state(_InteractionsAPI(), req)
+_stream_state(::_InteractionsAPI, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), nothing, nothing, nothing)
 
 function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
     strip(data) == "[DONE]" && return nothing
@@ -206,28 +244,28 @@ function _stream_finish(st::_GoogleStream, req::_Request)
     json = Dict{String,Any}("id" => get(i, "id", nothing), "status" => st.status,
                             "usage" => get(i, "usage", nothing), "steps" => steps,
                             "errors" => get(i, "errors", nothing))
-    return _parse_reply(req.model.provider, req, json)
+    return _parse_reply(_InteractionsAPI(), req, json)
 end
 
 _coalesce(explicit, saved) = explicit === nothing ? saved : explicit
 
-function GoogleEnterprise(; project = nothing, location = nothing, service_account_path = nothing)
+function GoogleEnterprise(; project = nothing, location = nothing, service_account_path = nothing,
+                          api = nothing)
     t = _provider_prefs(provider_name(GoogleEnterprise))
     project = _coalesce(project, get(t, "project", nothing))
     location = _coalesce(location, get(t, "location", nothing))
     service_account_path = _coalesce(service_account_path, get(t, "service_account_path", nothing))
+    api = _coalesce(api, get(t, "api", nothing))
     project === nothing && throw(ArgumentError(
         "GoogleEnterprise needs a project; pass `project = \"my-project\"` or save one first " *
         "with `configure_provider!(GoogleEnterprise(; project = \"my-project\", location = \"...\"))`"))
     location === nothing && throw(ArgumentError(
         "GoogleEnterprise needs a location, e.g. \"us-central1\" or \"global\""))
-    return GoogleEnterprise(String(project), String(location),
-                            service_account_path === nothing ? nothing : String(service_account_path),
-                            Ref{Union{Nothing,_GCPAccessKey}}(nothing))
+    return GoogleEnterprise(project, location, service_account_path,
+                            api === nothing ? :generate_content : Symbol(api))
 end
 
 provider_name(::Type{GoogleEnterprise}) = "google_enterprise"
-api_version(::Type{GoogleEnterprise}) = "v1beta1"
 
 # aiplatform.{location}.googleapis.com, except the "global" location which has no prefix.
 # aiplatform-spec.json#L36733 (rootUrl); regional routing per python-genai's _api_client.py.
@@ -246,31 +284,187 @@ end
 _auth_headers(p::GoogleEnterprise) = ["Authorization" => "Bearer $(_gcp_access_token(p))",
                                       "x-goog-user-project" => p.project]
 
-# Same Interactions resource as Google, at the project/location-scoped Vertex AI path.
-_request_url(p::GoogleEnterprise) = string(_gcp_location_url(p.location), "/", api_version(GoogleEnterprise),
-                                           "/projects/", p.project, "/locations/", p.location, "/interactions")
+_wire(p::GoogleEnterprise) = p.api === :interactions ? _InteractionsAPI() : _GenerateContentAPI()
 
-_has_store_field(::Type{GoogleEnterprise}) = true
-_supports_chaining(::Type{GoogleEnterprise}) = true
+_request_url(p::GoogleEnterprise, req::_Request) = _request_url(_wire(p), p, req)
+_request_body(p::GoogleEnterprise, req::_Request) = _request_body(_wire(p), p, req)
+_parse_reply(p::GoogleEnterprise, req::_Request, json) = _parse_reply(_wire(p), req, json)
+_stream_state(p::GoogleEnterprise, req::_Request) = _stream_state(_wire(p), req)
+
+_vertex_scope(p::GoogleEnterprise, version) = string(_gcp_location_url(p.location), "/", version,
+                                                     "/projects/", p.project, "/locations/", p.location)
+
+# Same Interactions resource as Google (v1beta1 only), at the project/location-scoped path.
+_request_url(::_InteractionsAPI, p::GoogleEnterprise, ::_Request) = _vertex_scope(p, "v1beta1") * "/interactions"
+
+# Only the Interactions wire stores replies server-side; generateContent is stateless.
+_has_store_field(p::GoogleEnterprise) = p.api === :interactions
+_supports_chaining(p::GoogleEnterprise) = p.api === :interactions
 _supports_streaming(::Type{GoogleEnterprise}) = true
 
-# "publishers/{publisher}/models/{id}" -> a Model id: bare for google (backward compatible with
-# ids already saved without a publisher prefix), "{publisher}/{id}" for partner models (Anthropic,
-# Mistral, xAI, ...), same compounding "provider/model" already uses for OpenAICompatible.
-function _publisher_model_id(name::AbstractString)
-    parts = split(name, '/')
-    publisher, id = parts[2], parts[4]
-    return publisher == "google" ? id : string(publisher, "/", id)
+# --- generateContent (Vertex AI v1) ---------------------------------------------------------
+# aiplatform.projects.locations.publishers.models.generateContent / streamGenerateContent,
+# ai-platform-spec.json#L16296-L16357. Streaming as SSE needs `?alt=sse`, which the discovery doc's
+# `alt` enum (#L36773) omits; python-genai uses it (libs/python-genai/google/genai/models.py#L4753).
+function _request_url(::_GenerateContentAPI, p::GoogleEnterprise, req::_Request)
+    base = string(_vertex_scope(p, "v1"), "/publishers/google/models/", req.model.id)
+    return req.stream ? base * ":streamGenerateContent?alt=sse" : base * ":generateContent"
 end
 
-# GET /v1beta1/publishers/*/models, on the global host with no project/location path (billed via
-# the x-goog-user-project header instead); confirmed live, not in ai-platform-spec.json. The `*`
-# wildcard also returns Vertex AI's partner (Model Garden) models, not just Google's own. Page-token
-# pagination, same shape as Google's. Unlike the Developer API's /v1beta/models, there is no
-# supportedGenerationMethods (or any capability field) to filter on, so nothing is dropped here:
-# the full publisher catalog comes back, including non-text models.
+# FunctionCall.id is optional (#L65345). When the model omits it JAIL makes one up to pair the
+# call with its ToolResult, and never sends that made-up id back.
+const _SYNTHETIC_CALL_ID = "jail_call_"
+_wire_call_id(id::AbstractString) = startswith(id, _SYNTHETIC_CALL_ID) ? nothing : id
+
+# Part.thoughtSignature (#L70413-L70488) must go back on the functionCall part it came with; kept
+# here by call id because ToolCall has no field for it.
+const _THOUGHT_SIGNATURES = Dict{String,String}()
+
+_gc_text(text) = Dict{String,Any}("text" => text)
+
+# Content #L65205-L65226: role "user" or "model"; Part #L70413-L70488
+_gc_contents!(cs, m::UserMessage) = push!(cs, Dict("role" => "user", "parts" => [_gc_text(string(m))]))
+
+function _gc_contents!(cs, m::AssistantMessage)
+    text = string(m)
+    parts = isempty(text) ? Any[] : Any[_gc_text(text)]
+    for c in _tool_calls(m)
+        call = Dict{String,Any}("name" => c.name, "args" => c.arguments)
+        id = _wire_call_id(c.id)
+        id === nothing || (call["id"] = id)
+        part = Dict{String,Any}("functionCall" => call)
+        sig = get(_THOUGHT_SIGNATURES, c.id, nothing)
+        sig === nothing || (part["thoughtSignature"] = sig)
+        push!(parts, part)
+    end
+    push!(cs, Dict("role" => "model", "parts" => parts))
+end
+
+# FunctionResponse #L56327-L56370: `response.output`, or `response.error` for a failed call
+function _gc_contents!(cs, m::ToolResultMessage)
+    parts = map(m.content) do r
+        resp = Dict{String,Any}("name" => r.name,
+                                "response" => Dict(r.is_error ? "error" => r.content : "output" => r.content))
+        id = _wire_call_id(r.call_id)
+        id === nothing || (resp["id"] = id)
+        Dict{String,Any}("functionResponse" => resp)
+    end
+    push!(cs, Dict("role" => "user", "parts" => parts))
+end
+
+# GenerateContentRequest #L63405-L63460
+function _request_body(::_GenerateContentAPI, p, req::_Request)
+    contents = Any[]
+    foreach(m -> _gc_contents!(contents, m), _replayable(req.messages))
+    body = Dict{String,Any}("contents" => contents)
+    req.system === nothing || (body["systemInstruction"] = Dict("parts" => [_gc_text(req.system)]))
+    # GenerationConfig.maxOutputTokens #L44118
+    req.max_tokens === nothing || (body["generationConfig"] = Dict("maxOutputTokens" => req.max_tokens))
+    # Tool.functionDeclarations #L43019; FunctionDeclaration.parametersJsonSchema #L68049 takes
+    # plain JSON Schema (`parameters` is the narrower OpenAPI subset, no ["t", "null"] types)
+    isempty(req.tools) || (body["tools"] = [Dict("functionDeclarations" =>
+        [_function_json(t; schema_key = "parametersJsonSchema") for t in req.tools])])
+    return body
+end
+
+# Candidate.finishReason #L46412-L46450
+function _gc_stop_reason(fr)
+    fr == "STOP" && return :end_turn
+    fr == "MAX_TOKENS" && return :max_tokens
+    fr in ("SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "MODEL_ARMOR") &&
+        return :content_filter
+    return :other
+end
+
+# GenerateContentResponse #L65127-L65165; Candidate #L46380-L46474; UsageMetadata #L70563-L70652
+function _parse_reply(::_GenerateContentAPI, req::_Request, json)
+    candidates = something(get(json, "candidates", nothing), ())
+    parts = AbstractContentPart[]
+    fr = nothing
+    if isempty(candidates)
+        # promptFeedback is set when the prompt itself was blocked (#L65131-L65135)
+        get(json, "promptFeedback", nothing) === nothing || (fr = "SAFETY")
+    else
+        cand = first(candidates)
+        fr = get(cand, "finishReason", nothing)
+        content = something(get(cand, "content", nothing), Dict())
+        for part in something(get(content, "parts", nothing), ())
+            if haskey(part, "functionCall")
+                f = part["functionCall"]
+                id = something(get(f, "id", nothing), _SYNTHETIC_CALL_ID * Random.randstring(12))
+                sig = get(part, "thoughtSignature", nothing)
+                sig === nothing || (_THOUGHT_SIGNATURES[id] = sig)
+                push!(parts, ToolCall(id, f["name"], _arguments(get(f, "args", nothing))))
+            elseif haskey(part, "text") && get(part, "thought", false) !== true
+                push!(parts, TextPart(part["text"]))
+            end
+        end
+    end
+    reason = _stop_reason(parts, _gc_stop_reason(fr))
+    usage = _usage(get(json, "usageMetadata", nothing), "promptTokenCount", "candidatesTokenCount")
+    return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
+                            id = get(json, "responseId", nothing))
+end
+
+# Each SSE event is a whole GenerateContentResponse chunk: text arrives in pieces, a functionCall
+# part arrives complete, usageMetadata and finishReason come with the last chunk.
+mutable struct _GenerateContentStream
+    parts::Vector{Dict{String,Any}}   # merged candidate parts, in arrival order
+    finish_reason::Any
+    usage::Any
+    id::Any
+    error::Union{Nothing,String}
+end
+_stream_state(::_GenerateContentAPI, req::_Request) = _GenerateContentStream(Dict{String,Any}[], nothing, nothing, nothing, nothing)
+
+function _stream_event!(st::_GenerateContentStream, data::AbstractString, on_text)
+    isempty(strip(data)) && return nothing
+    ev = JSON.parse(data)
+    if haskey(ev, "error")
+        st.error = _error_message(ev["error"])
+        return nothing
+    end
+    st.id = something(get(ev, "responseId", nothing), Some(st.id))
+    u = get(ev, "usageMetadata", nothing)
+    u === nothing || (st.usage = u)
+    get(ev, "promptFeedback", nothing) === nothing || (st.finish_reason = something(st.finish_reason, "SAFETY"))
+    for cand in something(get(ev, "candidates", nothing), ())
+        fr = get(cand, "finishReason", nothing)
+        fr === nothing || (st.finish_reason = fr)
+        content = something(get(cand, "content", nothing), Dict())
+        for part in something(get(content, "parts", nothing), ())
+            text = get(part, "text", nothing)
+            if text isa AbstractString && get(part, "thought", false) !== true && !haskey(part, "functionCall")
+                isempty(text) && continue
+                prev = isempty(st.parts) ? nothing : st.parts[end]
+                if prev !== nothing && haskey(prev, "text")
+                    prev["text"] *= text
+                else
+                    push!(st.parts, Dict{String,Any}("text" => text))
+                end
+                on_text(text)
+            elseif haskey(part, "functionCall")
+                push!(st.parts, Dict{String,Any}(part))
+            end
+        end
+    end
+    return nothing
+end
+
+function _stream_finish(st::_GenerateContentStream, req::_Request)
+    st.error === nothing || error("google_enterprise stream error: ", st.error)
+    json = Dict{String,Any}("responseId" => st.id, "usageMetadata" => st.usage,
+                            "candidates" => [Dict("content" => Dict("parts" => st.parts),
+                                                  "finishReason" => st.finish_reason)])
+    return _parse_reply(_GenerateContentAPI(), req, json)
+end
+
+# GET /v1beta1/publishers/google/models, on the global host with no project/location path (billed
+# via the x-goog-user-project header instead); confirmed live, not in ai-platform-spec.json.
+# Page-token pagination, max pageSize 300. There is no capability field to filter on, so the
+# whole Google catalog comes back, including non-text models.
 function _list_models(p::GoogleEnterprise, fetch)
-    url = "https://aiplatform.googleapis.com/v1beta1/publishers/*/models"
+    url = "https://aiplatform.googleapis.com/v1beta1/publishers/google/models"
     models = Model{GoogleEnterprise}[]
     token = nothing
     while true
@@ -278,7 +472,7 @@ function _list_models(p::GoogleEnterprise, fetch)
         token === nothing || (query["pageToken"] = token)
         page = fetch(url; query)
         for m in get(page, "publisherModels", ())
-            push!(models, Model(p, _publisher_model_id(m["name"])))
+            push!(models, Model(p, String(chopprefix(m["name"], "publishers/google/models/"))))
         end
         token = get(page, "nextPageToken", nothing)
         (token === nothing || isempty(token)) && return models

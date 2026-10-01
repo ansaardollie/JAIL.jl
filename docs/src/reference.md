@@ -12,6 +12,7 @@ AbstractOpenAIProvider
 OpenAI
 Anthropic
 Google
+GoogleEnterprise
 OpenAICompatible
 configure_provider!
 register_provider!

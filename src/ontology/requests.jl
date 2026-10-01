@@ -21,6 +21,8 @@ end
 #   _stream_event!(state, data::String, on_text) -> handle one event's `data`, on_text(delta) for text
 #   _stream_finish(state, req)                   -> AssistantMessage (throws on a stream error)
 function _request_url end
+# For wire formats whose URL depends on the request (model id, streaming); most ignore it.
+_request_url(p::AbstractProvider, ::_Request) = _request_url(p)
 function _request_body end
 function _parse_reply end
 function _stream_state end

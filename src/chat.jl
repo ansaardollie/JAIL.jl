@@ -40,10 +40,10 @@ end
 function _send(p::AbstractProvider, req::_Request, on_text)
     if req.stream
         st = _stream_state(p, req)
-        _post_sse(data -> _stream_event!(st, data, on_text), p, _request_url(p), _request_body(p, req))
+        _post_sse(data -> _stream_event!(st, data, on_text), p, _request_url(p, req), _request_body(p, req))
         return _stream_finish(st, req)
     end
-    json = _post_json(p, _request_url(p), _request_body(p, req))
+    json = _post_json(p, _request_url(p, req), _request_body(p, req))
     return _parse_reply(p, req, json)
 end
 
@@ -95,7 +95,8 @@ the last reply (`stop_reason = :tool_use`) is returned. With the Preference
 `confirm_tools = true`, each call is confirmed on the terminal first.
 
 OpenAI and Google store replies server-side, and the next turn continues from the last one
-(`previous_response_id` / `previous_interaction_id`) so only the new turns are sent. The full
+(`previous_response_id` / `previous_interaction_id`) so only the new turns are sent; so does
+[`GoogleEnterprise`](@ref) with `api = :interactions`. The full
 history is sent instead when the history was edited since that reply, the model's provider
 changed, or the stored reply has expired. Other providers always get the full history. Set the
 Preference `store_requests = false` to send `store = false` and always replay the full history.

@@ -1,5 +1,8 @@
 # Decision: GoogleEnterprise (Vertex AI) as a distinct provider
 
+> **Superseded in part by:** `21_PROVIDER_google_enterprise_generate_content.md` (default wire is now
+> generateContent; Interactions is opt-in via `api = :interactions`).
+
 | Field | Value |
 |-------|-------|
 | Artifact | `20_PROVIDER_google_enterprise_vertex_ai.md` |

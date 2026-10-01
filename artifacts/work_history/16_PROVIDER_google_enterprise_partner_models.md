@@ -1,5 +1,8 @@
 # GoogleEnterprise: partner (Model Garden) models in list_models + Model equality bugfix
 
+> **Reverted (2026-09-30):** partner-model listing was removed at the owner's request, see
+> `design_decisions/21_PROVIDER_google_enterprise_generate_content.md`. The `Model ==` fix stays.
+
 | Field | Value |
 |-------|-------|
 | Artifact | `16_PROVIDER_google_enterprise_partner_models.md` |

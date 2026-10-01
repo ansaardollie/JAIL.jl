@@ -23,9 +23,10 @@ chat!("Colour of coal?")   # on the active session
 ```
 
 Every provider is supported: OpenAI (Responses API), Anthropic (Messages API), Google
-(Interactions API), and OpenAI-compatible servers (Responses, or Chat Completions when
-registered with `api = :chat_completions`). The model may call the session's tools; see
-[Tools](tools.md).
+(Interactions API), [`GoogleEnterprise`](@ref) (Vertex AI `generateContent` by default, or the
+Interactions API with `api = :interactions`), and OpenAI-compatible servers (Responses, or Chat
+Completions when registered with `api = :chat_completions`). The model may call the session's
+tools; see [Tools](tools.md).
 
 ## Messages
 
@@ -71,14 +72,16 @@ s.messages
 
 `session.messages` is always the full conversation, but not every turn resends it:
 
-- **OpenAI and Google** store each reply server-side. The next request sends only what came
+- **OpenAI and Google** (and `GoogleEnterprise` with `api = :interactions`) store each reply
+  server-side. The next request sends only what came
   after the stored reply (the new prompt, or the results of the tools it called) plus that
   reply's id (`previous_response_id` / `previous_interaction_id`, taken from `reply.id`). The
   model may change between turns, as long as the provider stays the same.
 - The full history is sent instead when the history was changed since that reply (edited,
   seeded, or `empty!`), the provider changed, or the stored reply is gone (the provider answers
   HTTP 400/404; JAIL retries once with the full history).
-- **Anthropic and OpenAI-compatible servers** always get the full history.
+- **Anthropic, OpenAI-compatible servers and `GoogleEnterprise`** (default `api`) always get
+  the full history.
 
 Set the Preference `store_requests = false` to send `store = false` to OpenAI and Google and
 always send the full history. Stored responses are kept by the provider (OpenAI: 30 days;

@@ -2,14 +2,16 @@
 
 JAIL (AI in Julia) gives Julia one API for talking to LLM providers. Provider APIs differ in
 shape; JAIL hides that behind Julia types, so your code works the same whether the model
-comes from OpenAI, Anthropic, Google, or an OpenAI-compatible server.
+comes from OpenAI, Anthropic, Google (directly or through Google Cloud), or an OpenAI-compatible
+server.
 
 ## Status
 
 JAIL is an early rewrite. What works today:
 
-- **Providers**: [`OpenAI`](@ref), [`Anthropic`](@ref), [`Google`](@ref) and
-  [`OpenAICompatible`](@ref) servers, configured through Preferences.
+- **Providers**: [`OpenAI`](@ref), [`Anthropic`](@ref), [`Google`](@ref),
+  [`GoogleEnterprise`](@ref) (Gemini on Google Cloud) and [`OpenAICompatible`](@ref) servers,
+  configured through Preferences.
 - **Models**: typed [`Model`](@ref)s, live model listing with [`list_models`](@ref), and
   interactive selection with [`select_model!`](@ref).
 - **Sessions**: [`Session`](@ref)s that hold a conversation's model and history, with a

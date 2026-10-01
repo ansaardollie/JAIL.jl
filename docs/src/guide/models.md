@@ -75,6 +75,9 @@ Provider-specific notes:
 - **Anthropic**: all pages are fetched.
 - **Google**: all pages are fetched, and only models whose `supportedGenerationMethods`
   include `generateContent` are kept.
+- **GoogleEnterprise**: all pages of Google's own Vertex AI models are fetched. The listing has
+  no capability field, so non-chat models (embeddings, speech, images) are included. Partner
+  models are not listed.
 
 ## Choosing a model interactively
 

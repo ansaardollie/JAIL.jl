@@ -10,6 +10,14 @@ write(DOCS_PREFS, """
 
 using JAIL
 
+# In a workspace, Preferences are also read from the workspace root, and `__clear__` stops
+# masking a key once an example writes it. Put a scratch project first on LOAD_PATH: JAIL is
+# only in its [extras], so packages still load from docs/, but Preferences are read from and
+# written there, and the workspace root is no longer merged in.
+const PREFS_DIR = mktempdir()
+write(joinpath(PREFS_DIR, "Project.toml"), "[extras]\nJAIL = \"$(Base.PkgId(JAIL).uuid)\"\n")
+pushfirst!(LOAD_PATH, PREFS_DIR)
+
 DocMeta.setdocmeta!(JAIL, :DocTestSetup, :(using JAIL); recursive = true)
 
 makedocs(
