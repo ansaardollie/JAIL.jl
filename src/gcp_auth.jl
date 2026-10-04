@@ -19,6 +19,27 @@ end
 
 _is_expired(k::_GCPAccessKey) = Dates.now() >= k.expires
 
+function _gcp_adc_token_error(status::Integer, body::AbstractString)
+    message = "Failed to fetch access token (HTTP $status): $body"
+    status == 400 || return message
+
+    details = try
+        JSON.parse(body)
+    catch
+        nothing
+    end
+    details isa AbstractDict || return message
+
+    error_subtype = get(details, "error_subtype", nothing)
+    error_description = get(details, "error_description", nothing)
+    requires_reauth = error_subtype == "invalid_rapt" ||
+        (error_description isa AbstractString && occursin("invalid_rapt", error_description))
+    requires_reauth || return message
+
+    return message * "\nGoogle Application Default Credentials require reauthentication. " *
+        "Run `gcloud auth application-default login` in your terminal, then retry."
+end
+
 function _gcp_token_from_adc(credential_json_path::AbstractString)
     isfile(credential_json_path) || error(
         "Application Default Credentials not found at \"$credential_json_path\". Try running " *
@@ -31,8 +52,7 @@ function _gcp_token_from_adc(credential_json_path::AbstractString)
         "grant_type" => "refresh_token"))
     resp = HTTP.post(_GCP_OAUTH_URL, ["Content-Type" => "application/json"], body;
                      status_exception = false)
-    200 <= resp.status < 300 ||
-        error("Failed to fetch access token (HTTP $(resp.status)): $(String(resp.body))")
+    200 <= resp.status < 300 || error(_gcp_adc_token_error(resp.status, String(resp.body)))
     return JSON.parse(String(resp.body))["access_token"]
 end
 
