@@ -84,7 +84,8 @@ end
 Send `prompt` (a `String` or [`UserMessage`](@ref)) as the next turn of `session`, or of the
 [`active_session`](@ref) when no session is given, with the session's `system` instructions
 and [`tools`](@ref). The prompt and the reply are appended to `session.messages` and the reply
-is returned. If a request fails, the history is left as it was.
+is returned. If a request fails, the history is left as it was. Each message is also saved to
+disk as it is added (see [`restore_session!`](@ref)).
 
 When the model calls tools, JAIL runs them (in order), sends a [`ToolResultMessage`](@ref)
 back and asks again, until a reply calls no tools; every step is added to the history and the
@@ -98,7 +99,7 @@ OpenAI and Google store replies server-side, and the next turn continues from th
 (`previous_response_id` / `previous_interaction_id`) so only the new turns are sent; so does
 [`GoogleEnterprise`](@ref) with `api = :interactions`. The full
 history is sent instead when the history was edited since that reply, the model's provider
-changed, or the stored reply has expired. Other providers always get the full history. Set the
+changed, the session was restored in a new Julia process, or the stored reply has expired. Other providers always get the full history. Set the
 Preference `store_requests = false` to send `store = false` and always replay the full history.
 
 `max_tokens` caps the reply length. Without it the `max_tokens` Preference is used if set,

@@ -5,7 +5,7 @@ using Documenter
 const DOCS_PREFS = joinpath(@__DIR__, "LocalPreferences.toml")
 write(DOCS_PREFS, """
     [JAIL]
-    __clear__ = ["default_model", "providers", "repl_modes", "max_tokens", "store_requests", "system_prompt", "stream", "max_tool_rounds", "confirm_tools"]
+    __clear__ = ["default_model", "providers", "repl_modes", "max_tokens", "store_requests", "system_prompt", "stream", "max_tool_rounds", "confirm_tools", "persist_sessions", "storage_dir"]
     """)
 
 using JAIL
@@ -24,6 +24,8 @@ makedocs(
     modules = [JAIL],
     sitename = "JAIL.jl",
     authors = "Ansaar Dollie <me@ansaardollie.com>",
+    # The origin URL uses an SSH host alias (github.com-personal) Documenter can't parse.
+    repo = Remotes.GitHub("ansaardollie", "JAIL.jl"),
     format = Documenter.HTML(; edit_link = "main", assets = String[]),
     pages = [
         "Home" => "index.md",

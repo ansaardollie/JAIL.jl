@@ -130,7 +130,7 @@ In the model mode:
 | `use provider` | Set the active session's model to that provider's own default | [`use_provider!`](@ref) |
 | `default [provider/model]` | Show or save the global default model for new sessions | [`set_default_model!`](@ref) |
 | `default provider [model-id]` | Show or save that provider's own default model | [`set_default_model!`](@ref)`(p, id)` |
-| `sessions` | List sessions; `*` marks the active one | [`sessions`](@ref) |
+| `sessions` | List sessions with creation time, model, message count and id; `*` marks the active one | [`sessions`](@ref) |
 | `session new [name] [provider/model]` | Start a session and make it active | [`new_session!`](@ref) |
 | `session use <name\|id>` | Switch the active session (a menu picks among sessions sharing the name) | [`use_session!`](@ref) |
 | `session restore` | Choose a saved session from a menu and make it active | [`restore_session!`](@ref) |
@@ -175,8 +175,8 @@ Default model saved: anthropic/claude-sonnet-4-5 (used by new sessions)
 (default: lmstudio/qwen3-8b) model> session new work
 Started session "work" using anthropic/claude-sonnet-4-5
 (work: anthropic/claude-sonnet-4-5) model> sessions
-    default  2026-10-04 09:12  lmstudio/qwen3-8b               0 messages  01a106f2-3b1e-7c40-9d2a-5e8f1c7a0b3d
-  * work     2026-10-04 09:15  anthropic/claude-sonnet-4-5     0 messages  01a106f4-9a27-7e15-b0c4-2d61f8e93a57
+    default  2026-10-04 03:28  lmstudio/qwen3-8b               0 messages  01a10486-e702-7def-96a1-0985255da8d0
+  * work     2026-10-04 03:28  anthropic/claude-sonnet-4-5     0 messages  01a10486-f0f6-7d0c-a6b0-8c8edd8c43b4
 (work: anthropic/claude-sonnet-4-5) model> session use default
 Active session: default (lmstudio/qwen3-8b)
 (default: lmstudio/qwen3-8b) model> session rm work

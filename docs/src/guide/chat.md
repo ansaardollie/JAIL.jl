@@ -10,7 +10,9 @@
    [Tools](tools.md)).
 4. The last reply is returned.
 
-If a request fails, the history is left as it was.
+If a request fails, the history is left as it was. Each message is also saved to disk as it is
+added, and a failed turn is removed again (see
+[Saving and restoring](sessions.md#Saving-and-restoring)).
 
 ```julia
 s = Session("anthropic/claude-sonnet-4-5"; system = "Answer with one word.")
@@ -78,8 +80,9 @@ s.messages
   reply's id (`previous_response_id` / `previous_interaction_id`, taken from `reply.id`). The
   model may change between turns, as long as the provider stays the same.
 - The full history is sent instead when the history was changed since that reply (edited,
-  seeded, or `empty!`), the provider changed, or the stored reply is gone (the provider answers
-  HTTP 400/404; JAIL retries once with the full history).
+  seeded, or `empty!`), the provider changed, the session was restored with
+  [`restore_session!`](@ref) in a new Julia process, or the stored reply is gone (the provider
+  answers HTTP 400/404; JAIL retries once with the full history).
 - **Anthropic, OpenAI-compatible servers and `GoogleEnterprise`** (default `api`) always get
   the full history.
 

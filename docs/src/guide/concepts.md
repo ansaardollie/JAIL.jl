@@ -30,10 +30,11 @@ through a common parent type, [`AbstractOpenAIProvider`](@ref), rather than a fl
 ## Sessions
 
 A [`Session`](@ref) holds one conversation: a name, the active model, optional system
-instructions, the tools its model may call, and the message history. Any number can exist.
-When JAIL loads it starts a session called `"default"`, which is the **active session**: the
-one the REPL modes and session-less calls like `select_model!()` act on. See
-[Sessions](sessions.md).
+instructions, the tools its model may call, and the message history. Any number can exist,
+and names may repeat: each session also has a unique `id`. When JAIL loads it starts a session
+called `"default"`, which is the **active session**: the one the REPL modes and session-less
+calls like `select_model!()` act on. Sessions are saved to disk as they chat and can be
+restored in a later Julia process. See [Sessions](sessions.md).
 
 History is stored as typed messages, not strings, and is independent of the provider, so a
 session can switch model (even provider) mid-conversation. A history holds

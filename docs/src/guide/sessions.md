@@ -131,24 +131,37 @@ delete_session!(r2.id)
 ## Saving and restoring
 
 Every session has an `id` (a version 7 UUID, so ids sort by creation time) and a `created`
-time in UTC. From its first message on, a session is saved under the Preference `storage_dir`
-(default `.jail` in the working directory):
+time in UTC; both are shown in the detailed display above. From its first message on, a
+session is saved under the Preference `storage_dir` (default `.jail`; a relative path is
+resolved against the working directory when the session is first saved):
 
-- `sessions/<id>.json`: name, id, creation time, model, system instructions and tools.
+- `sessions/<id>.json`: name, id, creation time, model (as `"provider/model-id"`), system
+  instructions and tools.
 - `messages/<id>.jsonl`: one message per line. Each new message is appended, so saving adds
-  almost nothing to a chat turn. Tool calls and results are stored as JSON objects.
+  almost nothing to a chat turn. Tool calls are stored with their arguments as a JSON object;
+  a tool result whose text is JSON is stored as that JSON value, other results as text.
 
-A session with no messages is not saved. A turn that fails is removed from the file too.
-Set the Preference `persist_sessions = false` to stop saving.
+A session with no messages is not saved, and a turn that fails is removed from the file too.
+[`set_model!`](@ref), [`set_tools!`](@ref) and `empty!` update the files. Set the Preference
+`persist_sessions = false` to stop saving.
 
-[`restore_session!`](@ref) brings a saved session back in a later Julia process and makes it
-active. Without an id it opens a menu of saved sessions, newest first, showing each one's name,
-creation time and first prompt (the `|` mode's `session restore` opens the same menu):
+[`restore_session!`](@ref) brings a saved session back, in this or a later Julia process, and
+makes it active. Without an id it opens a menu of saved sessions, newest first, showing each
+one's name, creation time and first prompt (the `|` mode's `session restore` opens the same
+menu):
 
 ```julia
-restore_session!()                                         # menu
-restore_session!("01a10445-42d7-7b5a-85f7-ceafc2db4931")   # by id
+restore_session!()       # menu
+restore_session!(id)     # a UUID, or its string form
 ```
+
+- The model is looked up by name in the current Preferences. If it can't be (for example the
+  provider was removed), the session comes back without a model and a warning is shown; pick
+  one with [`set_model!`](@ref).
+- Restoring a session that is already loaded just makes it active.
+- After a restore in a new Julia process, the first turn sends the full history (see
+  [What gets sent](chat.md#What-gets-sent)).
+- Messages edited in place in `s.messages` (rather than added or removed) are not re-saved.
 
 [`delete_session!`](@ref) keeps the files, so a deleted session can be restored;
 `delete_session!(s; files = true)` removes them as well.

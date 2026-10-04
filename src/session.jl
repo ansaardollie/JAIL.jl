@@ -222,7 +222,8 @@ use_provider!(p::AbstractProvider) = use_provider!(active_session(), p)
 """
     empty!(session::Session)
 
-Clear the message history, keeping the model and system instructions.
+Clear the message history, keeping the model and system instructions. A saved session's
+messages file is emptied too.
 """
 Base.empty!(s::Session) = (empty!(s.messages); _sync!(s); s)
 
