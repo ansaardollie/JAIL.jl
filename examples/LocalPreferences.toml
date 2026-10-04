@@ -1,0 +1,74 @@
+# Exemplar of every Preference JAIL reads. Copy the parts you need into the active project's
+# LocalPreferences.toml. Values match the live file where set there, otherwise JAIL's defaults.
+# Keys with no default are commented out. API keys never go here: `api_key_env` holds the
+# *name* of the ENV var to read. Full reference: docs/src/guide/providers.md#Preferences-keys.
+
+[JAIL]
+# "provider/model-id" for new sessions and the "default" session at load. No default.
+default_model = "openai/gpt-6-luna"
+
+# false disables the REPL modes; read once when JAIL loads.
+repl_modes = true
+
+# Stream replies in the `}` chat mode.
+stream = true
+
+# Ask [y/N] before each tool call.
+confirm_tools = false
+
+# Tool rounds per chat! call before further calls are answered "not run".
+max_tool_rounds = 10
+
+# Reply cap for chat! on every provider. Unset: Anthropic 8192, others none.
+# max_tokens = 8192
+
+# OpenAI, Google, and GoogleEnterprise with api = "interactions" store replies and continue
+# from them; false sends store = false and the full history every turn.
+store_requests = true
+
+# Replaces the built-in instructions for sessions created without `system`; "" gives none.
+# system_prompt = "You are a helpful Julia assistant."
+
+# Save sessions to disk from their first message on.
+persist_sessions = true
+
+# Folder for saved sessions, relative to the working directory when first saved.
+storage_dir = ".jail"
+
+    # Built-in providers: base_url and api_key_env override the defaults shown here.
+    [JAIL.providers.openai]
+    default_model = "gpt-6-luna"
+    base_url = "https://api.openai.com/v1"
+    api_key_env = "OPENAI_API_KEY"
+
+    [JAIL.providers.anthropic]
+    default_model = "claude-sonnet-5"
+    base_url = "https://api.anthropic.com"
+    api_key_env = "ANTHROPIC_API_KEY"
+
+    [JAIL.providers.google]
+    default_model = "gemini-3.1-flash-lite"
+    base_url = "https://generativelanguage.googleapis.com"
+    api_key_env = "GEMINI_API_KEY"
+
+    # Vertex AI. project and location are required; there is no API key.
+    [JAIL.providers.google_enterprise]
+    default_model = "gemini-3.1-flash-lite"
+    project = "dhd-prima"
+    location = "global"
+    # "generate_content" or "interactions".
+    api = "generate_content"
+    # Path to a service-account key file (never its contents). Unset: GOOGLE_APPLICATION_CREDENTIALS,
+    # then Application Default Credentials, then the metadata server.
+    # service_account_path = "/path/to/key.json"
+
+    # OpenAI-compatible endpoint registered with register_provider!; the table name is the
+    # provider name used in model strings ("lmstudio/llama-3.1-8b").
+    [JAIL.providers.lmstudio]
+    type = "openai_compatible"
+    base_url = "http://localhost:1234/v1"
+    # "responses" or "chat_completions".
+    api = "responses"
+    default_model = "llama-3.1-8b"
+    # ENV var holding the key; omit for servers without auth.
+    # api_key_env = "LMSTUDIO_API_KEY"

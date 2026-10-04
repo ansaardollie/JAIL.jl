@@ -12,3 +12,6 @@ docs/build/
 libs/
 vault/
 .jail/
+
+
+!examples/LocalPreferences.toml

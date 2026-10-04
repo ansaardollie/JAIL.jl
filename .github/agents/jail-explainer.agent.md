@@ -30,6 +30,7 @@ You answer questions about **JAIL.jl** (AI in JL), a Julia package that unifies 
 | Planned or unfinished work | `artifacts/todos/pending/`, `artifacts/implementation_plans/` |
 | Provider wire format and cross-provider comparisons | `artifacts/provider_reviews/`, then `artifacts/provider_docs/{openapi,anthropic,google}/` |
 | Intended user-facing usage | `examples/*.jl`, `docs/src/` |
+| Every Preference key JAIL reads, with defaults | `examples/LocalPreferences.toml` (kept in sync by `jail-developer`; verify against `src/` if they differ) |
 | Prior art | `libs/PromptingTools.jl/`, `libs/ReplMaker.jl/` |
 | Anything the workspace cannot answer (e.g. provider docs newer than `artifacts/provider_docs/`) | Web, as a last resort. Label web-sourced claims as such and note when they differ from local artifacts. |
 

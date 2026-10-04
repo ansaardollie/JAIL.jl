@@ -32,6 +32,7 @@ You are the planning architect for **JAIL.jl** (AI in JL), a Julia package that 
 - Keep OpenAI and OpenAI-compatible as distinct providers sharing implementation through abstractions, not flags.
 - Preserve the selected multi-turn APIs: OpenAI Responses, Anthropic Messages, and Google Interactions; OpenAI-compatible may fall back to Chat Completions. Respect later recorded decisions that amend these defaults.
 - Prefer Preferences for configuration; API keys remain in environment variables, with Preferences storing only the environment-variable name.
+- Any stage that adds, renames, or removes a Preference key must list `examples/LocalPreferences.toml` (the exemplar of every key JAIL reads) among its files to change.
 - Design the provider-agnostic ontology before provider-specific conversion. User-facing code should not handle provider JSON.
 - Keep session state focused on conversation context, with typed message history; do not grow a session into a settings or rendering god object.
 - Treat tools and streaming as shared core behavior, not logic that exists only in a REPL mode.

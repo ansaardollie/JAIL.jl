@@ -46,6 +46,7 @@ You are the lead engineer for **JAIL.jl** (AI in JL), a from-scratch rewrite of 
 - DO NOT add a provider endpoint or field without citing the matching file in `artifacts/provider_docs/`.
 - DO NOT decide public API shape (exported names, user-facing signatures, macros, REPL behavior, Preferences keys) or add a dependency alone. Ask with the ask-questions tool, then record the answer using the `design-decision-record` skill. Internal structure (private types, file layout, helpers) is yours to decide; record it if non-obvious.
 - DO NOT store API keys in Preferences, source, tests, or artifacts.
+- When adding, renaming, or removing a Preference key that the package reads (top-level or under `providers.<name>`), update `examples/LocalPreferences.toml` in the same change, with its default value (commented out if it has none) and a one-line comment. Keep it in step with the Preferences keys table in `docs/src/guide/providers.md`.
 - DO NOT run LLM-generated code without user confirmation, except when the user has explicitly disabled confirmation via preference.
 - DO NOT build Ollama-native support yet; it is out of scope for now.
 
