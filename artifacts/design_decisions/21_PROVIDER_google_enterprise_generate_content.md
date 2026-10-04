@@ -72,3 +72,4 @@ configure_provider!(GoogleEnterprise(); api = nothing)         # back to :genera
 - A need for partner models → probably a separate wire per publisher (e.g. Anthropic's
   `rawPredict` on Vertex), not a listing change.
 - Session persistence lands → thought signatures need to live on the message.
+  (Met: `24_SESSION_persistence.md` saves them on the `tool_call` line and reloads the table.)

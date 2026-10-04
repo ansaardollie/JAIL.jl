@@ -1,5 +1,14 @@
 struct _Register end
 
+# On-disk state: `dir` is fixed at the first write (nothing = not written yet), `nsaved` counts the
+# messages in the messages file, `meta` hashes the last session JSON written.
+mutable struct _SessionStore
+    dir::Union{Nothing,String}
+    nsaved::Int
+    meta::UInt
+end
+_SessionStore() = _SessionStore(nothing, 0, UInt(0))
+
 """
     Session(model; name = nothing, system = nothing, tools = nothing)
     Session(; name = nothing, system = nothing, tools = nothing)
@@ -14,13 +23,17 @@ including ones registered later; a vector of tool names or functions restricts i
 [`set_tools!`](@ref)).
 
 Every session is registered (see [`sessions`](@ref)) so the REPL can switch to it, and stays
-registered until [`delete_session!`](@ref). Without a `name` it is called `"session"`; a name
-already in use gets a suffix (`"refactor-2"`). Names may only contain letters, digits, `.`,
+registered until [`delete_session!`](@ref). Without a `name` it is called `"session"`. Names
+need not be unique (the `id` tells sessions apart) and may only contain letters, digits, `.`,
 `_` and `-`. History is provider-agnostic, so the model can be switched with
 [`set_model!`](@ref) at any time.
 
 `model` is `nothing` only for the `"default"` session JAIL starts when no default model is
 saved (see [`active_session`](@ref)).
+
+Each session has an `id` (a version 7 `UUID`, so ids sort by creation time) and a `created`
+time (`DateTime`, UTC). Sessions are saved to disk from their first message on and can be
+brought back with [`restore_session!`](@ref); see that function for the files and Preferences.
 
 Without `system`, the session gets JAIL's built-in REPL instructions (be concise, fence code in
 ```` ``` ```` blocks) plus a line describing the environment at creation (Julia version, OS,
@@ -28,14 +41,19 @@ active project, packages loaded in `Main`). The Preference `system_prompt` repla
 instructions. Pass `system = ""` for no system instructions.
 """
 mutable struct Session
+    const id::UUID
+    const created::DateTime
     const name::String
     model::Union{Nothing,AbstractModel}
     system::Union{Nothing,String}
     tools::Union{Nothing,Vector{String}}
     const messages::Vector{AbstractMessage}
-    function Session(::_Register, name::AbstractString, model, system, tools = nothing)
-        s = new(_unique_session_name(name), model,
-                system === nothing ? nothing : String(system), _tool_names(tools), AbstractMessage[])
+    const _store::_SessionStore
+    function Session(::_Register, name::AbstractString, model, system, tools = nothing;
+                     id::UUID = uuid7(), messages = AbstractMessage[],
+                     store::_SessionStore = _SessionStore())
+        s = new(id, _uuid7_time(id), String(name), model,
+                system === nothing ? nothing : String(system), tools, messages, store)
         push!(_SESSIONS, s)
         return s
     end
@@ -63,27 +81,39 @@ end
 function _check_session_name(name::AbstractString)
     occursin(r"^[A-Za-z0-9._-]+$", name) || throw(ArgumentError(
         "session name may only contain letters, digits, '.', '_' and '-', got \"$name\""))
+    tryparse(UUID, name) === nothing || throw(ArgumentError(
+        "session name can't be a UUID (UUIDs refer to session ids), got \"$name\""))
     return nothing
 end
 
-_find_session(name::AbstractString) = findfirst(s -> s.name == name, _SESSIONS)
+_session(s::Session, term = nothing) = s
 
-function _unique_session_name(base::AbstractString)
-    _find_session(base) === nothing && return String(base)
-    n = 2
-    while _find_session("$base-$n") !== nothing
-        n += 1
-    end
-    return "$base-$n"
-end
-
-function _session(name::AbstractString)
-    i = _find_session(name)
-    i === nothing && throw(ArgumentError(
-        "no session named \"$name\" (sessions: $(join((s.name for s in _SESSIONS), ", ")))"))
+function _session(id::UUID, term = nothing)
+    i = findfirst(s -> s.id == id, _SESSIONS)
+    i === nothing && throw(ArgumentError("no loaded session with id $id"))
     return _SESSIONS[i]
 end
-_session(s::Session) = s
+
+# A UUID string is an id; otherwise a name, with a menu when several sessions share it.
+function _session(x::AbstractString, term = nothing)
+    id = tryparse(UUID, x)
+    id === nothing || return _session(id)
+    matches = filter(s -> s.name == x, _SESSIONS)
+    isempty(matches) && throw(ArgumentError(
+        "no session named \"$x\" (sessions: $(join(unique(s.name for s in _SESSIONS), ", ")))"))
+    length(matches) == 1 && return only(matches)
+    i = _pick(something(term, _menu_terminal()), "Several sessions are named \"$x\":",
+              _session_rows(matches))
+    return i === nothing ? nothing : matches[i]
+end
+
+_session_row(s::Session, width::Int) = string(rpad(s.name, width), "  ", _local_time(s.created), "  ",
+    rpad(something(_model_string(s), "no model"), 30), "  ", length(s.messages), " messages  ", s.id)
+
+function _session_rows(ss)
+    width = maximum(s -> length(s.name), ss)
+    return [(s === active_session() ? "* " : "  ") * _session_row(s, width) for s in ss]
+end
 
 """
     sessions() -> Vector{Session}
@@ -101,12 +131,15 @@ a session named `"default"` using the saved default model (or no model if none i
 active_session() = _ACTIVE[]
 
 """
-    use_session!(name_or_session) -> Session
+    use_session!(session_name_or_id) -> Union{Session,Nothing}
 
-Make a registered session the active one.
+Make a registered session the active one. Accepts a `Session`, its `id` (a `UUID` or its
+string), or its name; when several sessions share the name, a terminal menu chooses one
+(cancelling returns `nothing`).
 """
-function use_session!(x::Union{AbstractString,Session})
+function use_session!(x::Union{AbstractString,UUID,Session})
     s = _session(x)
+    s === nothing && return nothing
     s in _SESSIONS || throw(ArgumentError("session \"$(s.name)\" has been deleted"))
     return _ACTIVE[] = s
 end
@@ -123,17 +156,22 @@ function new_session!(name::Union{Nothing,AbstractString} = nothing; model = not
 end
 
 """
-    delete_session!(name_or_session) -> Session
+    delete_session!(session_name_or_id; files = false) -> Union{Session,Nothing}
 
-Unregister a session. The active session can't be deleted; switch away first.
+Unregister a session, given as for [`use_session!`](@ref) (a menu chooses among sessions that
+share a name; cancelling returns `nothing`). The active session can't be deleted; switch away
+first. Its saved files stay, so it can be brought back with [`restore_session!`](@ref), unless
+`files = true`.
 """
-function delete_session!(x::Union{AbstractString,Session})
+function delete_session!(x::Union{AbstractString,UUID,Session}; files::Bool = false)
     s = _session(x)
+    s === nothing && return nothing
     i = findfirst(==(s), _SESSIONS)
     i === nothing && throw(ArgumentError("session \"$(s.name)\" is not registered"))
     s === active_session() && throw(ArgumentError(
         "can't delete the active session \"$(s.name)\"; switch to another session first"))
     deleteat!(_SESSIONS, i)
+    files && _delete_files!(s)
     return s
 end
 
@@ -153,7 +191,7 @@ function _start_default_session!()
         @warn "JAIL: the default session has no system instructions" exception = e
         nothing
     end
-    _ACTIVE[] = Session(_Register(), "default", model, system)
+    _ACTIVE[] = Session(_Register(), "default", model, system, nothing)
     return nothing
 end
 
@@ -166,7 +204,7 @@ _model_string(s::Session) = s.model === nothing ? nothing : string(s.model)
 Switch the session's model, or the [`active_session`](@ref)'s when no session is given,
 keeping its history. Does not change the default model.
 """
-set_model!(s::Session, m::AbstractModel) = (s.model = m)
+set_model!(s::Session, m::AbstractModel) = (s.model = m; _sync_meta!(s); m)
 set_model!(s::Session, m::AbstractString) = set_model!(s, Model(m))
 set_model!(m::Union{AbstractString,AbstractModel}) = set_model!(active_session(), m)
 
@@ -186,7 +224,7 @@ use_provider!(p::AbstractProvider) = use_provider!(active_session(), p)
 
 Clear the message history, keeping the model and system instructions.
 """
-Base.empty!(s::Session) = (empty!(s.messages); s)
+Base.empty!(s::Session) = (empty!(s.messages); _sync!(s); s)
 
 # nothing = every registered tool; otherwise registered names (functions are mapped to names).
 _tool_names(::Nothing) = nothing
@@ -221,7 +259,7 @@ set_tools!(s, [get_weather, "search_docs"])
 set_tools!(s, nothing)
 ```
 """
-set_tools!(s::Session, xs::Union{Nothing,AbstractVector}) = (s.tools = _tool_names(xs); tools(s))
+set_tools!(s::Session, xs::Union{Nothing,AbstractVector}) = (s.tools = _tool_names(xs); _sync_meta!(s); tools(s))
 set_tools!(xs::Union{Nothing,AbstractVector}) = set_tools!(active_session(), xs)
 
 Base.show(io::IO, s::Session) = print(io, "Session(", repr(s.name), ", ",
@@ -229,6 +267,8 @@ Base.show(io::IO, s::Session) = print(io, "Session(", repr(s.name), ", ",
 
 function Base.show(io::IO, ::MIME"text/plain", s::Session)
     println(io, "Session ", repr(s.name))
+    println(io, "  id:       ", s.id)
+    println(io, "  created:  ", _local_time(s.created), " (local time)")
     println(io, "  model:    ", something(_model_string(s), "none"))
     println(io, "  system:   ", s.system === nothing ? "none" : _system_preview(s.system))
     println(io, "  tools:    ", _tools_label(s))

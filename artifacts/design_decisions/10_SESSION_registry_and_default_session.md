@@ -81,3 +81,7 @@ zero-argument method, since `Base.empty!()` involves no JAIL type (type piracy).
 
 Registry growth becoming a problem in scripts (consider weak references for code-created
 sessions), or a need to persist sessions across restarts.
+
+> Persistence added in `24_SESSION_persistence.md`.
+> **Superseded in part by:** `24_SESSION_persistence.md` (amendment): names are no longer unique
+> and no suffix is added; ambiguous names open a menu.

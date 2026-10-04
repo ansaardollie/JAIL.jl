@@ -132,8 +132,9 @@ In the model mode:
 | `default provider [model-id]` | Show or save that provider's own default model | [`set_default_model!`](@ref)`(p, id)` |
 | `sessions` | List sessions; `*` marks the active one | [`sessions`](@ref) |
 | `session new [name] [provider/model]` | Start a session and make it active | [`new_session!`](@ref) |
-| `session use <name>` | Switch the active session | [`use_session!`](@ref) |
-| `session rm <name>` | Delete a session (not the active one) | [`delete_session!`](@ref) |
+| `session use <name\|id>` | Switch the active session (a menu picks among sessions sharing the name) | [`use_session!`](@ref) |
+| `session restore` | Choose a saved session from a menu and make it active | [`restore_session!`](@ref) |
+| `session rm <name\|id> [--files]` | Delete a session (not the active one); `--files` also deletes its saved files | [`delete_session!`](@ref) |
 | `tools` | List registered tools; `*` marks those the active session uses | [`tools`](@ref) |
 | `tools show <name>` | Show a tool's description and parameters | |
 | `tools use <name>...` | Restrict the active session to these tools | [`set_tools!`](@ref) |
@@ -174,8 +175,8 @@ Default model saved: anthropic/claude-sonnet-4-5 (used by new sessions)
 (default: lmstudio/qwen3-8b) model> session new work
 Started session "work" using anthropic/claude-sonnet-4-5
 (work: anthropic/claude-sonnet-4-5) model> sessions
-    default  lmstudio/qwen3-8b            0 messages
-  * work     anthropic/claude-sonnet-4-5  0 messages
+    default  2026-10-04 09:12  lmstudio/qwen3-8b               0 messages  01a106f2-3b1e-7c40-9d2a-5e8f1c7a0b3d
+  * work     2026-10-04 09:15  anthropic/claude-sonnet-4-5     0 messages  01a106f4-9a27-7e15-b0c4-2d61f8e93a57
 (work: anthropic/claude-sonnet-4-5) model> session use default
 Active session: default (lmstudio/qwen3-8b)
 (default: lmstudio/qwen3-8b) model> session rm work
@@ -219,7 +220,7 @@ ERROR: unknown command `frobnicate`; type `help`
 
 Tab completes:
 
-- command names, and `new`, `use`, `rm` after `session`
+- command names, and `new`, `use`, `restore`, `rm` after `session`
 - provider names after `models` and `select`
 - `provider/` after `use`, `default` and `session new`, then model ids once that provider's
   models have been listed in this Julia process (by `models`, `select` or `select_model!`).

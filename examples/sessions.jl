@@ -13,7 +13,7 @@
 #   "default" session (created by `using JAIL`) lists only packages loaded before JAIL.
 # - Sessions offer every registered tool unless restricted (see examples/tools.jl).
 # - Sessions stay registered (and in memory) until `delete_session!`.
-# - Sessions are not persisted across Julia restarts.
+# - Saving to disk and restoring: see examples/session_persistence.jl.
 
 using JAIL
 
@@ -29,7 +29,8 @@ show(stdout, MIME"text/plain"(), s); println()
 
 g = Session(Model(Google(), "gemini-3.8-flash"))          # unnamed → "session"
 @show g
-@show Session("anthropic/claude-sonnet-4-5"; name = "review")   # name taken → "review-2"
+r2 = Session("anthropic/claude-sonnet-4-5"; name = "review")   # names may repeat; ids differ
+@show r2 r2.id != s.id
 
 # Without a model, the saved default is used (and is what new sessions start with):
 set_default_model!("openai/gpt-5")
@@ -62,10 +63,10 @@ w = new_session!("work"; model = "anthropic/claude-sonnet-4-5")   # create + act
 @show set_model!("openai/gpt-5")          # no session: the active one ("work")
 @show w.model
 
-use_session!("review")          # by name, or use_session!(s)
+use_session!(s)                 # a Session, its id, or a name (a menu picks if the name is shared)
 @show active_session().name
 
-delete_session!("review-2")
+delete_session!(r2.id)          # by id: a UUID or its string
 @show [x.name for x in sessions()]
 
 use_session!("default")
@@ -94,4 +95,5 @@ show_error(() -> Session("openai/gpt-5"; name = "my work")) # names are single w
 show_error(() -> set_model!(s, "mistral/large"))            # unknown provider
 show_error(() -> delete_session!(active_session()))         # can't delete the active one
 show_error(() -> use_session!("nope"))                      # unknown session
+show_error(() -> Session("openai/gpt-5"; name = string(r2.id)))   # a name can't be a UUID
 show_error(() -> (s.messages = AbstractMessage[]))          # history can be emptied, not replaced

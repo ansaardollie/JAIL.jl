@@ -9,8 +9,11 @@ const _MODEL_HELP = """
     default provider [model-id]           show or save that provider's own default model
     sessions                              list sessions (* = active)
     session new [name] [provider/model]   start a session and make it active
-    session use <name>                    switch the active session
-    session rm <name>                     delete a session (not the active one)
+    session use <name|id>                 switch the active session (a menu picks among
+                                           sessions sharing the name)
+    session restore                       choose a saved session from a menu and make it active
+    session rm <name|id> [--files]        delete a session (not the active one); --files also
+                                           deletes its saved files
     tools                                 list tools (* = available to the active session)
     tools show <name>                     a tool's description and parameters
     tools use <name>...                   restrict the active session to these tools
@@ -27,9 +30,10 @@ function _nargs(cmd, args, n::UnitRange)
     usage = Dict("models" => "models [provider]", "select" => "select [provider]",
                  "use" => "use provider/model | use provider",
                  "default" => "default [provider/model | provider [model-id]]",
-                 "session" => "session new [name] [provider/model] | use <name> | rm <name>",
+                 "session" => "session new [name] [provider/model] | use <name|id> | restore | rm <name|id> [--files]",
                  "session new" => "session new [name] [provider/model]",
-                 "session use" => "session use <name>", "session rm" => "session rm <name>",
+                 "session use" => "session use <name|id>", "session restore" => "session restore",
+                 "session rm" => "session rm <name|id> [--files]",
                  "tools" => "tools [show <name> | use|add|drop <name>... | all | none]",
                  "tools show" => "tools show <name>", "tools use" => "tools use <name>...",
                  "tools add" => "tools add <name>...", "tools drop" => "tools drop <name>...",
@@ -113,14 +117,7 @@ end
 
 function _cmd_sessions(args)
     _nargs("sessions", args, 0:0)
-    ss = sessions()
-    width = maximum(s -> length(s.name), ss)
-    mwidth = maximum(s -> length(something(_model_string(s), "no model")), ss)
-    for s in ss
-        println(s === active_session() ? "  * " : "    ", rpad(s.name, width), "  ",
-                rpad(something(_model_string(s), "no model"), mwidth), "  ",
-                length(s.messages), " messages")
-    end
+    foreach(l -> println("  ", l), _session_rows(sessions()))
 end
 
 function _cmd_session(args)
@@ -137,12 +134,20 @@ function _cmd_session(args)
     elseif sub == "use"
         _nargs("session use", rest, 1:1)
         s = use_session!(rest[1])
-        println("Active session: ", s.name, " (", something(_model_string(s), "no model"), ")")
+        s === nothing || println("Active session: ", s.name, " (", something(_model_string(s), "no model"), ")")
+    elseif sub == "restore"
+        _nargs("session restore", rest, 0:0)
+        s = restore_session!()
+        s === nothing || println("Active session: ", s.name, " (",
+                                 something(_model_string(s), "no model"), ", ", length(s.messages), " messages)")
     elseif sub == "rm"
-        _nargs("session rm", rest, 1:1)
-        println("Deleted session \"", delete_session!(rest[1]).name, "\"")
+        files = "--files" in rest
+        names = filter(!=("--files"), rest)
+        _nargs("session rm", names, 1:1)
+        s = delete_session!(names[1]; files)
+        s === nothing || println("Deleted session \"", s.name, "\"", files ? " and its files" : "")
     else
-        throw(ArgumentError("unknown `session` subcommand `$sub`; use new, use or rm"))
+        throw(ArgumentError("unknown `session` subcommand `$sub`; use new, use, restore or rm"))
     end
 end
 
@@ -240,8 +245,8 @@ function _complete_model_mode(before::AbstractString)
     elseif n == 3 && cmd == "default"
         return _matching(get(_MODEL_ID_CACHE, parts[2], String[]), partial)
     elseif cmd == "session"
-        n == 2 && return _matching(("new", "use", "rm"), partial)
-        n == 3 && parts[2] in ("use", "rm") && return _matching((s.name for s in _SESSIONS), partial)
+        n == 2 && return _matching(("new", "use", "restore", "rm"), partial)
+        n == 3 && parts[2] in ("use", "rm") && return _matching(unique(s.name for s in _SESSIONS), partial)
         n in (3, 4) && parts[2] == "new" && return _complete_model_spec(partial)
     elseif cmd == "tools"
         n == 2 && return _matching(("show", "use", "add", "drop", "all", "none"), partial)

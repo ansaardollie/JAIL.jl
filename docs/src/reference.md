@@ -42,6 +42,7 @@ active_session
 new_session!
 use_session!
 delete_session!
+restore_session!
 ```
 
 ## Messages and chat

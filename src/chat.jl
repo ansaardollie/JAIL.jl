@@ -158,10 +158,13 @@ function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_token
     limit, confirm = _max_tool_rounds(max_tool_rounds), _confirm_tools()
     n0 = length(s.messages)
     push!(s.messages, msg)
+    _sync!(s)
     try
         return _tool_loop!(s, limit, confirm; max_tokens, on_text, on_step)
     catch
         resize!(s.messages, n0)
+        # A first turn that failed leaves nothing worth restoring.
+        n0 == 0 ? _guard(() -> _delete_files!(s), s) : _sync!(s)
         rethrow()
     end
 end
@@ -173,6 +176,7 @@ function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text,
         specs = tools(s)
         reply = _complete(s.model, s.messages, s.system; max_tokens, on_text, tools = specs)
         push!(s.messages, reply)
+        _sync!(s)
         step(reply)
         calls = _tool_calls(reply)
         isempty(calls) && return reply
@@ -180,6 +184,7 @@ function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text,
             push!(s.messages, ToolResultMessage([ToolResult(c.id, c.name,
                 "Not run: the limit of $limit tool rounds for this turn was reached."; is_error = true)
                 for c in calls]))
+            _sync!(s)
             return reply
         end
         rounds += 1
@@ -191,6 +196,7 @@ function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text,
             push!(results, r)
         end
         push!(s.messages, ToolResultMessage(results))
+        _sync!(s)
     end
 end
 

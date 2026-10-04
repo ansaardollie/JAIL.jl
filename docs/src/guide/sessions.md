@@ -47,16 +47,21 @@ Session()
 
 Every session is **registered**, so the REPL can list it and switch to it.
 - A session without a name is called `"session"`.
-- A name that's already taken gets a suffix.
-- Names may contain letters, digits, `.`, `_` and `-`.
+- Names need not be unique; each session's `id` tells it apart.
+- Names may contain letters, digits, `.`, `_` and `-`, and can't be a UUID.
 
 ```@example sessions
-Session("anthropic/claude-sonnet-4-5"; name = "review")
+r2 = Session("anthropic/claude-sonnet-4-5"; name = "review")
 ```
 
 ```@example sessions
 sessions()
 ```
+
+Functions that take a session ([`use_session!`](@ref), [`delete_session!`](@ref)) accept the
+`Session`, its `id` (a `UUID` or its string), or its name. When several sessions share the
+name, a terminal menu lists them (name, creation time, model, message count, id) to choose
+one; cancelling returns `nothing`.
 
 Sessions stay registered, and in memory, until [`delete_session!`](@ref).
 
@@ -113,15 +118,40 @@ w
 ```
 
 ```@example sessions
-use_session!("review")        # by name, or pass the Session
+use_session!(s)               # the Session, its id, or a name (menu if shared)
 active_session().name
 ```
 
 ```@example sessions
 use_session!("default");
-delete_session!("review-2")
+delete_session!(r2.id)
 [x.name for x in sessions()]
 ```
+
+## Saving and restoring
+
+Every session has an `id` (a version 7 UUID, so ids sort by creation time) and a `created`
+time in UTC. From its first message on, a session is saved under the Preference `storage_dir`
+(default `.jail` in the working directory):
+
+- `sessions/<id>.json`: name, id, creation time, model, system instructions and tools.
+- `messages/<id>.jsonl`: one message per line. Each new message is appended, so saving adds
+  almost nothing to a chat turn. Tool calls and results are stored as JSON objects.
+
+A session with no messages is not saved. A turn that fails is removed from the file too.
+Set the Preference `persist_sessions = false` to stop saving.
+
+[`restore_session!`](@ref) brings a saved session back in a later Julia process and makes it
+active. Without an id it opens a menu of saved sessions, newest first, showing each one's name,
+creation time and first prompt (the `|` mode's `session restore` opens the same menu):
+
+```julia
+restore_session!()                                         # menu
+restore_session!("01a10445-42d7-7b5a-85f7-ceafc2db4931")   # by id
+```
+
+[`delete_session!`](@ref) keeps the files, so a deleted session can be restored;
+`delete_session!(s; files = true)` removes them as well.
 
 ## Common errors
 

@@ -203,6 +203,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |
 | `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`chat!`](@ref) call before further calls are answered "not run" (default 10) |
 | `confirm_tools` | `true` / `false` | by hand | Ask `[y/N]` on the terminal before each tool call (default `false`) |
+| `persist_sessions` | `true` / `false` | by hand | Save sessions to disk from their first message on (default `true`) |
+| `storage_dir` | path | by hand | Folder for saved sessions (default `".jail"`, relative to the working directory) |
 
 For example:
 
