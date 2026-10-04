@@ -6,25 +6,21 @@ const _REPL_INSTRUCTIONS = """
     - Assume questions are about Julia unless told otherwise.
     - Put any code longer than one line in a fenced block with a language tag, e.g. ```julia."""
 
-# Top-level packages bound in Main (via `using`/`import`), not their dependencies.
-function _main_packages()
-    names_ = String[]
-    for n in names(Main; imported = true, usings = true)
-        isdefined(Main, n) || continue
-        m = getfield(Main, n)
-        m isa Module && parentmodule(m) === m && m ∉ (Base, Core, Main) &&
-            Base.PkgId(m).uuid !== nothing && push!(names_, string(nameof(m)))
-    end
-    return sort!(unique!(names_))
+# Direct dependencies (`[deps]`) of the active project, i.e. the packages available to `using`.
+function _project_packages(project)
+    (project === nothing || !isfile(project)) && return String[]
+    deps = get(Base.parsed_toml(project), "deps", nothing)
+    deps isa AbstractDict || return String[]
+    return sort!(collect(String, keys(deps)))
 end
 
 function _environment_line()
     project = Base.active_project()
+    pkgs = _project_packages(project)
     project = project === nothing ? "none" : replace(project, homedir() => "~")
-    pkgs = _main_packages()
     return string("Environment: Julia ", VERSION, " on ", Sys.KERNEL, " ", Sys.ARCH,
                   ", active project ", project,
-                  isempty(pkgs) ? "" : ", loaded packages: " * join(pkgs, ", "), ".")
+                  isempty(pkgs) ? "" : ", project packages: " * join(pkgs, ", "), ".")
 end
 
 # For sessions created without `system`. The `system_prompt` Preference replaces the

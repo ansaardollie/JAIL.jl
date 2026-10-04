@@ -87,7 +87,8 @@ from menus, use `select_model!(s)` (see [Models](models.md)).
 A session created without `system` (including `"default"` and REPL `session new`) gets JAIL's
 built-in instructions: it is running in a Julia REPL, should be concise, and should put code
 in fenced ```` ``` ```` blocks. They end with a line describing the environment when the
-session was created: Julia version, OS, active project, and packages loaded in `Main`.
+session was created: Julia version, OS, active project, and the packages in that project's
+`[deps]` (the packages available to `using`, whether loaded or not).
 
 ```@example sessions
 print(Session("openai/gpt-5"; name = "sys").system)
@@ -96,8 +97,8 @@ print(Session("openai/gpt-5"; name = "sys").system)
 - `system = "..."` replaces them for one session; `system = ""` gives the session none.
 - The Preference `system_prompt` replaces the instructions for new sessions (the environment
   line is still added); `system_prompt = ""` turns them off.
-- The environment line is not updated later, so packages loaded after the session was
-  created aren't listed.
+- The environment line is not updated later, so packages added to the project (or a project
+  switch) after the session was created aren't reflected.
 
 ## The active session
 
