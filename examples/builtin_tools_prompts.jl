@@ -79,3 +79,6 @@ chat!("Fetch https://julialang.org and summarise it in two sentences."; stream =
 
 register_builtin_tools!(:ask_user)
 chat!("Ask me which colour I prefer (red, green or blue), then tell me my answer."; stream = true)
+
+
+chat!("Please ask me a question with multiple choice options"; stream = true)

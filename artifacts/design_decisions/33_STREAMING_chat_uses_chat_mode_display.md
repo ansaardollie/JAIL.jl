@@ -52,3 +52,10 @@ reason line of `}` is not printed by `chat!` (the `AssistantMessage` header show
 
 Owner wants pre-tool text kept, or the script heuristic misfires (e.g. VS Code inline execution
 setting a source path).
+
+## Amendment (2026-10-05)
+
+User: "When using the `chat!()` function the final output from the AssistantMessage should also
+be a markdown display". `show(io, MIME"text/plain"(), ::AssistantMessage)` now renders the text
+with `Markdown.parse` under the header line (for every display of an `AssistantMessage`, not only
+after `chat!`); tool-call lines follow as before.

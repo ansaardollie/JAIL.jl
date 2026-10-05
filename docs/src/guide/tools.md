@@ -325,7 +325,7 @@ files outside the workspace without asking.
 | | `run_shell(command, timeout_seconds)` | runs a shell command; returns output and exit code | high |
 | | `run_tests()` | `Pkg.test()` of the workspace project, in a new process | high |
 | | `pkg_add(packages)` | `Pkg.add` into the active project | high |
-| `web` | `fetch_url(url)` | a web page as text | medium for `https` to a public host; high otherwise |
+| `web` | `fetch_url(url)` | a page's content as served (HTML as HTML) | medium for `https` to a public host; high otherwise |
 | `interact` | `ask_user(question, options)` | asks you in the terminal and returns the answer | never asks for approval |
 
 The model sees each tool's docstring; read it with `@doc JAIL.read_file`. Calls are confirmed
@@ -391,12 +391,11 @@ Code run by `execute_julia_code` is in your Julia process, so it can still read 
 
 ### Web pages
 
-`fetch_url` converts HTML to text (headings, lists and links kept) and returns other text
-formats as they are. It is `:medium` for `https` to a public host on the default port and
+`fetch_url` returns the content exactly as the server sent it: HTML as HTML, other text
+formats as they are (binary content is refused). It is `:medium` for `https` to a public host on the default port and
 `:high` for anything that could reach your machine or network: `http`, `localhost`, IP
 addresses, other ports, and host names that resolve to private addresses. Redirects are
 followed one by one and refused if they lead somewhere riskier than the URL that was approved.
-The result is marked as untrusted content.
 
 ### Tool context
 

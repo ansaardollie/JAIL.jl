@@ -58,6 +58,7 @@ or their own answer).
 """
 function ask_user(question::String, options::Union{Nothing,Vector{String}} = nothing)
     _before_prompt()
+    _discard_pending_input(stdin)
     printstyled(stdout, "? ", strip(question), "\n"; color = :magenta, bold = true)
     if options === nothing || isempty(options)
         print(stdout, "> ")

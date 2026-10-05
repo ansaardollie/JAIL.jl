@@ -127,3 +127,15 @@ or Gumbo compat blocks a Julia upgrade; demand for semantic diagnostics (JET).
 Defaults are now `LocalPreferences.toml`, `Project.toml`, `.git`, `storage_dir`. The
 *proposed* markers above are confirmed. `scrub_env_vars` names are matched case-insensitively,
 like the suffixes (planner's reading of G5b).
+
+## Amendment 2 (2026-10-05, after running the tools live)
+
+User: "When using the :fetch_url tool ... the output returned to the LLM is a markdown content and
+not the actual html. It should be the actual html content. Without the additional `Untrusted
+content from ..`"
+
+- `fetch_url` returns the body exactly as served (HTML as HTML, other text formats as they
+  are; binary content still refused). The `Untrusted content from <url>:` prefix is gone; the
+  tool's docstring (what the model reads) still says to treat the content as untrusted.
+- Supersedes the G7 pick "HTML → text: Gumbo.jl": Gumbo removed from the dependencies
+  (`Pkg.rm("Gumbo")`). URL security levels and redirect checks are unchanged.

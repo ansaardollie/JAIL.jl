@@ -204,7 +204,11 @@ function Base.show(io::IO, ::MIME"text/plain", m::AssistantMessage)
     m.stop_reason === nothing || push!(meta, string(m.stop_reason))
     m.usage === nothing || push!(meta, "$(m.usage.input_tokens) in / $(m.usage.output_tokens) out")
     print(io, "AssistantMessage", isempty(meta) ? "" : " (" * join(meta, ", ") * ")")
-    isempty(string(m)) || print(io, "\n", string(m))
+    text = string(m)
+    if !isempty(strip(text))
+        println(io)
+        show(io, MIME"text/plain"(), Markdown.parse(text))
+    end
     foreach(c -> print(io, "\n→ ", _call_signature(c)), _tool_calls(m))
 end
 

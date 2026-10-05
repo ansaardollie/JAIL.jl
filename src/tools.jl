@@ -723,6 +723,16 @@ end
 
 _print_preview(io::IO, text::AbstractString) = println(io, replace(rstrip(text), r"^"m => "    "))
 
+# Input sent before a prompt appeared (e.g. an extra line run from the editor) must not answer it.
+function _discard_pending_input(io::IO)
+    io isa Base.TTY || return nothing
+    Base.start_reading(io)
+    sleep(0.02)    # lets bytes already sent arrive
+    n = bytesavailable(io)
+    n > 0 && read(io, n)
+    return nothing
+end
+
 # `shown`: the preview was just printed under the call's streamed line, so don't repeat it.
 # Returns :yes, :no or :always.
 function _confirm(c::ToolCall, t::ToolSpec, args, level::Symbol; shown::Bool = false,
@@ -738,6 +748,7 @@ function _confirm(c::ToolCall, t::ToolSpec, args, level::Symbol; shown::Bool = f
         _print_preview(io, preview)
         printstyled(io, uppercasefirst(ask); color = :yellow)
     end
+    _discard_pending_input(input)
     answer = lowercase(strip(readline(input)))
     return answer in ("y", "yes") ? :yes : answer in ("a", "always") ? :always : :no
 end
