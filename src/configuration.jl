@@ -106,8 +106,9 @@ end
 """
     providers() -> Vector{AbstractProvider}
 
-The built-in providers followed by every registered [`OpenAICompatible`](@ref) endpoint, each
-with its current configuration.
+`OpenAI`, `Anthropic` and `Google`, then [`GoogleEnterprise`](@ref) if its project and location
+are saved, then every registered [`OpenAICompatible`](@ref) endpoint, each with its current
+configuration.
 """
 function providers()
     ps = AbstractProvider[P() for P in _FIRST_PARTY]

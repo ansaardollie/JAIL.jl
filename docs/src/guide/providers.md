@@ -7,9 +7,10 @@
 | [`OpenAI`](@ref) | `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
 | [`Anthropic`](@ref) | `anthropic` | `https://api.anthropic.com` | `ANTHROPIC_API_KEY` |
 | [`Google`](@ref) | `google` | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` |
+| [`GoogleEnterprise`](@ref) | `google_enterprise` | none: `https://aiplatform.googleapis.com` for location `"global"`, else `https://<location>-aiplatform.googleapis.com` | none: Google Cloud credentials (see [below](@ref "Gemini on Google Cloud (Vertex AI)")) |
 
-Constructing a provider needs no setup. Unset settings come from Preferences, then from these
-defaults:
+Constructing a provider needs no setup, except `GoogleEnterprise`, which needs a project and
+a location. Unset settings come from Preferences, then from these defaults:
 
 ```@example providers
 using JAIL
@@ -72,7 +73,8 @@ Load a registered endpoint by name:
 OpenAICompatible("openrouter")
 ```
 
-[`providers`](@ref) lists the built-in providers followed by every registered endpoint:
+[`providers`](@ref) lists `OpenAI`, `Anthropic` and `Google`, then `GoogleEnterprise` once its
+project and location are saved, then every registered endpoint:
 
 ```@example providers
 providers()

@@ -22,3 +22,10 @@ the principle as forbidding the current default.
 ## Acceptance Criteria
 
 - [ ] Principle 4 names `GoogleEnterprise` (`api = :generate_content` default, Interactions opt-in) as an exception, with the reason
+
+## Notes
+
+2026-10-05: `26_PROVIDER_google_enterprise_interactions_default.md` made Interactions the
+default again. The exception to record is now the opt-in `api = :generate_content`, needed for
+Gemini 2.5 models and locations Vertex Interactions doesn't serve. `docs/src/guide/concepts.md`
+already says so.

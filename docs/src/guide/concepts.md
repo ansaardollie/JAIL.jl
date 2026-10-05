@@ -40,6 +40,8 @@ History is stored as typed messages, not strings, and is independent of the prov
 session can switch model (even provider) mid-conversation. A history holds
 [`UserMessage`](@ref)s, [`AssistantMessage`](@ref)s and, when tools run,
 [`ToolResultMessage`](@ref)s; system instructions live on the session, not in the history.
+A thinking model's reasoning is kept on its replies as [`ReasoningPart`](@ref)s so it can be
+sent back to the provider that produced it.
 See [Chat](chat.md).
 
 ## Tools are Julia functions

@@ -102,6 +102,8 @@ OpenAI and Google store replies server-side, and the next turn continues from th
 history is sent instead when the history was edited since that reply, the model's provider
 changed, the session was restored in a new Julia process, or the stored reply has expired. Other providers always get the full history. Set the
 Preference `store_requests = false` to send `store = false` and always replay the full history.
+A full history includes the replies' [`ReasoningPart`](@ref)s, but only for the provider and wire
+format that produced them.
 
 `max_tokens` caps the reply length. Without it the `max_tokens` Preference is used if set,
 else the provider's default (Anthropic requires one and uses 8192; others let the model decide).

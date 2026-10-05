@@ -46,15 +46,24 @@ struct ToolResult <: AbstractContentPart
 end
 
 """
-    ReasoningPart(text, format, data)
+    ReasoningPart(text, format::Symbol, data = Dict())
 
 The model's reasoning inside an [`AssistantMessage`](@ref): `text` is the readable summary
-(often empty, since most providers hide their reasoning), and `data` is the provider's opaque
-record of it (signatures, encrypted content), in the wire `format` it came from (e.g.
-`:anthropic`, `:openai_responses`, `:google_interactions`, `:google_generate_content`).
+(often empty: JAIL doesn't request summaries, and most providers hide the reasoning itself), and
+`data` is the provider's opaque record of it (signatures, encrypted content), in the wire
+`format` it came from: `:anthropic`, `:openai_responses`, `:google_interactions` or
+`:google_generate_content`. Don't read or edit `data`; providers require it back unchanged.
 
 It is not part of `string(msg)`. When the history is sent again in full, it goes back unchanged,
 but only to the provider type and wire format that produced it; others never see it.
+
+```jldoctest
+julia> r = ReasoningPart("Check the units first.", :anthropic)
+ReasoningPart(:anthropic, "Check the units first.")
+
+julia> string(AssistantMessage([r, TextPart("22°C")]))
+"22°C"
+```
 """
 struct ReasoningPart <: AbstractContentPart
     text::String
@@ -110,7 +119,7 @@ A turn written by the model. Replies from [`chat!`](@ref) carry the `model` that
 a `stop_reason`, the token `usage`, and the provider's `id` for the reply (OpenAI response id,
 Google interaction id, Anthropic message id). Hand-written ones (e.g. few-shot examples) may
 leave those as `nothing`. A reply that calls tools holds [`ToolCall`](@ref) parts and has
-`stop_reason = :tool_use`.
+`stop_reason = :tool_use`. A thinking model's reply may also hold [`ReasoningPart`](@ref)s.
 
 `stop_reason` is one of `:end_turn`, `:max_tokens`, `:stop_sequence`, `:tool_use`, `:refusal`,
 `:content_filter` or `:other`.

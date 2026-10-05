@@ -86,15 +86,36 @@ s.messages
 - **Anthropic, OpenAI-compatible servers and `GoogleEnterprise` with `api = :generate_content`**
   always get the full history.
 
-Set the Preference `store_requests = false` to send `store = false` to OpenAI and Google and
-always send the full history. Stored responses are kept by the provider (OpenAI: 30 days;
-Google: 55 days paid, 1 day free).
+Set the Preference `store_requests = false` to send `store = false` to OpenAI, Google and
+`GoogleEnterprise` (Interactions) and always send the full history. Stored responses are kept by
+the provider (OpenAI: 30 days; Google: 55 days paid, 1 day free).
 
-Thinking models return their reasoning as opaque, signed records (Anthropic `thinking` blocks,
-OpenAI `reasoning` items, Google `thought` steps or `thoughtSignature`s). Replies keep them as
-[`ReasoningPart`](@ref)s, and a full-history request sends them back unchanged, as each provider
-requires for tool calls. They go back only to the provider and wire format that produced them;
-after a provider switch they are left out.
+## Reasoning
+
+Thinking models return their reasoning alongside the reply as signed records that only the
+provider can read: Anthropic `thinking` blocks, OpenAI `reasoning` items, Google `thought` steps,
+and `thoughtSignature`s on `GoogleEnterprise`'s `generateContent` replies. Each is kept in the
+reply's `content`, in the order it arrived, as a [`ReasoningPart`](@ref). Its `text` is the
+readable summary and `format` names the wire format it came from; its `data` is opaque. It is
+not part of `string(reply)`:
+
+```@example chat
+reply = AssistantMessage([ReasoningPart("Check the units first.", :anthropic), TextPart("22°C")])
+reply.content
+```
+
+```@example chat
+string(reply)
+```
+
+When the full history is sent (see above), reasoning goes back unchanged, which the providers
+require when a reply called tools. It goes back only to the provider type and wire format that
+produced it: after a switch to another provider, or between `GoogleEnterprise`'s two `api`
+settings, it is left out. Hand-written replies such as the one above have no model, so their
+reasoning is never sent. Chained turns don't resend it; the provider already holds it.
+
+JAIL doesn't ask providers for reasoning summaries yet, so `text` is usually empty, and the REPL
+doesn't show reasoning.
 
 ## Streaming
 

@@ -141,6 +141,8 @@ resolved against the working directory when the session is first saved):
 - `messages/<id>.jsonl`: one message per line. Each new message is appended, so saving adds
   almost nothing to a chat turn. Tool calls are stored with their arguments as a JSON object;
   a tool result whose text is JSON is stored as that JSON value, other results as text.
+  [`ReasoningPart`](@ref)s are stored with their provider data, so a restored session can still
+  send them back.
 
 A session with no messages is not saved, and a turn that fails is removed from the file too.
 [`set_model!`](@ref), [`set_tools!`](@ref) and `empty!` update the files. Set the Preference

@@ -35,7 +35,8 @@ m.id
 string(Model(OpenAI(), "gpt-5"))
 ```
 
-The provider in a string is looked up by name among the built-in providers and registered
+The provider in a string is looked up by name among the built-in providers (`google_enterprise`
+only once its project and location are saved) and registered
 [`OpenAICompatible`](@ref) endpoints (see [Providers](providers.md)):
 
 ```@example models
