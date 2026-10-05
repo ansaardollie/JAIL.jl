@@ -93,11 +93,36 @@ function _resolve(path::AbstractString; root::AbstractString = _workspace_root()
     return _PathInfo(abs, inside, protected)
 end
 
-# Security functions: outside the root is always :high; protected paths are :high for writes.
+# `path` with symbolic links resolved, for the parts of it that exist.
+function _real_path(path::AbstractString)
+    head, tail = normpath(path), String[]
+    while !ispath(head)
+        parent, name = dirname(head), basename(head)
+        parent == head && return normpath(path)
+        pushfirst!(tail, name)
+        head = parent
+    end
+    return normpath(joinpath(realpath(head), tail...))
+end
+
+# Whether the `path_allow_list` Preference covers `abs`. Compared on real paths, so a link can't
+# lead out of an allowed folder or into a protected path.
+function _allow_listed(abs::AbstractString, root::AbstractString = _workspace_root())
+    entries = [normpath(joinpath(root, expanduser(e))) for e in _string_list_pref("path_allow_list") if !isempty(strip(e))]
+    isempty(entries) && return false
+    real = _real_path(abs)
+    any(p -> _under(real, _real_path(p)), _protected_paths(root)) && return false
+    return any(e -> _under(real, _real_path(e)), entries)
+end
+
+# Security functions: outside the root is always :high; protected paths are :high for writes;
+# writes to paths in the `path_allow_list` Preference are :low.
 _read_level(path, _...) = _resolve(path).inside ? :low : :high
 function _write_level(path, base::Symbol = :medium)
     r = _resolve(path)
-    return !r.inside || r.protected ? :high : base
+    r.protected && return :high
+    _allow_listed(r.path) && return :low
+    return r.inside ? base : :high
 end
 
 # --- Child processes -------------------------------------------------------------------------
@@ -175,7 +200,7 @@ they do:
 |---|---|
 | `"read"` | `read_file`, `list_dir`, `find_files`, `grep_files`, `check_julia_syntax`, `git_changes` |
 | `"inspect"` | `julia_source_module`, `julia_source_struct`, `julia_source_method`, `julia_source_methods`, `julia_docs`, `find_julia_symbols`, `pkg_status`, `repl_history`, `last_result` |
-| `"edit"` | `create_file`, `create_directory`, `replace_in_file`, `replace_in_files`, `edit_file` |
+| `"edit"` | `create_file`, `create_directory`, `replace_in_file`, `replace_in_files`, `edit_file`, `remove_file` |
 | `"execute"` | `execute_julia_code`, `run_shell`, `run_tests`, `pkg_add` |
 | `"web"` | `fetch_url` |
 | `"interact"` | `ask_user` |

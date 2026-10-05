@@ -1,5 +1,6 @@
 # Built-in file tools: the "read" group (read_file, list_dir, find_files, grep_files) and the
-# "edit" group (create_file, create_directory, replace_in_file, replace_in_files, edit_file). Paths are
+# "edit" group (create_file, create_directory, replace_in_file, replace_in_files, edit_file,
+# remove_file). Paths are
 # relative to the workspace root (the current directory); see `_resolve` for the security rules.
 
 _is_binary(path::AbstractString) = open(io -> any(iszero, read(io, 8192)), path)
@@ -207,6 +208,22 @@ function replace_in_files(edits::Vector{FileEdit})
     return "Applied $(length(edits)) edit$(length(edits) == 1 ? "" : "s") to $(length(order)) file$(length(order) == 1 ? "" : "s")."
 end
 
+"""
+    remove_file(path)
+
+Delete a file. Folders are not deleted.
+
+# Arguments
+- `path`: the file, relative to the workspace folder or absolute
+"""
+function remove_file(path::String)
+    p = _resolve(path).path
+    islink(p) || ispath(p) || throw(ArgumentError("no file `$path`"))
+    isdir(p) && !islink(p) && throw(ArgumentError("`$path` is a folder; remove_file only deletes files"))
+    rm(p)
+    return "Deleted `$path`."
+end
+
 _marked(prefix, text) = join((prefix * l for l in split(text, '\n')), '\n')
 _diff_preview(path, old, new) = string(path, '\n', _marked("- ", old), '\n', _marked("+ ", new))
 
@@ -355,3 +372,5 @@ _builtin!(replace_in_files; group = "edit", label = "Edit files",
           preview = edits -> join((_diff_preview(e.path, e.old, e.new) for e in edits), "\n\n"))
 _builtin!(edit_file; group = "edit", label = "Edit lines",
           security = (path, _...) -> _write_level(path), preview = _line_edits_preview)
+_builtin!(remove_file; group = "edit", label = "Delete file",
+          security = path -> _write_level(path, :high), preview = "path")

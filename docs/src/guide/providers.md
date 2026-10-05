@@ -211,6 +211,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `julia_code_module` | `"main"` / `"sandbox"` | by hand | Where the built-in `execute_julia_code` runs: `Main`, or a module per session (default `"main"`) |
 | `protected_paths` | list of paths | by hand | Paths, relative to the workspace folder, whose writes by built-in tools are always `:high`, besides `LocalPreferences.toml`, `Project.toml`, `.git` and `storage_dir` (default empty) |
 | `scrub_env_vars` | list of ENV var names | by hand | Removed from the built-in tools' child processes, besides names ending in `_KEY`, `_CREDENTIALS`, `_CREDENTIAL` (default empty) |
+| `path_allow_list` | list of paths | by hand | Files and folders, relative to the workspace folder or absolute, whose writes by the built-in `edit` tools are `:low` unless protected (default empty) |
+| `command_allow_list` | list of command prefixes | by hand | `run_shell` commands starting with one of them (and free of `;`, `&`, `\|`, `` ` ``, `$`, `<`, `>`, line breaks) are `:low` (default empty) |
 | `persist_sessions` | `true` / `false` | by hand | Save sessions to disk from their first message on (default `true`) |
 | `storage_dir` | path | by hand | Folder for saved sessions (default `".jail"`, relative to the working directory) |
 

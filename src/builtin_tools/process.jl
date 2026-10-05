@@ -11,6 +11,24 @@ function _process_report(out; timeout = nothing)
     return string(text, "[exit code ", out.exitcode, "]")
 end
 
+# Characters that chain, substitute or redirect commands; a command holding one is never allow-listed.
+const _SHELL_CONTROL = Sys.iswindows() ? ('\n', '\r', '&', '|', '<', '>', '^', '%') :
+                                         ('\n', '\r', ';', '&', '|', '`', '\$', '<', '>')
+
+# :low when the command starts with an entry of the `command_allow_list` Preference (followed by
+# whitespace or the end) and holds no _SHELL_CONTROL character; :high otherwise.
+function _shell_level(command, _...)
+    cmd = strip(command)
+    any(in(_SHELL_CONTROL), cmd) && return :high
+    for p in _string_list_pref("command_allow_list")
+        p = strip(p)
+        (isempty(p) || !startswith(cmd, p)) && continue
+        rest = cmd[ncodeunits(p)+1:end]
+        (isempty(rest) || isspace(first(rest))) && return :low
+    end
+    return :high
+end
+
 """
     run_shell(command, timeout_seconds = nothing)
 
@@ -99,7 +117,7 @@ function pkg_add(packages::Vector{String})
     return String(take!(io))
 end
 
-_builtin!(run_shell; group = "execute", label = "Shell command", security = :high, preview = "command")
+_builtin!(run_shell; group = "execute", label = "Shell command", security = _shell_level, preview = "command")
 _builtin!(run_tests; group = "execute", label = "Run tests", security = :high)
 _builtin!(pkg_add; group = "execute", label = "Add packages", security = :high, preview = "packages")
 _builtin!(git_changes; group = "read", label = "Git changes", security = :low)

@@ -26,7 +26,7 @@
 # show <name>`, `tools use/add/drop <name>...` (`group:<group>` = every tool in it), `tools all`,
 # `tools none`. The `}` mode streams `→ label` / `← label: result` lines as calls happen; the
 # finished turn shows a `Tool calls` block (✓/✗, label, `View` link to the call's JSON via
-# OSC 8), then `Output:` and the reply text.
+# OSC 8), then `Response (model; N in; M out):` and the reply text.
 #
 # Groups and labels: every tool is in a group ("global" unless `group=` is given) and has a
 # label for display (default: the function name as written). The model sees neither.

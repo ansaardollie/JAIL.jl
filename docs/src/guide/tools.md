@@ -322,8 +322,9 @@ files outside the workspace without asking.
 | | `replace_in_file(path, old, new)` | replaces text that occurs exactly once | medium; high outside or protected |
 | | `replace_in_files(edits)` | several replacements, all or none | the highest of its edits |
 | | `edit_file(path, edits)` | line-number edits (`remove` lines, `add` text after a line, `replace` a regex within lines), all numbered as the file was before the call; all or none | medium; high outside or protected |
+| | `remove_file(path)` | deletes a file (not a folder) | high; low if allow-listed |
 | `execute` | `execute_julia_code(code)` | runs code; returns everything printed and the value | high |
-| | `run_shell(command, timeout_seconds)` | runs a shell command; returns output and exit code | high |
+| | `run_shell(command, timeout_seconds)` | runs a shell command; returns output and exit code | high; low if allow-listed |
 | | `run_tests()` | `Pkg.test()` of the workspace project, in a new process | high |
 | | `pkg_add(packages)` | `Pkg.add` into the active project | high |
 | `web` | `fetch_url(url)` | a page's content as served (HTML as HTML) | medium for `https` to a public host; high otherwise |
@@ -352,6 +353,33 @@ folder protects everything inside, and anything deeper needs its path. Without t
 ```toml
 [JAIL]
 protected_paths = ["secrets", "docs/Project.toml"]
+```
+
+### Allow-listed paths and commands
+
+The Preference `path_allow_list` makes the `edit` tools (`create_file`, `create_directory`,
+`replace_in_file`, `replace_in_files`, `edit_file`, `remove_file`) `:low` for the paths it
+lists. Entries are files or folders (a folder covers everything inside), relative to the
+workspace folder or absolute, so a folder outside the workspace can be allowed too. Protected
+paths stay `:high` even inside an allowed folder. Paths are compared after resolving symbolic
+links, so a link can't lead from an allowed folder to somewhere else.
+
+```toml
+[JAIL]
+path_allow_list = ["scratch", "docs/src", "/tmp/jail-out"]
+```
+
+The Preference `command_allow_list` makes `run_shell` `:low` for commands that start with one of
+its entries, followed by a space or the end of the command: `"git status"` allows
+`git status` and `git status --short` but not `git statusx` or `git stash`. A command
+containing a character that chains, substitutes or redirects commands (`;`, `&`, `|`, `` ` ``,
+`$`, `<`, `>` or a line break; on Windows `&`, `|`, `<`, `>`, `^`, `%` or a line break) is always
+`:high`. Anything after the prefix is allowed, so keep entries narrow: `"git"` would also allow
+`git push` and `git -c` options that run other programs.
+
+```toml
+[JAIL]
+command_allow_list = ["git status", "git diff", "ls"]
 ```
 
 The source tools (`julia_source_*`) are always `:low`: they take names, not paths, and look
@@ -427,6 +455,10 @@ register_tool!(session_name; security = :low)
 - `protected_paths` (default empty): paths, relative to the workspace folder, whose writes are
   always `:high`, besides the built-in ones; see
   [The workspace and protected paths](#The-workspace-and-protected-paths).
+- `path_allow_list` (default empty): files and folders whose writes by the `edit` tools are
+  `:low`; see [Allow-listed paths and commands](#Allow-listed-paths-and-commands).
+- `command_allow_list` (default empty): command prefixes for which `run_shell` is `:low`; see
+  [Allow-listed paths and commands](#Allow-listed-paths-and-commands).
 - `scrub_env_vars` (default empty): extra environment variable names removed from child
   processes; see [Child processes and secrets](#Child-processes-and-secrets).
 

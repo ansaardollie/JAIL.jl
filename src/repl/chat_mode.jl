@@ -98,6 +98,24 @@ function _render_stop(io::IO, reply::AssistantMessage)
     return nothing
 end
 
+# `Response (model; N in; M out):`, with the tokens summed over every reply of the turn.
+function _render_response_header(io::IO, messages)
+    replies = [m for m in messages if m isa AssistantMessage]
+    parts = String[]
+    i = findlast(r -> r.model !== nothing, replies)
+    i === nothing || push!(parts, string(replies[i].model))
+    used = [r.usage for r in replies if r.usage !== nothing]
+    isempty(used) || push!(parts, string(sum(u -> u.input_tokens, used), " in"),
+                           string(sum(u -> u.output_tokens, used), " out"))
+    printstyled(io, "Response", isempty(parts) ? "" : string(" (", join(parts, "; "), ")"), ":\n"; bold = true)
+end
+
+function _render_prompt(io::IO, prompt)
+    printstyled(io, "Prompt:\n"; bold = true)
+    show(io, MIME"text/plain"(), Markdown.parse(string(prompt)))
+    println(io, "\n")
+end
+
 function _stream_pref()
     v = _load_pref("stream", false)
     v isa Bool || throw(ArgumentError("Preference `stream` must be true or false, got $(repr(v))"))
@@ -161,6 +179,7 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
             show_status("thinking…")
         end
     end
+    output && !isinteractive() && _render_prompt(io, prompt)
     show_status("thinking…")
     reply = try
         _chat!(s, prompt; on_text = stream ? show_delta : nothing, on_step, kwargs...)
@@ -174,7 +193,8 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
         line_start[] || println(io)
         _render_tool_summary(io, s, turn; tty)
     elseif output
-        _render_tool_summary(io, s, turn; tty) && printstyled(io, "\nOutput:\n"; bold = true)
+        _render_tool_summary(io, s, turn; tty) && println(io)
+        _render_response_header(io, turn)
         _render_texts(io, turn)
     else
         _render_tool_summary(io, s, turn; tty)

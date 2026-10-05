@@ -41,6 +41,14 @@ julia_code_module = "main"
 # _CREDENTIALS or _CREDENTIAL. Default: none.
 # scrub_env_vars = ["GITHUB_TOKEN"]
 
+# Files and folders (relative to the current directory, or absolute) whose writes by the built-in
+# edit tools are :low, unless protected. Default: none.
+# path_allow_list = ["scratch", "docs/src"]
+
+# Command prefixes for which run_shell is :low (commands with ; & | ` $ < > or line breaks are
+# always :high). Default: none.
+# command_allow_list = ["git status", "git diff"]
+
 # Reply cap for chat! on every provider. Unset: Anthropic 8192, others none.
 # max_tokens = 8192
 

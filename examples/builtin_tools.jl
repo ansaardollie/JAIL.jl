@@ -1,10 +1,10 @@
 # Built-in tools: file, Julia, shell, web and interaction tools that ship with JAIL
 #
-# What: 26 ready-made tools in six groups, by what they do:
+# What: 27 ready-made tools in six groups, by what they do:
 #   read      read_file, list_dir, find_files, grep_files, check_julia_syntax, git_changes
 #   inspect   julia_source_method(s), julia_source_struct, julia_source_module, julia_docs,
 #             find_julia_symbols, pkg_status, repl_history, last_result
-#   edit      create_file, create_directory, replace_in_file, replace_in_files, edit_file
+#   edit      create_file, create_directory, replace_in_file, replace_in_files, edit_file, remove_file
 #   execute   execute_julia_code, run_shell, run_tests, pkg_add
 #   web       fetch_url
 #   interact  ask_user

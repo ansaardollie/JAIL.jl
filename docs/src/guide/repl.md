@@ -35,8 +35,9 @@ When the model calls tools, each finished turn starts with a `Tool calls` block:
 call with ✓ or ✗ and the tool's label (see [Groups and labels](tools.md#Groups-and-labels)),
 followed by `View`, a link to the call's saved JSON file (see
 [Saving and restoring](sessions.md#Saving-and-restoring)) in terminals that support OSC 8
-hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). The reply text follows under an `Output:`
-heading. While the turn runs
+hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). The reply text follows under a
+`Response (model; N in; M out):` heading, with the input and output tokens summed over every
+request of the turn. While the turn runs
 without streaming, a transient line shows `thinking…` or the tool being run. If the tool round
 limit is reached, the turn ends with `[stop reason: tool_use]`.
 
@@ -45,7 +46,7 @@ chat> Should I pack an umbrella for Paris?
 Tool calls (1):
   ✓ get_weather  View
 
-Output:
+Response (anthropic/claude-sonnet-4-5; 1840 in; 52 out):
   No, it will be sunny for the next three days.
 ```
 
