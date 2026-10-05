@@ -26,7 +26,10 @@ makedocs(
     authors = "Ansaar Dollie <me@ansaardollie.com>",
     # The origin URL uses an SSH host alias (github.com-personal) Documenter can't parse.
     repo = Remotes.GitHub("ansaardollie", "JAIL.jl"),
-    format = Documenter.HTML(; edit_link = "main", assets = String[]),
+    format = Documenter.HTML(; 
+        edit_link = "main", 
+        assets = ["assets/custom.css"]
+    ),
     pages = [
         "Home" => "index.md",
         "Guide" => [
