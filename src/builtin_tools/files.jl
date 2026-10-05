@@ -1,5 +1,5 @@
 # Built-in file tools: the "read" group (read_file, list_dir, find_files, grep_files) and the
-# "edit" group (create_file, create_directory, replace_in_file, replace_in_files). Paths are
+# "edit" group (create_file, create_directory, replace_in_file, replace_in_files, edit_file). Paths are
 # relative to the workspace root (the current directory); see `_resolve` for the security rules.
 
 _is_binary(path::AbstractString) = open(io -> any(iszero, read(io, 8192)), path)
@@ -210,6 +210,133 @@ end
 _marked(prefix, text) = join((prefix * l for l in split(text, '\n')), '\n')
 _diff_preview(path, old, new) = string(path, '\n', _marked("- ", old), '\n', _marked("+ ", new))
 
+# One change of `edit_file`; the model sees it as an object with these fields.
+struct LineEdit
+    action::String
+    line::Int
+    end_line::Union{Nothing,Int}
+    pattern::Union{Nothing,String}
+    text::Union{Nothing,String}
+end
+
+# The edits checked against a file of `n` lines: which original lines are removed, the
+# (regex, text) replacements per original line, and the text added after each line (index k + 1
+# for after line k, 1 for before the first).
+function _plan_line_edits(lines::Vector{String}, edits::Vector{LineEdit})
+    isempty(edits) && throw(ArgumentError("no edits given"))
+    n = length(lines)
+    removed = falses(n)
+    replaces = [Tuple{Regex,String}[] for _ in 1:n]
+    adds = [String[] for _ in 0:n]
+    for (i, e) in enumerate(edits)
+        what = "edit $i ($(e.action) at line $(e.line))"
+        action = lowercase(strip(e.action))
+        if action == "add"
+            0 <= e.line <= n || throw(ArgumentError("$what: line must be from 0 to $n"))
+            e.text === nothing && throw(ArgumentError("$what: `text` is required"))
+            push!(adds[e.line+1], e.text)
+        elseif action in ("remove", "replace")
+            stop = something(e.end_line, e.line)
+            1 <= e.line <= stop <= n || throw(ArgumentError(
+                "$what: lines must be from 1 to $n, with end_line not before line"))
+            if action == "remove"
+                removed[e.line:stop] .= true
+                continue
+            end
+            (e.pattern === nothing || e.text === nothing) &&
+                throw(ArgumentError("$what: `pattern` and `text` are required"))
+            rx = try
+                Regex(e.pattern)
+            catch err
+                throw(ArgumentError("$what: invalid regular expression: $(sprint(showerror, err))"))
+            end
+            any(k -> occursin(rx, chomp(lines[k])), e.line:stop) || throw(ArgumentError(
+                "$what: the pattern matches nothing in line$(stop > e.line ? "s $(e.line)–$stop" : " $(e.line)")"))
+            foreach(k -> push!(replaces[k], (rx, e.text)), e.line:stop)
+        else
+            throw(ArgumentError("$what: action must be \"add\", \"remove\" or \"replace\""))
+        end
+    end
+    k = findfirst(k -> removed[k] && !isempty(replaces[k]), 1:n)
+    k === nothing || throw(ArgumentError("line $k is both removed and replaced"))
+    return removed, replaces, adds
+end
+
+# Rebuilds the file line by line over the original numbering, so edits never shift each other.
+function _apply_line_edits(lines::Vector{String}, (removed, replaces, adds))
+    nl = !isempty(lines) && endswith(lines[1], "\r\n") ? "\r\n" : "\n"
+    io = IOBuffer()
+    emit_adds(k) = foreach(t -> print(io, t, endswith(t, '\n') ? "" : nl), adds[k+1])
+    emit_adds(0)
+    for (k, line) in enumerate(lines)
+        if !removed[k]
+            body = chomp(line)
+            ending = line[ncodeunits(body)+1:end]
+            for (rx, t) in replaces[k]
+                body = replace(body, rx => t)
+            end
+            print(io, body, isempty(ending) && !isempty(adds[k+1]) ? nl : ending)
+        end
+        emit_adds(k)
+    end
+    return String(take!(io))
+end
+
+"""
+    edit_file(path, edits)
+
+Change a text file by line number. Lines count from 1, and every `line` refers to the file as it
+is now, however many lines other edits in the same call add or remove, so read the file first
+(read_file's header gives the line range shown) and give all changes in one call. Each edit has
+an `action`:
+
+- `remove`: delete lines `line` to `end_line` (just `line` without `end_line`).
+- `add`: insert `text` (one or more lines) after line `line`; `line = 0` inserts at the top.
+  Several adds after the same line keep their order.
+- `replace`: in lines `line` to `end_line`, replace every match of the regular expression
+  `pattern` (PCRE syntax) with `text`, taken literally. The pattern must match at least once.
+
+If any edit is invalid, the file is not changed.
+
+# Arguments
+- `path`: the file, relative to the workspace folder or absolute
+- `edits`: the changes, each with `action` ("remove", "add" or "replace"), `line`, and as needed `end_line`, `pattern`, `text`
+"""
+function edit_file(path::String, edits::Vector{LineEdit})
+    p = _text_file(path)
+    lines = readlines(p; keep = true)
+    plan = _plan_line_edits(lines, edits)
+    new = _apply_line_edits(lines, plan)
+    _write_atomic(p, new)
+    removed, replaces, adds = plan
+    changed = count(k -> !removed[k] && !isempty(replaces[k]), eachindex(lines))
+    added = sum(t -> count('\n', chomp(t)) + 1, Iterators.flatten(adds); init = 0)
+    return "Edited `$path`: $(count(removed)) line(s) removed, $added added, $changed changed; " *
+           "it now has $(length(readlines(IOBuffer(new)))) lines."
+end
+
+function _line_edits_preview(path, edits)
+    lines = try
+        readlines(_resolve(path).path)
+    catch
+        String[]
+    end
+    at(k) = 1 <= k <= length(lines) ? lines[k] : ""
+    out = String[path]
+    for e in edits
+        stop = something(e.end_line, e.line)
+        action = lowercase(strip(e.action))
+        if action == "remove"
+            push!(out, "@ $(e.line)$(stop > e.line ? "–$stop" : "")", ("- " * at(k) for k in e.line:stop)...)
+        elseif action == "add"
+            push!(out, "@ after $(e.line)", _marked("+ ", something(e.text, "")))
+        else
+            push!(out, "@ $(e.line)$(stop > e.line ? "–$stop" : ""): /$(something(e.pattern, ""))/ → $(repr(something(e.text, "")))")
+        end
+    end
+    return join(out, '\n')
+end
+
 _max_level(levels) = isempty(levels) ? :medium : _SECURITY_LEVELS[maximum(l -> findfirst(==(l), _SECURITY_LEVELS), levels)]
 
 _builtin!(read_file; group = "read", label = "Read file", security = _read_level, preview = "path")
@@ -226,3 +353,5 @@ _builtin!(replace_in_file; group = "edit", label = "Edit file",
 _builtin!(replace_in_files; group = "edit", label = "Edit files",
           security = edits -> _max_level([_write_level(e.path) for e in edits]),
           preview = edits -> join((_diff_preview(e.path, e.old, e.new) for e in edits), "\n\n"))
+_builtin!(edit_file; group = "edit", label = "Edit lines",
+          security = (path, _...) -> _write_level(path), preview = _line_edits_preview)

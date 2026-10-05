@@ -41,6 +41,7 @@ create_file
 create_directory
 replace_in_file
 replace_in_files
+edit_file
 ```
 
 ## execute

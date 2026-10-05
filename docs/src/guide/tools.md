@@ -321,6 +321,7 @@ files outside the workspace without asking.
 | | `create_directory(path)` | a folder | low; high outside or protected |
 | | `replace_in_file(path, old, new)` | replaces text that occurs exactly once | medium; high outside or protected |
 | | `replace_in_files(edits)` | several replacements, all or none | the highest of its edits |
+| | `edit_file(path, edits)` | line-number edits (`remove` lines, `add` text after a line, `replace` a regex within lines), all numbered as the file was before the call; all or none | medium; high outside or protected |
 | `execute` | `execute_julia_code(code)` | runs code; returns everything printed and the value | high |
 | | `run_shell(command, timeout_seconds)` | runs a shell command; returns output and exit code | high |
 | | `run_tests()` | `Pkg.test()` of the workspace project, in a new process | high |

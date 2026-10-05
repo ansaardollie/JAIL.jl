@@ -20,7 +20,7 @@ JAIL is an early rewrite. What works today:
 - **Tools**: Julia functions registered with [`register_tool!`](@ref) or [`@tool`](@ref);
   `chat!` runs the calls the model makes, asking first according to each tool's security level
   and your Preferences, and sends the results back.
-- **Built-in tools**: 25 opt-in tools for reading, searching and editing files, looking up
+- **Built-in tools**: 26 opt-in tools for reading, searching and editing files, looking up
   Julia source and docs, running Julia code and shell commands, fetching web pages and asking
   you questions; register them with [`register_builtin_tools!`](@ref).
 - **REPL modes**: `|` for listing and switching providers, models, sessions and tools, `}` for

@@ -32,6 +32,9 @@ chat!("In scratch/hello.jl, make the greeting end with an exclamation mark."; st
 register_builtin_tools!(:replace_in_files)
 chat!("In one change, rename `hello` to `greet` in scratch/hello.jl and add a comment line at its top."; stream = true)
 
+register_builtin_tools!(:edit_file)
+chat!("In scratch/hello.jl, by line number: delete the comment line, add a docstring above the function, and change `name` to `who` on the function line."; stream = true)
+
 register_builtin_tools!(:git_changes)
 chat!("Summarise my uncommitted git changes."; stream = true)
 
