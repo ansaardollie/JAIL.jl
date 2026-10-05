@@ -169,6 +169,20 @@ end
 
 _parse_reply(::Google, req::_Request, json) = _parse_reply(_InteractionsAPI(), req, json)
 
+# POST /v1beta/models/{model}:countTokens (google/counting-tokens.md#L26). Interactions has no counting
+# endpoint, so the history goes as generateContent contents; system instructions and tools need the
+# `generateContentRequest` wrapper (#L39-L40), whose `model` and `contents` are required
+# (https://ai.google.dev/api/batch-api#GenerateContentRequest).
+_count_url(p::Google, m::AbstractModel) = string(p.base_url, "/", api_version(Google), "/models/", m.id, ":countTokens")
+function _count_body(p::Google, req::_Request)
+    body = _request_body(_GenerateContentAPI(), p, req)
+    body["model"] = "models/" * req.model.id
+    return Dict{String,Any}("generateContentRequest" => body)
+end
+# CountTokensResponse.totalTokens, #L809-L820 (Vertex: ai-platform-spec.json#L53549-L53572); zero may be omitted
+_parse_count(::Union{Google,GoogleEnterprise}, json) = Int(get(json, "totalTokens", 0))
+_count_needs_messages(::Type{Google}) = true
+
 # Interaction #L6412 (status enum, steps, usage); Usage #L9561; Error #L4795
 function _parse_reply(::_InteractionsAPI, req::_Request, json)
     status = get(json, "status", nothing)
@@ -337,6 +351,12 @@ _vertex_scope(p::GoogleEnterprise, version) = string(_gcp_location_url(p.locatio
 
 # Same Interactions resource as Google (v1beta1 only), at the project/location-scoped path.
 _request_url(::_InteractionsAPI, p::GoogleEnterprise, ::_Request) = _vertex_scope(p, "v1beta1") * "/interactions"
+
+# publishers.models.countTokens, ai-platform-spec.json#L16210-L16240; CountTokensRequest #L49367-L49404
+# takes contents, systemInstruction and tools top-level. Used whatever the `api`.
+_count_url(p::GoogleEnterprise, m::AbstractModel) =
+    string(_vertex_scope(p, "v1"), "/publishers/google/models/", m.id, ":countTokens")
+_count_body(p::GoogleEnterprise, req::_Request) = _request_body(_GenerateContentAPI(), p, req)
 
 # Only the Interactions wire stores replies server-side; generateContent is stateless.
 _has_store_field(p::GoogleEnterprise) = p.api === :interactions

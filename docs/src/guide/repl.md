@@ -173,6 +173,7 @@ In the model mode:
 | `tools add <name>...`, `tools drop <name>...` | Add tools to, or remove them from, the active session (`group:<group>` works here too) | [`set_tools!`](@ref) |
 | `tools all`, `tools none` | Every registered tool (the default), or none | `set_tools!(nothing)`, `set_tools!([])` |
 | `tools approve <name\|group:<group>>...`, `tools unapprove ...` | Run these tools' calls without asking, or remove that entry | [`set_tool_auto_approval!`](@ref) |
+| `tokens [provider/model]` | Count the active session's input tokens (system, tools, messages) for its model or the one given | [`count_tokens`](@ref) |
 | `help`, `?` | Show the command list | |
 
 `use` and `select` change only the active session. The saved default changes only with

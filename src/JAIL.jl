@@ -23,6 +23,7 @@ export tool_approval, set_tool_approval!, security_level, needs_confirmation, to
 export tool_auto_approvals, set_tool_auto_approval!
 export ToolCall, ToolResult, ToolResultMessage
 export ToolContext, tool_context, builtin_tools, register_builtin_tools!
+export TokenCount, count_tokens
 
 include("preferences.jl")
 include("ontology/providers.jl")
@@ -43,6 +44,7 @@ include("session.jl")
 include("persistence.jl")
 include("builtin_tools/common.jl")
 include("chat.jl")
+include("tokens.jl")
 include("select.jl")
 include("repl/model_mode.jl")
 include("repl/chat_mode.jl")

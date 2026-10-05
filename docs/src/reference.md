@@ -61,6 +61,13 @@ ToolResult
 ToolResultMessage
 ```
 
+## Token counting
+
+```@docs
+count_tokens
+TokenCount
+```
+
 ## Tools
 
 ```@docs

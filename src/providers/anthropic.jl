@@ -68,6 +68,14 @@ function _request_body(p::Anthropic, req::_Request)
     return body
 end
 
+# POST /v1/messages/count_tokens #L1118-L1187; BetaCountMessageTokensParams #L1527-L1711 (model,
+# messages (required), system, tools); response input_tokens #L1712-L1725
+_count_url(p::Anthropic, ::AbstractModel) = p.base_url * "/v1/messages/count_tokens"
+_count_body(p::Anthropic, req::_Request) =
+    filter(kv -> kv.first in ("model", "messages", "system", "tools"), _request_body(p, req))
+_parse_count(::Anthropic, json) = Int(json["input_tokens"])
+_count_needs_messages(::Type{Anthropic}) = true
+
 _text_block(text) = Dict{String,Any}("type" => "text", "text" => text)
 _anthropic_blocks(m::UserMessage, p) = Any[_text_block(string(m))]
 

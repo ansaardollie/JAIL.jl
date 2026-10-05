@@ -38,6 +38,16 @@ _supports_chaining(::Type{<:AbstractProvider}) = false
 # Whether replies can be streamed as server-sent events.
 _supports_streaming(::Type{<:AbstractProvider}) = false
 
+# Token counting interface (src/tokens.jl), each provider implements:
+#   _count_url(p, model)           -> URL of the provider's input-token counting endpoint
+#   _count_body(p, req::_Request)  -> Dict body counting req's system, tools and messages
+#   _parse_count(p, json)          -> Int input tokens
+function _count_url end
+function _count_body end
+function _parse_count end
+# Whether the counting endpoint requires at least one message.
+_count_needs_messages(::Type{<:AbstractProvider}) = false
+
 _has_store_field(p::AbstractProvider) = _has_store_field(typeof(p))
 _supports_chaining(p::AbstractProvider) = _supports_chaining(typeof(p))
 _supports_streaming(p::AbstractProvider) = _supports_streaming(typeof(p))

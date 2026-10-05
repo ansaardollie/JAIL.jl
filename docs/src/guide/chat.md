@@ -117,6 +117,25 @@ reasoning is never sent. Chained turns don't resend it; the provider already hol
 JAIL doesn't ask providers for reasoning summaries yet, so `text` is usually empty, and the REPL
 doesn't show reasoning.
 
+## Counting tokens
+
+[`count_tokens`](@ref) asks the model's provider how many input tokens the session's context
+takes up: its system instructions, tool definitions and full message history, as a full-history
+turn would send them. Pass a prompt to count it as the next turn without sending it, and
+`model` to count the same context for another model:
+
+```julia
+count_tokens(s)                                  # TokenCount: total, system, tools, messages
+count_tokens(s, "And London?")                   # as if this were the next prompt
+count_tokens(s; model = "google/gemini-3-flash")  # the same context on another model
+```
+
+It uses each provider's counting endpoint (OpenAI and OpenAI-compatible:
+`/responses/input_tokens`; Anthropic: `/v1/messages/count_tokens`; Google and `GoogleEnterprise`:
+`:countTokens`), which generates nothing, and makes one request per part present. The parts are
+found by counting with a part left out, so they are approximate; `total` is their sum. Many
+OpenAI-compatible servers have no counting endpoint, and `count_tokens` throws for them.
+
 ## Streaming
 
 `chat!(s, prompt; stream = true)` shows the turn as the `}` REPL mode does (see

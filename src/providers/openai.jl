@@ -146,6 +146,14 @@ function _parse_reply(::_ResponsesAPI, req::_Request, json)
                             id = get(json, "id", nothing))
 end
 
+# POST /responses/input_tokens, #L29898-L29935: the Responses input format (TokenCountsBody
+# #L84371-L84469 has no store/max_output_tokens/stream). Also used by OpenAICompatible, whatever its `api`.
+_count_url(p::AbstractOpenAIProvider, ::AbstractModel) = p.base_url * "/responses/input_tokens"
+_count_body(p::AbstractOpenAIProvider, req::_Request) =
+    filter(kv -> kv.first in ("model", "input", "instructions", "tools"), _request_body(_ResponsesAPI(), p, req))
+# TokenCountsResource #L84471-L84487
+_parse_count(::AbstractOpenAIProvider, json) = Int(json["input_tokens"])
+
 # incomplete_details.reason, #L66944-L66965
 function _incomplete_reason(details)
     r = details === nothing ? nothing : get(details, "reason", nothing)

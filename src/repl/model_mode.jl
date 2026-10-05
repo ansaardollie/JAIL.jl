@@ -23,6 +23,9 @@ const _MODEL_HELP = """
     tools approve <name|group:<group>>... run these tools' calls without asking (saved in
                                            the Preference tool_auto_approvals)
     tools unapprove <name|group:<group>>...  remove those entries (security level decides)
+    tokens [provider/model]               count the active session's input tokens (system,
+                                           tools, messages) with the provider, for its model
+                                           or the one given
     help, ?                               show this help
 
     Press backspace on an empty line to leave this mode."""
@@ -43,7 +46,8 @@ function _nargs(cmd, args, n::UnitRange)
                  "tools add" => "tools add <name|group:<group>>...", "tools drop" => "tools drop <name|group:<group>>...",
                  "tools all" => "tools all", "tools none" => "tools none",
                  "tools approve" => "tools approve <name|group:<group>>...",
-                 "tools unapprove" => "tools unapprove <name|group:<group>>...")
+                 "tools unapprove" => "tools unapprove <name|group:<group>>...",
+                 "tokens" => "tokens [provider/model]")
     throw(ArgumentError("usage: `$(get(usage, cmd, cmd))`"))
 end
 
@@ -231,11 +235,18 @@ function _cmd_tools(args)
     end
 end
 
+function _cmd_tokens(args)
+    _nargs("tokens", args, 0:1)
+    c = count_tokens(active_session(); model = isempty(args) ? nothing : args[1])
+    show(stdout, MIME"text/plain"(), c)
+    println()
+end
+
 const _MODEL_COMMANDS = Dict(
     "status" => _cmd_status, "st" => _cmd_status, "providers" => _cmd_providers,
     "models" => _cmd_models, "select" => _cmd_select, "use" => _cmd_use,
     "default" => _cmd_default, "sessions" => _cmd_sessions, "session" => _cmd_session,
-    "tools" => _cmd_tools, "help" => _cmd_help, "?" => _cmd_help)
+    "tools" => _cmd_tools, "tokens" => _cmd_tokens, "help" => _cmd_help, "?" => _cmd_help)
 
 function _model_command(line::AbstractString)
     words = split(strip(line))
@@ -271,7 +282,7 @@ function _complete_model_mode(before::AbstractString)
     cmd = parts[1]
     if n == 2 && cmd in ("models", "select")
         return _matching((provider_name(p) for p in providers()), partial)
-    elseif n == 2 && cmd in ("use", "default")
+    elseif n == 2 && cmd in ("use", "default", "tokens")
         return _complete_model_spec(partial)
     elseif n == 3 && cmd == "default"
         return _matching(get(_MODEL_ID_CACHE, parts[2], String[]), partial)
