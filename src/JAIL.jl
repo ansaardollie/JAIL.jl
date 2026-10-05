@@ -15,7 +15,7 @@ export AbstractModel, Model
 export configure_provider!, register_provider!, providers
 export set_default_model!, default_model, list_models, select_model!
 export AbstractMessage, Session, set_model!, use_provider!
-export AbstractContentPart, TextPart, UserMessage, AssistantMessage, Usage, chat!
+export AbstractContentPart, TextPart, ReasoningPart, UserMessage, AssistantMessage, Usage, chat!
 export sessions, active_session, new_session!, use_session!, delete_session!, restore_session!
 export ToolSpec, register_tool!, @tool, tools, unregister_tool!, set_tools!
 export ToolCall, ToolResult, ToolResultMessage

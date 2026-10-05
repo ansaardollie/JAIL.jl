@@ -22,7 +22,7 @@ JAIL is an early rewrite. What works today:
 - **REPL modes**: `|` for listing and switching providers, models, sessions and tools, `}` for
   chatting with the active session's model.
 
-Not implemented yet: images, reasoning output, the agentic (`&`) REPL mode, built-in tools,
+Not implemented yet: images, requesting or displaying reasoning summaries, the agentic (`&`) REPL mode, built-in tools,
 and one-shot functions for text, code generation and extraction.
 
 ## Quick start

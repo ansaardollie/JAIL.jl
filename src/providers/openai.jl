@@ -56,7 +56,7 @@ function _request_body(::_ResponsesAPI, p, req::_Request)
     # EasyInputMessage with string content, #L47189-L47240; history replay as in
     # core-concepts/openai-core-concepts-02-conversation-state-20260926.md#L40-L53
     input = Any[]
-    foreach(m -> _responses_items!(input, m), _replayable(req.messages))
+    foreach(m -> _responses_items!(input, m, p), _replayable(req.messages))
     body = Dict{String,Any}("model" => req.model.id, "input" => input)
     req.system === nothing || (body["instructions"] = req.system)          # #L45539
     req.max_tokens === nothing || (body["max_output_tokens"] = req.max_tokens)  # #L45590
@@ -76,20 +76,35 @@ function _function_json(t::ToolSpec; type = nothing, schema_key = "parameters")
     return d
 end
 
-_responses_items!(input, m::UserMessage) = push!(input, Dict("role" => "user", "content" => string(m)))
+_responses_items!(input, m::UserMessage, p) = push!(input, Dict("role" => "user", "content" => string(m)))
 
-# FunctionToolCall #L49877-L49935, re-sent without its `fc_` item id (its reasoning item is not kept).
-function _responses_items!(input, m::AssistantMessage)
-    text = string(m)
-    isempty(text) || push!(input, Dict("role" => "assistant", "content" => text))
-    for c in _tool_calls(m)
-        push!(input, Dict("type" => "function_call", "call_id" => c.id, "name" => c.name,
-                          "arguments" => JSON.json(c.arguments)))
+# FunctionToolCall #L49877-L49935, re-sent without its `fc_` item id. ReasoningItem #L66801-L66868
+# (`encrypted_content` returned by default) goes back as received: tool-guides/
+# openai-tool-guides-02-function-calling-20260926.md#L475-L477, core-concepts/
+# openai-core-concepts-02-conversation-state-20260926.md#L176
+function _responses_items!(input, m::AssistantMessage, p)
+    text = nothing
+    for c in m.content
+        if c isa TextPart && !isempty(c.text)
+            if text === nothing
+                text = Dict{String,Any}("role" => "assistant", "content" => c.text)
+                push!(input, text)
+            else
+                text["content"] *= c.text
+            end
+            continue
+        elseif c isa ToolCall
+            push!(input, Dict("type" => "function_call", "call_id" => c.id, "name" => c.name,
+                              "arguments" => JSON.json(c.arguments)))
+        elseif c isa ReasoningPart && _replays(c, m, p, :openai_responses)
+            push!(input, c.data)
+        end
+        text = nothing
     end
 end
 
 # FunctionCallOutputItemParam #L81074-L81130 (no error flag: the text says what went wrong)
-_responses_items!(input, m::ToolResultMessage) =
+_responses_items!(input, m::ToolResultMessage, p) =
     foreach(r -> push!(input, Dict("type" => "function_call_output", "call_id" => r.call_id,
                                    "output" => r.content)), m.content)
 
@@ -104,6 +119,10 @@ function _parse_reply(::_ResponsesAPI, req::_Request, json)
         t = get(item, "type", nothing)
         if t == "function_call"
             push!(parts, ToolCall(item["call_id"], item["name"], _arguments(get(item, "arguments", nothing))))
+            continue
+        elseif t == "reasoning"
+            data = Dict{String,Any}(k => v for (k, v) in item if k != "status")
+            push!(parts, ReasoningPart(_summary_text(get(item, "summary", nothing)), :openai_responses, data))
             continue
         end
         t == "message" || continue

@@ -1,8 +1,8 @@
 """
     AbstractContentPart
 
-One piece of a message's content: [`TextPart`](@ref), a [`ToolCall`](@ref) the model made, or a
-[`ToolResult`](@ref) sent back.
+One piece of a message's content: [`TextPart`](@ref), a [`ToolCall`](@ref) the model made, a
+[`ToolResult`](@ref) sent back, or the model's [`ReasoningPart`](@ref).
 """
 abstract type AbstractContentPart end
 
@@ -43,6 +43,25 @@ struct ToolResult <: AbstractContentPart
     is_error::Bool
     ToolResult(call_id::AbstractString, name::AbstractString, content::AbstractString; is_error::Bool = false) =
         new(String(call_id), String(name), String(content), is_error)
+end
+
+"""
+    ReasoningPart(text, format, data)
+
+The model's reasoning inside an [`AssistantMessage`](@ref): `text` is the readable summary
+(often empty, since most providers hide their reasoning), and `data` is the provider's opaque
+record of it (signatures, encrypted content), in the wire `format` it came from (e.g.
+`:anthropic`, `:openai_responses`, `:google_interactions`, `:google_generate_content`).
+
+It is not part of `string(msg)`. When the history is sent again in full, it goes back unchanged,
+but only to the provider type and wire format that produced it; others never see it.
+"""
+struct ReasoningPart <: AbstractContentPart
+    text::String
+    format::Symbol
+    data::Dict{String,Any}
+    ReasoningPart(text::AbstractString, format::Symbol, data::AbstractDict = Dict{String,Any}()) =
+        new(String(text), format, Dict{String,Any}(string(k) => v for (k, v) in data))
 end
 
 """
@@ -147,6 +166,11 @@ _call_signature(c::ToolCall; n = 30) = string(c.name, "(",
 Base.show(io::IO, c::ToolCall) = print(io, "ToolCall(", _call_signature(c), ")")
 Base.show(io::IO, r::ToolResult) =
     print(io, "ToolResult(", r.name, r.is_error ? " error " : " ", repr(_short(r.content, 40)), ")")
+Base.show(io::IO, r::ReasoningPart) = print(io, "ReasoningPart(:", r.format, ", ", repr(_short(r.text, 40)), ")")
+
+# Reasoning goes back only to the provider type and wire format that produced it.
+_replays(r::ReasoningPart, m::AssistantMessage, p::AbstractProvider, format::Symbol) =
+    r.format === format && m.model !== nothing && typeof(m.model.provider) === typeof(p)
 
 Base.show(io::IO, m::UserMessage) = print(io, "UserMessage(", repr(_preview(m)), ")")
 

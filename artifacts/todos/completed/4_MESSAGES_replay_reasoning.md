@@ -41,3 +41,12 @@ provider switched, stored reply expired, `store_requests = false`).
 
 Use a provider review first (skill `provider-docs-review`), covering doc 034 (Google), Anthropic
 doc 21 (thinking), and OpenAI reasoning items.
+
+## Completion
+
+2026-10-05. `ReasoningPart(text, format, data)` (decision `25_MESSAGES_reasoning_part.md`) is
+parsed, streamed, persisted and replayed for Anthropic, OpenAI Responses, Google Interactions and
+GoogleEnterprise generateContent, only to the same provider type and wire. Verified live on all
+four (full replays with tool calls). The provider review was done inline (citations in decision 25)
+rather than as a separate `provider_reviews` artifact. `examples/chat.jl` was not changed; the
+feature has its own `examples/reasoning.jl`. See `work_history/21_MESSAGES_reasoning_replay.md`.

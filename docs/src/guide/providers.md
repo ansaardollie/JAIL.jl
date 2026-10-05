@@ -129,18 +129,19 @@ configure_provider!(GoogleEnterprise(); service_account_path = nothing)   # back
 
 | `api` | Endpoint | History |
 |---|---|---|
-| `:generate_content` (default) | Vertex AI `generateContent` | The full history is sent every turn |
-| `:interactions` | The Interactions API, as used by `Google` | Continues from the stored reply (see [What gets sent](chat.md#What-gets-sent)) |
+| `:interactions` (default) | The Interactions API, as used by `Google` | Continues from the stored reply (see [What gets sent](chat.md#What-gets-sent)) |
+| `:generate_content` | Vertex AI `generateContent` | The full history is sent every turn |
 
-`:generate_content` is the default because the Interactions API on Vertex AI does not handle
-tool results reliably.
+On Vertex AI the Interactions API serves Gemini 3 models only: Gemini 2.5 models are rejected
+(HTTP 400, "Unsupported model interaction"), and it is not available in every location
+(`"global"` works). Use `:generate_content` for those.
 
 ```@example providers
-configure_provider!(GoogleEnterprise(); api = :interactions)
+configure_provider!(GoogleEnterprise(); api = :generate_content)
 ```
 
 ```@example providers
-configure_provider!(GoogleEnterprise(); api = nothing)   # back to :generate_content
+configure_provider!(GoogleEnterprise(); api = nothing)   # back to :interactions
 ```
 
 Only Google's own Gemini models are supported. Vertex AI also offers partner models (from
@@ -195,10 +196,10 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `providers.google_enterprise.project` | string | [`configure_provider!`](@ref) | Google Cloud project for [`GoogleEnterprise`](@ref) |
 | `providers.google_enterprise.location` | string | same | Region such as `"us-central1"`, or `"global"` |
 | `providers.google_enterprise.service_account_path` | string | same | Path to a service-account key file (optional) |
-| `providers.google_enterprise.api` | `"interactions"` | same | Only written when not `:generate_content` |
+| `providers.google_enterprise.api` | `"generate_content"` | same | Only written when not `:interactions` |
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
 | `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic 8192, others none) |
-| `store_requests` | `true` / `false` | by hand | OpenAI, Google, and `GoogleEnterprise` with `api = :interactions`, store replies and continue from them (default `true`); `false` sends `store = false` and the full history |
+| `store_requests` | `true` / `false` | by hand | OpenAI, Google, and `GoogleEnterprise` (unless `api = :generate_content`) store replies and continue from them (default `true`); `false` sends `store = false` and the full history |
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
 | `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |
 | `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`chat!`](@ref) call before further calls are answered "not run" (default 10) |

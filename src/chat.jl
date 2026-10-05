@@ -20,6 +20,7 @@ const _CHAIN_STATE = Dict{String,UInt}()
 _fp_part(p::TextPart) = p.text
 _fp_part(c::ToolCall) = (c.id, c.name, c.arguments)
 _fp_part(r::ToolResult) = (r.call_id, r.content, r.is_error)
+_fp_part(r::ReasoningPart) = (r.format, r.text, r.data)
 _fp_part(p::AbstractContentPart) = p
 _fingerprint(messages) = hash([(_role(m), map(_fp_part, m.content)) for m in messages])
 
@@ -97,7 +98,7 @@ the last reply (`stop_reason = :tool_use`) is returned. With the Preference
 
 OpenAI and Google store replies server-side, and the next turn continues from the last one
 (`previous_response_id` / `previous_interaction_id`) so only the new turns are sent; so does
-[`GoogleEnterprise`](@ref) with `api = :interactions`. The full
+[`GoogleEnterprise`](@ref) unless it uses `api = :generate_content`. The full
 history is sent instead when the history was edited since that reply, the model's provider
 changed, the session was restored in a new Julia process, or the stored reply has expired. Other providers always get the full history. Set the
 Preference `store_requests = false` to send `store = false` and always replay the full history.

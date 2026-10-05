@@ -49,6 +49,9 @@ _replayable(messages) = (m for m in messages if m isa ToolResultMessage || !isem
 # Replies that call tools stop for :tool_use whatever the provider reported.
 _stop_reason(parts, reason) = any(p -> p isa ToolCall, parts) ? :tool_use : reason
 
+# Readable text of a reasoning summary given as `{type, text}` items (Google, OpenAI).
+_summary_text(items) = join((i["text"] for i in something(items, ()) if get(i, "text", nothing) isa AbstractString), "\n\n")
+
 # Tool arguments arrive as a JSON string (OpenAI) or object (Anthropic, Google); "" means none.
 _arguments(x::AbstractDict) = x
 _arguments(::Nothing) = Dict{String,Any}()

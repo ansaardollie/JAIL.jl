@@ -22,8 +22,8 @@
 # - Descriptions come from the standard docstring above the function (not one inside the body).
 # - No `name =` override: functions whose names aren't valid tool names must be renamed.
 # - Calls run one after another; no `tool_choice` (forcing a tool) yet.
-# - Google full-history replays drop `thought` steps, which thinking models may reject; the
-#   default (stored, chained turns) is unaffected.
+# - Thinking models' reasoning is kept on replies as `ReasoningPart`s and resent with the tool
+#   results; see examples/reasoning.jl.
 
 using JAIL
 

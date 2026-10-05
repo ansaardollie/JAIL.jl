@@ -22,7 +22,7 @@ max_tool_rounds = 10
 # Reply cap for chat! on every provider. Unset: Anthropic 8192, others none.
 # max_tokens = 8192
 
-# OpenAI, Google, and GoogleEnterprise with api = "interactions" store replies and continue
+# OpenAI, Google, and GoogleEnterprise (unless api = "generate_content") store replies and continue
 # from them; false sends store = false and the full history every turn.
 store_requests = true
 
@@ -56,8 +56,8 @@ storage_dir = ".jail"
     default_model = "gemini-3.1-flash-lite"
     project = "dhd-prima"
     location = "global"
-    # "generate_content" or "interactions".
-    api = "generate_content"
+    # "interactions" (Gemini 3 only on Vertex) or "generate_content" (any Gemini model).
+    api = "interactions"
     # Path to a service-account key file (never its contents). Unset: GOOGLE_APPLICATION_CREDENTIALS,
     # then Application Default Credentials, then the metadata server.
     # service_account_path = "/path/to/key.json"

@@ -1,3 +1,7 @@
+> **Superseded by:** `26_PROVIDER_google_enterprise_interactions_default.md` (the default wire; the
+> tool-result failure was JAIL's plain-string `result`) and `25_MESSAGES_reasoning_part.md` (the
+> thought-signature table).
+
 # Decision: GoogleEnterprise defaults to generateContent; Interactions is opt-in; no partner models
 
 | Field | Value |

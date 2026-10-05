@@ -30,7 +30,7 @@ end
 function _to_prefs(p::GoogleEnterprise)
     t = Dict{String,Any}("project" => p.project, "location" => p.location)
     p.service_account_path === nothing || (t["service_account_path"] = p.service_account_path)
-    p.api === :generate_content || (t["api"] = String(p.api))
+    p.api === :interactions || (t["api"] = String(p.api))
     return t
 end
 
@@ -51,7 +51,7 @@ function _with(p::GoogleEnterprise; project = p.project, location = p.location,
               service_account_path = p.service_account_path, api = p.api)
     project === nothing && throw(ArgumentError("a GoogleEnterprise provider needs a project"))
     location === nothing && throw(ArgumentError("a GoogleEnterprise provider needs a location"))
-    return GoogleEnterprise(project, location, service_account_path, something(api, :generate_content))
+    return GoogleEnterprise(project, location, service_account_path, something(api, :interactions))
 end
 
 """
@@ -65,7 +65,7 @@ its default and an [`OpenAICompatible`](@ref) endpoint to no key (`api_key_env`)
 `:responses` (`api`). An `OpenAICompatible` endpoint must be registered first with
 [`register_provider!`](@ref), and its `base_url` can't be `nothing`. A [`GoogleEnterprise`](@ref)
 has no default `project`/`location`, so those two can't be cleared to `nothing` either;
-`service_account_path` can, and `api` falls back to `:generate_content`. A default model saved
+`service_account_path` can, and `api` falls back to `:interactions`. A default model saved
 for `p` with [`set_default_model!`](@ref)`(p, id)` is kept.
 
 `api_key_env` is the *name* of the ENV var holding the key; the key itself is never stored.

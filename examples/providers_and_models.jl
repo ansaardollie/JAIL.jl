@@ -16,9 +16,9 @@
 # - Google `list_models` keeps only models that support `generateContent`; GoogleEnterprise's
 #   catalog (Google's own models only) has no such capability field, so it comes back unfiltered
 #   (includes embeddings, TTS, etc.).
-# - GoogleEnterprise speaks generateContent by default (full history every turn) and the
-#   Interactions API only with `api = :interactions`. Vertex AI partner models (Anthropic,
-#   Mistral, xAI) are not supported yet.
+# - GoogleEnterprise speaks the Interactions API by default (Gemini 3 models only on Vertex) and
+#   generateContent (any Gemini model, full history every turn) with `api = :generate_content`.
+#   Vertex AI partner models (Anthropic, Mistral, xAI) are not supported yet.
 
 using JAIL
 
@@ -42,11 +42,11 @@ const LIVE = true   # set to true to call the providers' list-models endpoints
 @show Anthropic(base_url = "https://my-proxy.example.com")
 
 # GoogleEnterprise (Vertex AI on GCP) is a distinct provider, not a flag on Google: different
-# base URL, different auth (an OAuth2 access token, never an API key), and by default a different
+# base URL, different auth (an OAuth2 access token, never an API key), and an optional second
 # wire format (generateContent). Unlike the other providers it has no built-in default
 # project/location.
 @show GoogleEnterprise(project = "example-project", location = "us-central1")
-@show GoogleEnterprise(project = "example-project", location = "us-central1", api = :interactions)
+@show GoogleEnterprise(project = "example-project", location = "us-central1", api = :generate_content)
 
 # The access token is fetched lazily on first use and cached on the instance (refreshed a little
 # before its ~1h lifetime is up): `service_account_path`, then `GOOGLE_APPLICATION_CREDENTIALS`,
@@ -82,9 +82,9 @@ show_error(() -> configure_provider!(GoogleEnterprise(); project = nothing))
 @show configure_provider!(GoogleEnterprise(); service_account_path = "/path/to/key.json")
 @show configure_provider!(GoogleEnterprise(); service_account_path = nothing)
 
-# Opt in to the Interactions API (server-side chaining; tool results are unreliable on Vertex),
-# and back to the generateContent default:
-@show configure_provider!(GoogleEnterprise(); api = :interactions)
+# Switch to generateContent (needed for Gemini 2.5 models on Vertex), and back to the
+# Interactions default:
+@show configure_provider!(GoogleEnterprise(); api = :generate_content)
 @show configure_provider!(GoogleEnterprise(); api = nothing)
 show_error(() -> GoogleEnterprise(api = :chat_completions))
 

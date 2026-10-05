@@ -16,7 +16,7 @@ Google(; base_url = nothing, api_key_env = nothing) =
     Google(_resolve_first_party(Google, base_url, api_key_env)...)
 
 """
-    GoogleEnterprise(; project, location, service_account_path = nothing, api = :generate_content)
+    GoogleEnterprise(; project, location, service_account_path = nothing, api = :interactions)
 
 Gemini on Google Cloud: the Gemini Enterprise Agent Platform (Vertex AI). Unset keywords come
 from Preferences. `project` and `location` (e.g. `"us-central1"` or `"global"`) have no
@@ -31,16 +31,17 @@ fetched on first use, kept on the provider value, and fetched again before it ex
 
 `api` picks the wire format:
 
-- `:generate_content` (default): Vertex AI's `generateContent`. The full history is sent every
-  turn.
-- `:interactions`: the Interactions API that [`Google`](@ref) uses, which continues from the
-  stored reply. On Vertex AI it does not handle tool results reliably.
+- `:interactions` (default): the Interactions API that [`Google`](@ref) uses, which continues
+  from the stored reply. On Vertex AI it serves Gemini 3 models only (Gemini 2.5 models are
+  rejected) and is not available in every location.
+- `:generate_content`: Vertex AI's `generateContent`, for any Gemini model. The full history is
+  sent every turn.
 
 Only Google's own models are supported, not Vertex AI partner models.
 
 ```julia
 configure_provider!(GoogleEnterprise(project = "my-project", location = "global"))
-chat!(Session("google_enterprise/gemini-2.5-flash"), "Hello")
+chat!(Session("google_enterprise/gemini-3.1-flash-lite"), "Hello")
 ```
 """
 struct GoogleEnterprise <: AbstractProvider
@@ -68,7 +69,7 @@ Base.:(==)(a::GoogleEnterprise, b::GoogleEnterprise) =
 function Base.show(io::IO, p::GoogleEnterprise)
     print(io, "GoogleEnterprise(project = ", repr(p.project), ", location = ", repr(p.location))
     p.service_account_path === nothing || print(io, ", service_account_path = ", repr(p.service_account_path))
-    p.api === :generate_content || print(io, ", api = :", p.api)
+    p.api === :interactions || print(io, ", api = :", p.api)
     print(io, ")")
 end
 
@@ -117,29 +118,42 @@ _request_url(p::Google) = string(p.base_url, "/", api_version(Google), "/interac
 # UserInputStep #L9639, ModelOutputStep #L7523, TextContent #L8529
 _text_content(text) = [Dict("type" => "text", "text" => text)]
 
-_google_steps(m::UserMessage) = Any[Dict("type" => "user_input", "content" => _text_content(string(m)))]
+_google_steps(m::UserMessage, p) = Any[Dict("type" => "user_input", "content" => _text_content(string(m)))]
 
-# FunctionCallStep #L5145 (thought steps are not kept: see todos/pending/4_MESSAGES_replay_reasoning.md)
-function _google_steps(m::AssistantMessage)
-    text = string(m)
-    steps = isempty(text) ? Any[] : Any[Dict("type" => "model_output", "content" => _text_content(text))]
-    for c in _tool_calls(m)
-        push!(steps, Dict("type" => "function_call", "id" => c.id, "name" => c.name, "arguments" => c.arguments))
+# FunctionCallStep #L5145, ThoughtStep #L8706. Thought steps must be resent exactly as received in a
+# full replay: gemini-docs/gemini-docs-034-thought-signatures.md#L725-L731
+function _google_steps(m::AssistantMessage, p)
+    steps = Any[]
+    for c in m.content
+        if c isa TextPart && !isempty(c.text)
+            last = isempty(steps) ? nothing : steps[end]
+            if last !== nothing && last["type"] == "model_output"
+                last["content"][end]["text"] *= c.text
+            else
+                push!(steps, Dict{String,Any}("type" => "model_output", "content" => _text_content(c.text)))
+            end
+        elseif c isa ToolCall
+            push!(steps, Dict{String,Any}("type" => "function_call", "id" => c.id, "name" => c.name,
+                                          "arguments" => c.arguments))
+        elseif c isa ReasoningPart && _replays(c, m, p, :google_interactions)
+            push!(steps, c.data)
+        end
     end
     return steps
 end
 
-# FunctionResultStep #L5239; gemini-docs/gemini-docs-036-function-calling.md#L1175-L1193
-_google_steps(m::ToolResultMessage) = Any[
+# FunctionResultStep #L5239-L5300. `result` as TextContent items, as in the spec's example: Vertex AI
+# ignores a plain-string result (the model answers without it).
+_google_steps(m::ToolResultMessage, p) = Any[
     merge(Dict{String,Any}("type" => "function_result", "call_id" => r.call_id, "name" => r.name,
-                           "result" => r.content),
+                           "result" => _text_content(r.content)),
           r.is_error ? Dict{String,Any}("is_error" => true) : Dict{String,Any}()) for r in m.content]
 
 _request_body(p::Google, req::_Request) = _request_body(_InteractionsAPI(), p, req)
 
 function _request_body(::_InteractionsAPI, p, req::_Request)
     input = Any[]
-    foreach(m -> append!(input, _google_steps(m)), _replayable(req.messages))
+    foreach(m -> append!(input, _google_steps(m, p)), _replayable(req.messages))
     body = Dict{String,Any}("model" => req.model.id, "input" => input, "store" => req.store)
     req.system === nothing || (body["system_instruction"] = req.system)
     req.previous_id === nothing || (body["previous_interaction_id"] = req.previous_id)
@@ -169,6 +183,9 @@ function _parse_reply(::_InteractionsAPI, req::_Request, json)
         if st == "function_call"
             push!(parts, ToolCall(step["id"], step["name"], _arguments(get(step, "arguments", nothing))))
             continue
+        elseif st == "thought"
+            push!(parts, ReasoningPart(_summary_text(get(step, "summary", nothing)), :google_interactions, step))
+            continue
         end
         st == "model_output" || continue
         for c in something(get(step, "content", nothing), ())
@@ -189,18 +206,21 @@ end
 # inside a model_output step. gemini-docs/gemini-docs-070-streaming.md#L133-L184. A function_call
 # step starts with `arguments: {}` and streams `arguments_delta` strings (#L207-L250).
 # The stream ends with a non-JSON sentinel `event: done` / `data: [DONE]` (#L168-L169).
+# A thought step streams `thought_summary` deltas, then its `thought_signature` (#L207, #L240-L243;
+# gemini-docs-034-thought-signatures.md#L294-L303).
 _supports_streaming(::Type{Google}) = true
 
 mutable struct _GoogleStream
     steps::Dict{Int,String}      # step index => step type
     text::Dict{Int,IOBuffer}     # model_output step index => text
     calls::Dict{Int,Vector{Any}} # function_call step index => [id, name, start arguments, delta buffer]
+    thoughts::Dict{Int,Dict{String,Any}}  # thought step index => the step
     interaction::Any             # partial Interaction from interaction.created / .completed
     status::Any
     error::Union{Nothing,String}
 end
 _stream_state(::Google, req::_Request) = _stream_state(_InteractionsAPI(), req)
-_stream_state(::_InteractionsAPI, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), nothing, nothing, nothing)
+_stream_state(::_InteractionsAPI, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), Dict(), nothing, nothing, nothing)
 
 function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
     strip(data) == "[DONE]" && return nothing
@@ -211,6 +231,15 @@ function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
         st.steps[ev["index"]] = string(get(step, "type", ""))
         get(step, "type", nothing) == "function_call" && (st.calls[ev["index"]] =
             Any[step["id"], step["name"], get(step, "arguments", nothing), IOBuffer()])
+        get(step, "type", nothing) == "thought" && (st.thoughts[ev["index"]] = Dict{String,Any}(step))
+        # A model_output step can start with text already in it (gemini-docs-034-thought-signatures.md#L538).
+        if get(step, "type", nothing) == "model_output"
+            for c in something(get(step, "content", nothing), ())
+                get(c, "type", nothing) == "text" || continue
+                write(get!(IOBuffer, st.text, ev["index"]), c["text"])
+                on_text(c["text"])
+            end
+        end
     elseif t == "step.delta"
         d = ev["delta"]
         if get(d, "type", nothing) == "text" && get(st.steps, ev["index"], "model_output") == "model_output"
@@ -218,6 +247,17 @@ function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
             on_text(d["text"])
         elseif get(d, "type", nothing) == "arguments_delta" && haskey(st.calls, ev["index"])
             write(st.calls[ev["index"]][4], string(get(d, "arguments", "")))
+        elseif get(d, "type", nothing) == "thought_summary" && haskey(st.thoughts, ev["index"])
+            summary = get!(Vector{Any}, st.thoughts[ev["index"]], "summary")
+            c = d["content"]
+            # Deltas continue one summary text rather than adding items.
+            if !isempty(summary) && get(summary[end], "type", nothing) == "text" == get(c, "type", nothing)
+                summary[end] = Dict{String,Any}("type" => "text", "text" => summary[end]["text"] * c["text"])
+            else
+                push!(summary, c)
+            end
+        elseif get(d, "type", nothing) == "thought_signature" && haskey(st.thoughts, ev["index"])
+            st.thoughts[ev["index"]]["signature"] = d["signature"]
         end
     elseif t in ("interaction.created", "interaction.completed")
         st.interaction = ev["interaction"]
@@ -234,13 +274,14 @@ function _stream_finish(st::_GoogleStream, req::_Request)
     st.error === nothing || error("google stream error: ", st.error)
     i = something(st.interaction, Dict())
     function step(k)
+        haskey(st.thoughts, k) && return st.thoughts[k]
         haskey(st.text, k) && return Dict("type" => "model_output", "content" => _text_content(String(take!(st.text[k]))))
         id, name, start, buf = st.calls[k]
         streamed = String(take!(buf))
         return Dict("type" => "function_call", "id" => id, "name" => name,
                     "arguments" => isempty(streamed) ? start : streamed)
     end
-    steps = [step(k) for k in sort!(collect(union(keys(st.text), keys(st.calls))))]
+    steps = [step(k) for k in sort!(collect(union(keys(st.text), keys(st.calls), keys(st.thoughts))))]
     json = Dict{String,Any}("id" => get(i, "id", nothing), "status" => st.status,
                             "usage" => get(i, "usage", nothing), "steps" => steps,
                             "errors" => get(i, "errors", nothing))
@@ -262,7 +303,7 @@ function GoogleEnterprise(; project = nothing, location = nothing, service_accou
     location === nothing && throw(ArgumentError(
         "GoogleEnterprise needs a location, e.g. \"us-central1\" or \"global\""))
     return GoogleEnterprise(project, location, service_account_path,
-                            api === nothing ? :generate_content : Symbol(api))
+                            api === nothing ? :interactions : Symbol(api))
 end
 
 provider_name(::Type{GoogleEnterprise}) = "google_enterprise"
@@ -316,32 +357,40 @@ end
 const _SYNTHETIC_CALL_ID = "jail_call_"
 _wire_call_id(id::AbstractString) = startswith(id, _SYNTHETIC_CALL_ID) ? nothing : id
 
-# Part.thoughtSignature (#L70413-L70488) must go back on the functionCall part it came with; kept
-# here by call id because ToolCall has no field for it.
-const _THOUGHT_SIGNATURES = Dict{String,String}()
-
 _gc_text(text) = Dict{String,Any}("text" => text)
 
-# Content #L65205-L65226: role "user" or "model"; Part #L70413-L70488
-_gc_contents!(cs, m::UserMessage) = push!(cs, Dict("role" => "user", "parts" => [_gc_text(string(m))]))
+# Content #L65205-L65226: role "user" or "model"; Part #L70413-L70530
+_gc_contents!(cs, m::UserMessage, p) = push!(cs, Dict("role" => "user", "parts" => [_gc_text(string(m))]))
 
-function _gc_contents!(cs, m::AssistantMessage)
-    text = string(m)
-    parts = isempty(text) ? Any[] : Any[_gc_text(text)]
-    for c in _tool_calls(m)
-        call = Dict{String,Any}("name" => c.name, "args" => c.arguments)
-        id = _wire_call_id(c.id)
-        id === nothing || (call["id"] = id)
-        part = Dict{String,Any}("functionCall" => call)
-        sig = get(_THOUGHT_SIGNATURES, c.id, nothing)
-        sig === nothing || (part["thoughtSignature"] = sig)
+# Part.thoughtSignature (#L70523) can sit on any part (gemini-docs-034-thought-signatures.md#L16).
+# A ReasoningPart holding only a signature goes back onto the part that follows it; a `thought`
+# part (#L70507) goes back whole.
+function _gc_contents!(cs, m::AssistantMessage, p)
+    parts = Any[]
+    sig = nothing
+    for c in m.content
+        part = if c isa TextPart && !isempty(c.text)
+            _gc_text(c.text)
+        elseif c isa ToolCall
+            call = Dict{String,Any}("name" => c.name, "args" => c.arguments)
+            id = _wire_call_id(c.id)
+            id === nothing || (call["id"] = id)
+            Dict{String,Any}("functionCall" => call)
+        elseif c isa ReasoningPart && _replays(c, m, p, :google_generate_content)
+            get(c.data, "thought", false) === true || (sig = c.data["thoughtSignature"]; continue)
+            copy(c.data)
+        else
+            continue
+        end
+        sig === nothing || (part["thoughtSignature"] = sig; sig = nothing)
         push!(parts, part)
     end
+    sig === nothing || push!(parts, Dict{String,Any}("text" => "", "thoughtSignature" => sig))
     push!(cs, Dict("role" => "model", "parts" => parts))
 end
 
 # FunctionResponse #L56327-L56370: `response.output`, or `response.error` for a failed call
-function _gc_contents!(cs, m::ToolResultMessage)
+function _gc_contents!(cs, m::ToolResultMessage, p)
     parts = map(m.content) do r
         resp = Dict{String,Any}("name" => r.name,
                                 "response" => Dict(r.is_error ? "error" => r.content : "output" => r.content))
@@ -355,7 +404,7 @@ end
 # GenerateContentRequest #L63405-L63460
 function _request_body(::_GenerateContentAPI, p, req::_Request)
     contents = Any[]
-    foreach(m -> _gc_contents!(contents, m), _replayable(req.messages))
+    foreach(m -> _gc_contents!(contents, m, p), _replayable(req.messages))
     body = Dict{String,Any}("contents" => contents)
     req.system === nothing || (body["systemInstruction"] = Dict("parts" => [_gc_text(req.system)]))
     # GenerationConfig.maxOutputTokens #L44118
@@ -389,13 +438,18 @@ function _parse_reply(::_GenerateContentAPI, req::_Request, json)
         fr = get(cand, "finishReason", nothing)
         content = something(get(cand, "content", nothing), Dict())
         for part in something(get(content, "parts", nothing), ())
+            if get(part, "thought", false) === true
+                push!(parts, ReasoningPart(something(get(part, "text", nothing), ""), :google_generate_content, part))
+                continue
+            end
+            sig = get(part, "thoughtSignature", nothing)
+            sig === nothing ||
+                push!(parts, ReasoningPart("", :google_generate_content, Dict("thoughtSignature" => sig)))
             if haskey(part, "functionCall")
                 f = part["functionCall"]
                 id = something(get(f, "id", nothing), _SYNTHETIC_CALL_ID * Random.randstring(12))
-                sig = get(part, "thoughtSignature", nothing)
-                sig === nothing || (_THOUGHT_SIGNATURES[id] = sig)
                 push!(parts, ToolCall(id, f["name"], _arguments(get(f, "args", nothing))))
-            elseif haskey(part, "text") && get(part, "thought", false) !== true
+            elseif !isempty(something(get(part, "text", nothing), ""))
                 push!(parts, TextPart(part["text"]))
             end
         end
@@ -434,17 +488,17 @@ function _stream_event!(st::_GenerateContentStream, data::AbstractString, on_tex
         content = something(get(cand, "content", nothing), Dict())
         for part in something(get(content, "parts", nothing), ())
             text = get(part, "text", nothing)
-            if text isa AbstractString && get(part, "thought", false) !== true && !haskey(part, "functionCall")
-                isempty(text) && continue
-                prev = isempty(st.parts) ? nothing : st.parts[end]
-                if prev !== nothing && haskey(prev, "text")
-                    prev["text"] *= text
-                else
-                    push!(st.parts, Dict{String,Any}("text" => text))
-                end
-                on_text(text)
-            elseif haskey(part, "functionCall")
+            sig = get(part, "thoughtSignature", nothing)
+            if get(part, "thought", false) === true || haskey(part, "functionCall")
                 push!(st.parts, Dict{String,Any}(part))
+            elseif text isa AbstractString
+                prev = isempty(st.parts) ? nothing : st.parts[end]
+                if sig === nothing && prev !== nothing && haskey(prev, "text") && get(prev, "thought", false) !== true
+                    prev["text"] *= text
+                elseif sig !== nothing || !isempty(text)
+                    push!(st.parts, Dict{String,Any}(part))
+                end
+                isempty(text) || on_text(text)
             end
         end
     end

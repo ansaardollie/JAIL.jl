@@ -25,8 +25,8 @@ chat!("Colour of coal?")   # on the active session
 ```
 
 Every provider is supported: OpenAI (Responses API), Anthropic (Messages API), Google
-(Interactions API), [`GoogleEnterprise`](@ref) (Vertex AI `generateContent` by default, or the
-Interactions API with `api = :interactions`), and OpenAI-compatible servers (Responses, or Chat
+(Interactions API), [`GoogleEnterprise`](@ref) (the Interactions API by default, or Vertex AI
+`generateContent` with `api = :generate_content`), and OpenAI-compatible servers (Responses, or Chat
 Completions when registered with `api = :chat_completions`). The model may call the session's
 tools; see [Tools](tools.md).
 
@@ -34,8 +34,8 @@ tools; see [Tools](tools.md).
 
 History is provider-agnostic, so a session can switch model or provider between turns with
 [`set_model!`](@ref). A message's `content` is a vector of content parts: [`TextPart`](@ref),
-and [`ToolCall`](@ref) / [`ToolResult`](@ref) when tools are used. `string(msg)` returns the
-text.
+[`ToolCall`](@ref) / [`ToolResult`](@ref) when tools are used, and in replies the model's
+[`ReasoningPart`](@ref)s. `string(msg)` returns the text.
 
 ```@example chat
 using JAIL
@@ -74,7 +74,7 @@ s.messages
 
 `session.messages` is always the full conversation, but not every turn resends it:
 
-- **OpenAI and Google** (and `GoogleEnterprise` with `api = :interactions`) store each reply
+- **OpenAI and Google** (and `GoogleEnterprise`, unless `api = :generate_content`) store each reply
   server-side. The next request sends only what came
   after the stored reply (the new prompt, or the results of the tools it called) plus that
   reply's id (`previous_response_id` / `previous_interaction_id`, taken from `reply.id`). The
@@ -83,16 +83,18 @@ s.messages
   seeded, or `empty!`), the provider changed, the session was restored with
   [`restore_session!`](@ref) in a new Julia process, or the stored reply is gone (the provider
   answers HTTP 400/404; JAIL retries once with the full history).
-- **Anthropic, OpenAI-compatible servers and `GoogleEnterprise`** (default `api`) always get
-  the full history.
+- **Anthropic, OpenAI-compatible servers and `GoogleEnterprise` with `api = :generate_content`**
+  always get the full history.
 
 Set the Preference `store_requests = false` to send `store = false` to OpenAI and Google and
 always send the full history. Stored responses are kept by the provider (OpenAI: 30 days;
 Google: 55 days paid, 1 day free).
 
-A full-history request to Google drops the model's `thought` steps, which Google asks clients
-to resend; thinking models may reject such a request when it contains tool calls. Stored,
-chained turns (the default) are not affected.
+Thinking models return their reasoning as opaque, signed records (Anthropic `thinking` blocks,
+OpenAI `reasoning` items, Google `thought` steps or `thoughtSignature`s). Replies keep them as
+[`ReasoningPart`](@ref)s, and a full-history request sends them back unchanged, as each provider
+requires for tool calls. They go back only to the provider and wire format that produced them;
+after a provider switch they are left out.
 
 ## Streaming
 

@@ -30,12 +30,9 @@ _messages_path(dir, id) = joinpath(dir, "messages", string(id, ".jsonl"))
 
 _part_json(p::TextPart) = (type = "text", text = p.text)
 
-function _part_json(c::ToolCall)
-    sig = get(_THOUGHT_SIGNATURES, c.id, nothing)
-    d = JSON.Object{String,Any}("type" => "tool_call", "id" => c.id, "name" => c.name, "arguments" => c.arguments)
-    sig === nothing || (d["thought_signature"] = sig)
-    return d
-end
+_part_json(c::ToolCall) = (type = "tool_call", id = c.id, name = c.name, arguments = c.arguments)
+
+_part_json(r::ReasoningPart) = (type = "reasoning", text = r.text, format = string(r.format), data = r.data)
 
 # Tool output that is JSON (an object, array or number) is stored as that value, but only when it
 # re-serialises to the identical text, so restoring gives back the exact string the model saw.
@@ -155,25 +152,32 @@ function _restore_model(x, what)
     end
 end
 
-function _restore_part(d)
+function _restore_parts!(parts, d)
     t = d["type"]
-    t == "text" && return TextPart(d["text"])
-    if t == "tool_call"
+    if t == "text"
+        push!(parts, TextPart(d["text"]))
+    elseif t == "tool_call"
+        # Files written before ReasoningPart kept a generateContent signature on the call.
         sig = get(d, "thought_signature", nothing)
-        sig === nothing || (_THOUGHT_SIGNATURES[d["id"]] = sig)
-        return ToolCall(d["id"], d["name"], d["arguments"])
-    end
-    if t == "tool_result"
+        sig === nothing ||
+            push!(parts, ReasoningPart("", :google_generate_content, Dict("thoughtSignature" => sig)))
+        push!(parts, ToolCall(d["id"], d["name"], d["arguments"]))
+    elseif t == "tool_result"
         c = d["content"]
-        return ToolResult(d["call_id"], d["name"], c isa AbstractString ? c : JSON.json(c);
-                          is_error = d["is_error"])
+        push!(parts, ToolResult(d["call_id"], d["name"], c isa AbstractString ? c : JSON.json(c);
+                                is_error = d["is_error"]))
+    elseif t == "reasoning"
+        push!(parts, ReasoningPart(d["text"], Symbol(d["format"]), d["data"]))
+    else
+        throw(ArgumentError("unknown content part type $(repr(t))"))
     end
-    throw(ArgumentError("unknown content part type $(repr(t))"))
+    return parts
 end
 
 function _restore_message(d, models::Dict{String,Any})
     role = d["role"]
-    parts = AbstractContentPart[_restore_part(p) for p in d["content"]]
+    parts = AbstractContentPart[]
+    foreach(p -> _restore_parts!(parts, p), d["content"])
     role == "user" && return UserMessage(parts)
     role == "tool" && return ToolResultMessage(convert(Vector{ToolResult}, parts))
     role == "assistant" || throw(ArgumentError("unknown message role $(repr(role))"))

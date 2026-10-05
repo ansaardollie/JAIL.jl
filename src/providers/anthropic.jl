@@ -46,13 +46,13 @@ default_max_tokens(::Type{Anthropic}) = 8192
 # POST /v1/messages. anthropic/api_spec.yaml#L6, CreateMessageParams #L3437-L3692
 _request_url(p::Anthropic) = p.base_url * "/v1/messages"
 
-function _request_body(::Anthropic, req::_Request)
+function _request_body(p::Anthropic, req::_Request)
     # InputMessage #L3745-L3785: role user|assistant, content blocks; system is top-level.
     # Consecutive turns of one role are merged (tool results then a prompt share a user turn).
     messages = Dict{String,Any}[]
     for m in _replayable(req.messages)
         role = m isa AssistantMessage ? "assistant" : "user"
-        blocks = _anthropic_blocks(m)
+        blocks = _anthropic_blocks(m, p)
         if !isempty(messages) && messages[end]["role"] == role
             append!(messages[end]["content"], blocks)
         else
@@ -69,22 +69,31 @@ function _request_body(::Anthropic, req::_Request)
 end
 
 _text_block(text) = Dict{String,Any}("type" => "text", "text" => text)
-_anthropic_blocks(m::UserMessage) = Any[_text_block(string(m))]
+_anthropic_blocks(m::UserMessage, p) = Any[_text_block(string(m))]
 
-# ResponseToolUseBlock #L5015 re-sent as RequestToolUseBlock #L4967
-function _anthropic_blocks(m::AssistantMessage)
-    text = string(m)
-    blocks = isempty(text) ? Any[] : Any[_text_block(text)]
-    for c in _tool_calls(m)
-        push!(blocks, Dict{String,Any}("type" => "tool_use", "id" => c.id, "name" => c.name,
-                                       "input" => c.arguments))
+# ResponseToolUseBlock #L5015 re-sent as RequestToolUseBlock #L4967. `thinking` and
+# `redacted_thinking` blocks (not in the local spec) go back unchanged and in their original order:
+# claude-docs/claude-docs-21-thinking.md#L909-L924, #L1133-L1145
+function _anthropic_blocks(m::AssistantMessage, p)
+    blocks = Any[]
+    for c in m.content
+        if c isa TextPart && !isempty(c.text)
+            last = isempty(blocks) ? nothing : blocks[end]
+            last !== nothing && last["type"] == "text" ? (last["text"] *= c.text) :
+                push!(blocks, _text_block(c.text))
+        elseif c isa ToolCall
+            push!(blocks, Dict{String,Any}("type" => "tool_use", "id" => c.id, "name" => c.name,
+                                           "input" => c.arguments))
+        elseif c isa ReasoningPart && _replays(c, m, p, :anthropic)
+            push!(blocks, c.data)
+        end
     end
     return blocks
 end
 
 # RequestToolResultBlock #L4926-L4966; must come first in the user turn
 # (claude-docs/claude-docs-26-handle-tool-calls.md#L63-L67)
-_anthropic_blocks(m::ToolResultMessage) = Any[
+_anthropic_blocks(m::ToolResultMessage, p) = Any[
     merge(Dict{String,Any}("type" => "tool_result", "tool_use_id" => r.call_id, "content" => r.content),
           r.is_error ? Dict{String,Any}("is_error" => true) : Dict{String,Any}()) for r in m.content]
 
@@ -101,6 +110,8 @@ function _parse_reply(::Anthropic, req::_Request, json)
         t = get(b, "type", nothing)
         t == "text" && push!(parts, TextPart(b["text"]))
         t == "tool_use" && push!(parts, ToolCall(b["id"], b["name"], _arguments(get(b, "input", nothing))))
+        t in ("thinking", "redacted_thinking") &&
+            push!(parts, ReasoningPart(something(get(b, "thinking", nothing), ""), :anthropic, b))
     end
     reason = _stop_reason(parts, get(_ANTHROPIC_STOP, something(get(json, "stop_reason", nothing), ""), :other))
     usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L5172
@@ -111,18 +122,21 @@ end
 # Stream events: claude-docs/claude-docs-15-streaming.md#L296-L306 (flow), #L318-L319 (error),
 # #L328-L336 (text_delta), #L539-L563 (full example). message_delta usage is cumulative.
 # tool_use blocks start with `input: {}` and stream input_json_delta.partial_json (#L933-L960).
+# thinking blocks stream thinking_delta then one signature_delta; redacted_thinking arrives whole
+# in content_block_start (claude-docs-21-thinking.md#L511, #L776-L791, #L1133-L1138).
 _supports_streaming(::Type{Anthropic}) = true
 
 mutable struct _AnthropicStream
     id::Any
     text::Dict{Int,IOBuffer}          # content block index => text (text blocks only)
     calls::Dict{Int,Vector{Any}}      # content block index => [id, name, input JSON buffer]
+    thinking::Dict{Int,Dict{String,Any}}  # content block index => thinking / redacted_thinking block
     stop_reason::Any
     input_tokens::Int
     output_tokens::Int
     error::Union{Nothing,String}
 end
-_stream_state(::Anthropic, req::_Request) = _AnthropicStream(nothing, Dict(), Dict(), nothing, 0, 0, nothing)
+_stream_state(::Anthropic, req::_Request) = _AnthropicStream(nothing, Dict(), Dict(), Dict(), nothing, 0, 0, nothing)
 
 function _stream_event!(st::_AnthropicStream, data::AbstractString, on_text)
     ev = JSON.parse(data)
@@ -138,6 +152,7 @@ function _stream_event!(st::_AnthropicStream, data::AbstractString, on_text)
         bt = get(b, "type", nothing)
         bt == "text" && (st.text[ev["index"]] = IOBuffer())
         bt == "tool_use" && (st.calls[ev["index"]] = Any[b["id"], b["name"], IOBuffer()])
+        bt in ("thinking", "redacted_thinking") && (st.thinking[ev["index"]] = Dict{String,Any}(b))
     elseif t == "content_block_delta"
         d = ev["delta"]
         if get(d, "type", nothing) == "text_delta"
@@ -145,6 +160,11 @@ function _stream_event!(st::_AnthropicStream, data::AbstractString, on_text)
             on_text(d["text"])
         elseif get(d, "type", nothing) == "input_json_delta" && haskey(st.calls, ev["index"])
             write(st.calls[ev["index"]][3], d["partial_json"])
+        elseif get(d, "type", nothing) == "thinking_delta" && haskey(st.thinking, ev["index"])
+            b = st.thinking[ev["index"]]
+            b["thinking"] = string(get(b, "thinking", ""), d["thinking"])
+        elseif get(d, "type", nothing) == "signature_delta" && haskey(st.thinking, ev["index"])
+            st.thinking[ev["index"]]["signature"] = d["signature"]
         end
     elseif t == "message_delta"
         st.stop_reason = something(get(ev["delta"], "stop_reason", nothing), Some(st.stop_reason))
@@ -158,10 +178,11 @@ end
 
 function _stream_finish(st::_AnthropicStream, req::_Request)
     st.error === nothing || error("anthropic stream error: ", st.error)
-    block(i) = haskey(st.text, i) ? _text_block(String(take!(st.text[i]))) :
+    block(i) = haskey(st.thinking, i) ? st.thinking[i] :
+        haskey(st.text, i) ? _text_block(String(take!(st.text[i]))) :
         Dict{String,Any}("type" => "tool_use", "id" => st.calls[i][1], "name" => st.calls[i][2],
                          "input" => _arguments(String(take!(st.calls[i][3]))))
-    blocks = [block(i) for i in sort!(collect(union(keys(st.text), keys(st.calls))))]
+    blocks = [block(i) for i in sort!(collect(union(keys(st.text), keys(st.calls), keys(st.thinking))))]
     json = Dict{String,Any}("id" => st.id, "content" => blocks, "stop_reason" => st.stop_reason,
                             "usage" => Dict("input_tokens" => st.input_tokens,
                                             "output_tokens" => st.output_tokens))

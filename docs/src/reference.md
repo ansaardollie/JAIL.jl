@@ -55,6 +55,7 @@ AssistantMessage
 Usage
 AbstractContentPart
 TextPart
+ReasoningPart
 ToolCall
 ToolResult
 ToolResultMessage

@@ -75,6 +75,5 @@ JAIL will be used in two ways that share the same code:
 Requests use each provider's multi-turn API: OpenAI Responses, Anthropic Messages and
 Google Interactions. There are two exceptions, each a setting on one provider type rather than a
 separate code path: `OpenAICompatible` servers default to Responses and can be switched to Chat
-Completions for servers that lack it, and `GoogleEnterprise` defaults to Vertex AI's
-`generateContent` (the full history is sent every turn) because the Interactions API there does
-not handle tool results reliably; it can be switched to Interactions.
+Completions for servers that lack it, and `GoogleEnterprise` (Interactions by default) can be
+switched to Vertex AI's `generateContent` for models the Interactions API there doesn't serve.
