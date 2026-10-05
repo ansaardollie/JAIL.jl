@@ -41,7 +41,13 @@ function _list_models(p::Anthropic, fetch)
 end
 
 # max_tokens is required: anthropic/api_spec.yaml#L3688-L3691
-default_max_tokens(::Type{Anthropic}) = 8192
+default_max_tokens(::Type{Anthropic}) = 128000
+# Per-model output caps. 3.5 is 4096 without the max-tokens-3-5-sonnet-2024-07-15 beta header.
+function default_max_tokens(m::Model{Anthropic})
+    occursin("3-5", m.id) && return 4096
+    occursin("haiku-4-5", m.id) && return 64000
+    return default_max_tokens(Anthropic)
+end
 
 # POST /v1/messages. anthropic/api_spec.yaml#L6, CreateMessageParams #L3437-L3692
 _request_url(p::Anthropic) = p.base_url * "/v1/messages"

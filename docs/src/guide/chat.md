@@ -154,7 +154,7 @@ arrive. All built-in providers can stream. The `}` REPL mode streams when the Pr
 
 - `max_tokens` caps the reply length for one call: `chat!(s, "..."; max_tokens = 200)`.
   Without it, the `max_tokens` Preference applies to every provider if it's set. Otherwise
-  Anthropic uses 8192 (it requires a value) and the other providers let the model decide.
+  Anthropic uses the model's maximum output (128000; Haiku 4.5: 64000; 3.5: 4096) (it requires a value) and the other providers let the model decide.
 - `max_tool_rounds` caps tool rounds for one call: `chat!(s, "..."; max_tool_rounds = 2)`.
   Without it, the `max_tool_rounds` Preference applies (default 10).
 - `store_requests` (default `true`): see above.

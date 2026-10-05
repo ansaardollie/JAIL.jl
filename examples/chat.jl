@@ -11,7 +11,7 @@
 # `api = :chat_completions`), Anthropic (Messages), Google (Interactions). Text only.
 #
 # Preferences (in [JAIL] of LocalPreferences.toml):
-#   max_tokens = 2048        # default reply cap for every provider (else Anthropic: 8192, others: unset)
+#   max_tokens = 2048        # default reply cap for every provider (else Anthropic: model max, others: unset)
 #   store_requests = false   # OpenAI/Google: send store=false and the full history (default true)
 #   stream = true            # stream replies in the `}` REPL mode (default false)
 #

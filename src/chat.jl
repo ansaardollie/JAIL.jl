@@ -1,5 +1,5 @@
-function _max_tokens(p::AbstractProvider, kw)
-    n = something(kw, _load_pref("max_tokens"), default_max_tokens(typeof(p)), Some(nothing))
+function _max_tokens(model::AbstractModel, kw)
+    n = something(kw, _load_pref("max_tokens"), default_max_tokens(model), Some(nothing))
     n === nothing || (n isa Integer && n > 0) || throw(ArgumentError(
         "max_tokens must be a positive integer, got $(repr(n))"))
     return n
@@ -55,7 +55,7 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
                    system::Union{Nothing,AbstractString}; max_tokens = nothing, on_text = nothing,
                    tools::Vector{ToolSpec} = ToolSpec[])
     p = model.provider
-    n, store = _max_tokens(p, max_tokens), _store_requests()
+    n, store = _max_tokens(model, max_tokens), _store_requests()
     stream = on_text !== nothing && _supports_streaming(p)
     full = _Request(model, messages, system, n, store, nothing, stream, tools)
     chain = _chain_point(p, messages, store)

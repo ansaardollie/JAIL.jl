@@ -200,7 +200,7 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `providers.google_enterprise.service_account_path` | string | same | Path to a service-account key file (optional) |
 | `providers.google_enterprise.api` | `"generate_content"` | same | Only written when not `:interactions` |
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
-| `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic 8192, others none) |
+| `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic the model's max output, others none) |
 | `store_requests` | `true` / `false` | by hand | OpenAI, Google, and `GoogleEnterprise` (unless `api = :generate_content`) store replies and continue from them (default `true`); `false` sends `store = false` and the full history |
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
 | `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |

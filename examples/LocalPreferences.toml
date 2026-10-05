@@ -49,8 +49,8 @@ julia_code_module = "main"
 # always :high). Default: none.
 # command_allow_list = ["git status", "git diff"]
 
-# Reply cap for chat! on every provider. Unset: Anthropic 8192, others none.
-# max_tokens = 8192
+# Reply cap for chat! on every provider. Unset: Anthropic uses the model's max output, others none.
+# max_tokens = 128000
 
 # OpenAI, Google, and GoogleEnterprise (unless api = "generate_content") store replies and continue
 # from them; false sends store = false and the full history every turn.

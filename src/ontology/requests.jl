@@ -31,6 +31,7 @@ function _stream_finish end
 
 # Reference data. `nothing` means the field is left out of the request.
 default_max_tokens(::Type{<:AbstractProvider}) = nothing
+default_max_tokens(m::AbstractModel) = default_max_tokens(typeof(m.provider))
 # Whether the wire format has a `store` field that JAIL should send.
 _has_store_field(::Type{<:AbstractProvider}) = false
 # Whether a stored reply's id can continue the conversation server-side.
