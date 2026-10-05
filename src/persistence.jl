@@ -25,6 +25,8 @@ end
 
 _session_path(dir, id) = joinpath(dir, "sessions", string(id, ".json"))
 _messages_path(dir, id) = joinpath(dir, "messages", string(id, ".jsonl"))
+_tools_dir(dir, id) = joinpath(dir, "tools", string(id))
+_tool_record_path(dir, session_id, pair_id) = joinpath(_tools_dir(dir, session_id), string(pair_id, ".json"))
 
 # ---- encoding ----
 
@@ -46,8 +48,12 @@ function _result_value(text::String)
     return JSON.json(v) == text ? v : text
 end
 
-_part_json(r::ToolResult) = (type = "tool_result", call_id = r.call_id, name = r.name,
-                             content = _result_value(r.content), is_error = r.is_error)
+function _part_json(r::ToolResult)
+    d = JSON.Object{String,Any}("type" => "tool_result", "call_id" => r.call_id, "name" => r.name,
+                                "content" => _result_value(r.content), "is_error" => r.is_error)
+    r.id === nothing || (d["id"] = string(r.id))
+    return d
+end
 
 _message_json(m::Union{UserMessage,ToolResultMessage}) = (role = _role(m), content = map(_part_json, m.content))
 
@@ -129,10 +135,29 @@ end
 # Model or tools changed: only the session JSON, and only once the session is on disk.
 _sync_meta!(s::Session) = s._store.dir === nothing ? nothing : _sync!(s)
 
+# Gives the result its pair id and saves the call with it to <dir>/tools/<session id>/<id>.json.
+function _record_tool!(s::Session, c::ToolCall, r::ToolResult, started::DateTime)
+    r = ToolResult(r.call_id, r.name, r.content; is_error = r.is_error, id = uuid7())
+    finished = Dates.now(Dates.UTC)
+    _guard(s) do
+        spec = get(_TOOLS, c.name, nothing)
+        rec = (version = _FORMAT_VERSION, id = string(r.id), session_id = string(s.id),
+               model = _model_string(s), started = _iso(started), finished = _iso(finished),
+               duration_ms = Dates.value(finished - started),
+               tool = (name = c.name, label = _tool_label(c.name), group = spec === nothing ? nothing : spec.group),
+               call = (id = c.id, name = c.name, arguments = c.arguments),
+               result = (content = _result_value(r.content), is_error = r.is_error))
+        dir = something(s._store.dir, _storage_dir())
+        _write_atomic(_tool_record_path(dir, s.id, r.id), JSON.json(rec; pretty = true))
+    end
+    return r
+end
+
 function _delete_files!(s::Session)
     dir = something(s._store.dir, _storage_dir())
     rm(_session_path(dir, s.id); force = true)
     rm(_messages_path(dir, s.id); force = true)
+    rm(_tools_dir(dir, s.id); force = true, recursive = true)
     s._store.dir = nothing
     s._store.nsaved = 0
     s._store.meta = UInt(0)
@@ -163,9 +188,9 @@ function _restore_parts!(parts, d)
             push!(parts, ReasoningPart("", :google_generate_content, Dict("thoughtSignature" => sig)))
         push!(parts, ToolCall(d["id"], d["name"], d["arguments"]))
     elseif t == "tool_result"
-        c = d["content"]
+        c, id = d["content"], get(d, "id", nothing)
         push!(parts, ToolResult(d["call_id"], d["name"], c isa AbstractString ? c : JSON.json(c);
-                                is_error = d["is_error"]))
+                                is_error = d["is_error"], id = id === nothing ? nothing : UUID(id)))
     elseif t == "reasoning"
         push!(parts, ReasoningPart(d["text"], Symbol(d["format"]), d["data"]))
     else
@@ -284,7 +309,9 @@ the saved sessions, newest first, by name, creation time and first prompt; cance
 
 Sessions are saved automatically from their first message on: the session (name, `id`,
 `created`, model, system instructions, tools) to `<dir>/sessions/<id>.json`, and its messages to
-`<dir>/messages/<id>.jsonl`, one line per message, appended as the conversation grows. `<dir>`
+`<dir>/messages/<id>.jsonl`, one line per message, appended as the conversation grows. Each tool
+call and its result are also saved together to `<dir>/tools/<id>/<pair id>.json`, named by the
+[`ToolResult`](@ref)'s `id`. `<dir>`
 is the Preference `storage_dir` (default `".jail"`, relative to the working directory when the
 session is first saved). Set the Preference `persist_sessions = false` to stop saving.
 

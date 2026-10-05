@@ -14,14 +14,25 @@
 #   max_tool_rounds = 10     # tool rounds per chat! call before calls are answered "not run"
 #   confirm_tools = true     # ask [y/N] on the terminal before every tool call (default false)
 #
-# REPL: in the `|` mode, `tools` lists tools (* = used by the active session), `tools show
-# <name>`, `tools use/add/drop <name>...`, `tools all`, `tools none`. The `}` mode runs tools
-# and shows each call (→) and result (←).
+# REPL: in the `|` mode, `tools` lists tools by group (* = used by the active session), `tools
+# show <name>`, `tools use/add/drop <name>...` (`group:<group>` = every tool in it), `tools all`,
+# `tools none`. The `}` mode streams `→ label` / `← label: result` lines as calls happen; the
+# finished turn shows a `Tool calls` block (✓/✗, label, `View` link to the call's JSON via
+# OSC 8), then `Output:` and the reply text.
+#
+# Groups and labels: every tool is in a group ("global" unless `group=` is given) and has a
+# label for display (default: the function name as written). The model sees neither.
+#
+# Saved calls: each ToolResult gets an `id` (UUID v7) when chat! runs the call, and the call +
+# result pair is written to <storage_dir>/tools/<session id>/<id>.json (unless
+# `persist_sessions = false`).
 #
 # Open / tentative:
 # - Descriptions come from the standard docstring above the function (not one inside the body).
 # - No `name =` override: functions whose names aren't valid tool names must be renamed.
 # - Calls run one after another; no `tool_choice` (forcing a tool) yet.
+# - No public function returns a call's JSON path; section 5 builds it from the default
+#   storage_dir ".jail".
 # - Thinking models' reasoning is kept on replies as `ReasoningPart`s and resent with the tool
 #   results; see examples/reasoning.jl.
 
@@ -58,6 +69,25 @@ echo(value) = value
 @show @tool add_todo! echo                            # `add_todo!` is exposed as "add_todo_bang"
 @show tools()
 
+# --- 2b. Groups and labels ----------------------------------------------------------------
+
+"List the names in a directory."
+list_files(dir::String = ".") = readdir(dir)
+
+"Read a text file."
+read_text(path::String) = read(path, String)
+
+@tool group=files list_files read_text                # both in group "files"
+register_tool!(list_files; group = "files", label = "List files")   # same, plus a label
+show(stdout, MIME"text/plain"(), tools("files")[1]); println()
+@show [(t.name, t.group, t.label) for t in tools()]
+
+try
+    @eval @tool label="Both" list_files read_text     # a label names one tool
+catch e
+    println("ArgumentError: ", e.error.msg)
+end
+
 # --- 3. Which tools a session offers -----------------------------------------------------
 
 s = Session("anthropic/claude-sonnet-4-5"; name = "tools-demo")
@@ -69,6 +99,8 @@ show(stdout, MIME"text/plain"(), s); println()
 
 r = Session("openai/gpt-6-luna"; name = "weather-only", tools = [get_weather])
 @show tools(r)
+@show set_tools!(s, tools("files"))                   # just one group
+set_tools!(s, nothing)
 
 # --- 4. Tool calls and results are messages ------------------------------------------------
 
@@ -77,6 +109,7 @@ reply = AssistantMessage([call]; stop_reason = :tool_use)
 results = ToolResultMessage([ToolResult("call_1", "get_weather", "Sunny for 3 days in Paris")])
 show(stdout, MIME"text/plain"(), reply); println()
 show(stdout, MIME"text/plain"(), results); println()
+@show results.content[1].id                           # nothing: chat! sets it when it runs a call
 
 # --- 5. Letting the model call tools (live) ------------------------------------------------
 
@@ -85,7 +118,12 @@ if LIVE
     show(stdout, MIME"text/plain"(), reply); println()
     foreach(m -> (show(stdout, MIME"text/plain"(), m); println()), r.messages)   # prompt, calls, results, answer
 
-    # Streaming prints each call (→) and result (←) between the text:
+    # Each call + result pair has an id and its own JSON file:
+    result = r.messages[3].content[1]
+    @show result.id
+    println(read(joinpath(".jail", "tools", string(r.id), string(result.id, ".json")), String))
+
+    # Streaming prints → get_weather / ← get_weather: … lines between the text:
     chat!(r, "And Rome for five days?"; stream = true)
 
     # Cap the rounds for one call; extra calls are answered "not run" and the reply is returned:
@@ -115,6 +153,12 @@ end
 
 try
     set_tools!(s, ["get_forecast"])
+catch e
+    println("ArgumentError: ", e.msg)
+end
+
+try
+    tools("shell")                                    # no such group
 catch e
     println("ArgumentError: ", e.msg)
 end

@@ -4,6 +4,7 @@
 # one back (in this or a later Julia process) and makes it active.
 #   <storage_dir>/sessions/<id>.json    name, id, created, model, system, tools
 #   <storage_dir>/messages/<id>.jsonl   one message per line, appended as the chat grows
+#   <storage_dir>/tools/<id>/<pair id>.json   one file per tool call + result (see examples/tools.jl)
 # `storage_dir` is a Preference (default ".jail" in the working directory);
 # `persist_sessions = false` turns saving off.
 #
@@ -50,7 +51,7 @@ r = restore_session!(id)                 # by id (a UUID or its string)
 empty!(r)                                # the .jsonl file is emptied too
 
 use_session!("default")
-delete_session!(r; files = true)         # also removes its two files
+delete_session!(r; files = true)         # also removes its files (session, messages, tool calls)
 #   (default: anthropic/claude-sonnet-4-5) model> session rm persist-demo --files
 
 # --- 4. Misuse -----------------------------------------------------------------------------

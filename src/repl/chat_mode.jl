@@ -41,30 +41,55 @@ function _chat_slash(io::IO, line::AbstractString)
     end
 end
 
-function _render_text(io::IO, reply::AssistantMessage)
-    text = string(reply)
-    if isempty(strip(text))
-        isempty(_tool_calls(reply)) && printstyled(io, "(empty reply)\n"; color = :light_black)
+# All reply texts of the turn as one Markdown document.
+function _render_texts(io::IO, messages)
+    replies = [m for m in messages if m isa AssistantMessage]
+    texts = filter(t -> !isempty(strip(t)), map(string, replies))
+    if isempty(texts)
+        all(r -> isempty(_tool_calls(r)), replies) && printstyled(io, "(empty reply)\n"; color = :light_black)
     else
-        show(io, MIME"text/plain"(), Markdown.parse(text))
+        show(io, MIME"text/plain"(), Markdown.parse(join(texts, "\n\n")))
         println(io)
     end
 end
 
-# The whole turn after the prompt: reply text, then each call next to its result.
-function _render_turn(io::IO, messages)
-    for (i, m) in enumerate(messages)
-        if m isa AssistantMessage
-            _render_text(io, m)
-        elseif m isa ToolResultMessage
-            calls = i > 1 ? _tool_calls(messages[i-1]) : ToolCall[]
-            for r in m.content
-                j = findfirst(c -> c.id == r.call_id, calls)
-                j === nothing || _print_tool(io, calls[j])
-                _print_tool(io, r)
-            end
-        end
+function _file_url(path::AbstractString)
+    io = IOBuffer()
+    print(io, "file://")
+    for b in codeunits(abspath(path))
+        c = Char(b)
+        b < 0x80 && (isletter(c) || isdigit(c) || c in "-._~/") ? write(io, b) :
+            print(io, '%', uppercase(string(b; base = 16, pad = 2)))
     end
+    return String(take!(io))
+end
+
+# OSC 8 hyperlink; terminals without support show just the text.
+_hyperlink(text::AbstractString, path::AbstractString) =
+    string("\e]8;;", _file_url(path), "\e\\", text, "\e]8;;\e\\")
+
+# One line per call of the turn: ✓/✗, the tool's label, and a link to its saved call/result JSON
+# (on a terminal `View`, else the path).
+function _render_tool_summary(io::IO, s::Session, messages; tty::Bool)
+    results = ToolResult[r for m in messages if m isa ToolResultMessage for r in m.content]
+    isempty(results) && return false
+    labels = [_tool_label(r.name) for r in results]
+    width = maximum(textwidth, labels)
+    printstyled(io, "Tool calls (", length(results), "):\n"; bold = true)
+    for (r, label) in zip(results, labels)
+        printstyled(io, "  ", r.is_error ? "✗ " : "✓ "; color = r.is_error ? :red : :green)
+        path = (r.id === nothing || s._store.dir === nothing) ? nothing :
+            _tool_record_path(s._store.dir, s.id, r.id)
+        if path !== nothing && isfile(path)
+            printstyled(io, rpad(label, width), "  "; color = :cyan)
+            printstyled(io, tty ? _hyperlink("View", path) : Base.contractuser(path);
+                        color = :light_black, underline = tty)
+        else
+            printstyled(io, label; color = :cyan)
+        end
+        println(io)
+    end
+    return true
 end
 
 function _render_stop(io::IO, reply::AssistantMessage)
@@ -82,22 +107,25 @@ end
 const _ALT_SCREEN_ON = "\e[?1049h\e[H\e[2J"
 const _ALT_SCREEN_OFF = "\e[?1049l"
 
-# On a terminal the reply streams on the alternate screen (like `less`), which never enters the
-# scrollback; switching back restores the REPL screen and only the rendered turn is printed.
-# Without streaming, each reply is rendered as it arrives and tool calls are shown as they run.
+# On a terminal the reply streams on the alternate screen (like `less`), with a line per tool call
+# and result as they happen; the alternate screen never enters the scrollback. Without streaming,
+# a transient status line shows `thinking…` or the running tool. Either way the turn is then
+# printed as the tool-calls block followed by the rendered reply text.
 function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     s = active_session()
     s.model === nothing && throw(ArgumentError(
         "session \"$(s.name)\" has no model; choose one in the `|` mode with `use provider/model` or `select`"))
     stream = _stream_pref() && _supports_streaming(s.model.provider)
+    confirm = _confirm_tools()
     n0 = length(s.messages)
-    waiting, alt, line_start = Ref(false), Ref(false), Ref(true)
-    function start_waiting()
+    status, alt, line_start = Ref(false), Ref(false), Ref(true)
+    clear_status() = status[] && (print(io, "\r\e[2K"); status[] = false)
+    function show_status(text, color = :light_black)
         tty || return
-        printstyled(io, "thinking…"; color = :light_black)
-        waiting[] = true
+        clear_status()
+        printstyled(io, text; color)
+        status[] = true
     end
-    stop_waiting() = waiting[] && (print(io, "\r\e[2K"); waiting[] = false)
     function enter_alt()
         if tty && !alt[]
             print(io, _ALT_SCREEN_ON)
@@ -106,34 +134,40 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
         end
     end
     function show_delta(t)
-        stop_waiting()
+        clear_status()
         enter_alt()
         print(io, t)
         isempty(t) || (line_start[] = endswith(t, '\n'))
     end
     function on_step(x)
-        stop_waiting()
-        if x isa AssistantMessage
-            stream || _render_text(io, x)
-            return
+        x isa AssistantMessage && return
+        if stream
+            clear_status()
+            enter_alt()
+            line_start[] || (println(io); line_start[] = true)
+            _print_tool(io, x)
+        elseif x isa ToolCall
+            # A confirmation prompt needs the line to itself.
+            confirm ? clear_status() : show_status("→ $(_tool_label(x.name))…", :cyan)
+        else
+            show_status("thinking…")
         end
-        stream && enter_alt()
-        line_start[] || (println(io); line_start[] = true)
-        _print_tool(io, x)
-        x isa ToolResult && !stream && start_waiting()
     end
-    start_waiting()
+    show_status("thinking…")
     reply = try
         _chat!(s, line; on_text = stream ? show_delta : nothing, on_step)
     finally
-        stop_waiting()
+        clear_status()
         alt[] && print(io, _ALT_SCREEN_OFF)
     end
-    if stream && tty
-        _render_turn(io, s.messages[n0+2:end])
-    elseif stream
-        # Not a terminal: the streamed raw text stays as printed.
+    turn = s.messages[n0+2:end]
+    if stream && !tty
+        # Not a terminal: the streamed raw text and tool lines stay as printed.
         line_start[] || println(io)
+        _render_tool_summary(io, s, turn; tty)
+    else
+        _render_tool_summary(io, s, turn; tty) && printstyled(io, "\nOutput:\n"; bold = true)
+        _render_texts(io, turn)
     end
     return _render_stop(io, reply)
 end

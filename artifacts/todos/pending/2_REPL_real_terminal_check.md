@@ -36,6 +36,11 @@ In a plain terminal `julia` (not the agent's tool REPL):
    `tools show/use/add/drop/all/none` and Tab completion; in `}` with a registered tool, the
    `→`/`←` lines appear (streamed and not); with `confirm_tools = true` the `[y/N]` prompt reads
    input correctly inside the chat mode.
+9. Tool display (see `design_decisions/27_TOOLS_call_records_and_display.md`, amendment): the
+   finished turn shows `Tool calls (n):`, then `Output:`; `View` alone is underlined and opens the
+   JSON file (OSC 8) in VS Code's terminal and iTerm2; without streaming the `→ label…` line is
+   erased; with `confirm_tools = true` and no streaming the prompt is not overwritten;
+   `tools use group:<g>` and its Tab completion.
 
 ## Why
 

@@ -143,10 +143,11 @@ function _max_tool_rounds(kw)
     return Int(n)
 end
 
-_print_tool(io::IO, c::ToolCall) = printstyled(io, "→ ", _call_signature(c), "\n"; color = :light_black)
+_print_tool(io::IO, c::ToolCall) = printstyled(io, "→ ", _tool_label(c.name), "\n"; color = :cyan)
 function _print_tool(io::IO, r::ToolResult)
     line = _short(first(split(r.content, '\n'; limit = 2)), 70)
-    printstyled(io, "← ", r.is_error ? "error: " : "", line, "\n"; color = r.is_error ? :red : :light_black)
+    printstyled(io, "← ", _tool_label(r.name), r.is_error ? " error: " : ": ", line, "\n";
+                color = r.is_error ? :red : :light_black)
 end
 
 # `on_text` is the streaming hook shared by `chat!(; stream = true)` and the `}` REPL mode;
@@ -185,8 +186,9 @@ function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text,
         calls = _tool_calls(reply)
         isempty(calls) && return reply
         if rounds >= limit
-            push!(s.messages, ToolResultMessage([ToolResult(c.id, c.name,
-                "Not run: the limit of $limit tool rounds for this turn was reached."; is_error = true)
+            now = Dates.now(Dates.UTC)
+            push!(s.messages, ToolResultMessage([_record_tool!(s, c, ToolResult(c.id, c.name,
+                "Not run: the limit of $limit tool rounds for this turn was reached."; is_error = true), now)
                 for c in calls]))
             _sync!(s)
             return reply
@@ -195,7 +197,8 @@ function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text,
         results = ToolResult[]
         for c in calls
             step(c)
-            r = _run_tool(c, specs; confirm)
+            started = Dates.now(Dates.UTC)
+            r = _record_tool!(s, c, _run_tool(c, specs; confirm), started)
             step(r)
             push!(results, r)
         end

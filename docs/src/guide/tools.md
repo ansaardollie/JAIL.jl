@@ -2,7 +2,8 @@
 
 A tool is an ordinary Julia function that a model may ask JAIL to call. Registering a function
 reflects on it and stores a [`ToolSpec`](@ref) in JAIL's tool registry. Every session offers
-the registered tools to its model, and [`chat!`](@ref) runs the calls the model makes.
+the registered tools to its model, and [`chat!`](@ref) runs the calls the model makes. Tools
+can be filed under groups and given a label for display (see [Groups and labels](#Groups-and-labels)).
 
 ## Defining a tool
 
@@ -74,6 +75,33 @@ echo(value) = value
 @tool add_todo! echo
 ```
 
+## Groups and labels
+
+Every tool belongs to a group, `"global"` unless another is given, and has a label: the text
+shown for its calls in the `}` REPL mode and in `chat!(...; stream = true)`. The label defaults
+to the function name as written (`add_todo!`). Neither is sent to the model.
+
+```@example tools
+"List the names in a directory."
+list_files(dir::String = ".") = readdir(dir)
+
+register_tool!(list_files; group = "files", label = "List files")
+```
+
+With [`@tool`](@ref), `group=` applies to every function named, and `label=` to a single one:
+
+```julia
+@tool group=files list_files read_file
+@tool group=files label="List files" list_files
+```
+
+`tools("files")` lists a group, so `set_tools!(s, tools("files"))` gives a session just those
+tools (the ones in the group at that moment). Group names use letters, digits, `_`, `-` and `.`.
+
+```@example tools
+tools("files")
+```
+
 ## The registry
 
 Tools are keyed by name. Registering a name again replaces the earlier tool.
@@ -107,7 +135,8 @@ s
 
 `Session(model; tools = [...])` and `new_session!(; tools = [...])` restrict from the start. In
 the `|` REPL mode, `tools use`, `tools add`, `tools drop`, `tools all` and `tools none` do the
-same for the active session (see [REPL modes](repl.md)).
+same for the active session, and `group:<group>` stands for a whole group (see
+[REPL modes](repl.md)).
 
 ## The tool loop
 
@@ -115,7 +144,10 @@ When a reply contains [`ToolCall`](@ref)s (`stop_reason = :tool_use`), `chat!`:
 
 1. runs each call in order, converting the JSON arguments to the parameter types (omitted
    optional arguments use the function's defaults);
-2. appends a [`ToolResultMessage`](@ref) with one [`ToolResult`](@ref) per call;
+2. appends a [`ToolResultMessage`](@ref) with one [`ToolResult`](@ref) per call, each with its
+   own `id` (a version 7 UUID), and saves the call and result together as
+   `<storage_dir>/tools/<session id>/<id>.json` (see
+   [Saving and restoring](sessions.md#Saving-and-restoring));
 3. sends the history again, and repeats until a reply calls no tools.
 
 Every step stays in `session.messages` and the last reply is returned. Problems the model can
@@ -131,7 +163,7 @@ vectors, dictionaries, structs without a custom `show`) as JSON, anything else a
 s = Session("anthropic/claude-sonnet-4-5"; tools = [get_weather])
 reply = chat!(s, "Should I pack an umbrella for Paris?")
 s.messages   # UserMessage, AssistantMessage (get_weather call), ToolResultMessage, AssistantMessage
-chat!(s, "And Rome?"; stream = true)   # also prints → call and ← result lines
+chat!(s, "And Rome?"; stream = true)   # also prints → label and ← label: result lines
 ```
 
 ## Preferences

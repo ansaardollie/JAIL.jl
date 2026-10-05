@@ -16,7 +16,9 @@ end
     ToolSpec
 
 A function the model may call: the tool `name` the model sees, a `description`, the ordered
-positional `parameters` and the function `f` itself. Build one with [`register_tool!`](@ref) or
+positional `parameters`, the function `f` itself, the `group` it is filed under (default
+`"global"`) and the `label` shown for its calls in the REPL and in `chat!`'s streamed output
+(default: the function name as written). Build one with [`register_tool!`](@ref) or
 [`@tool`](@ref).
 """
 struct ToolSpec
@@ -24,6 +26,8 @@ struct ToolSpec
     description::String
     parameters::Vector{ToolParameter}
     f::Function
+    group::String
+    label::String
 end
 
 function _signature(io::IO, t::ToolSpec)
@@ -41,6 +45,7 @@ Base.show(io::IO, t::ToolSpec) = (print(io, "ToolSpec("); _signature(io, t); pri
 
 function Base.show(io::IO, ::MIME"text/plain", t::ToolSpec)
     print(io, "ToolSpec "); _signature(io, t)
+    print(io, "\n  group: ", t.group, ", label: ", repr(t.label))
     isempty(t.description) || print(io, "\n  ", replace(t.description, "\n" => "\n  "))
     for p in t.parameters
         print(io, "\n  • ", p.name, "::", p.type, p.required ? "" : " (optional)")

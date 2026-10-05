@@ -143,6 +143,10 @@ resolved against the working directory when the session is first saved):
   a tool result whose text is JSON is stored as that JSON value, other results as text.
   [`ReasoningPart`](@ref)s are stored with their provider data, so a restored session can still
   send them back.
+- `tools/<id>/<pair id>.json`: one file per tool call and its result, named by the
+  [`ToolResult`](@ref)'s `id` (a version 7 UUID, also stored with the result in the messages
+  file). It holds the session id, model, start and finish times, the tool (name, label, group),
+  the call (provider call id, name, arguments) and the result (content, `is_error`).
 
 A session with no messages is not saved, and a turn that fails is removed from the file too.
 [`set_model!`](@ref), [`set_tools!`](@ref) and `empty!` update the files. Set the Preference
@@ -167,7 +171,7 @@ restore_session!(id)     # a UUID, or its string form
 - Messages edited in place in `s.messages` (rather than added or removed) are not re-saved.
 
 [`delete_session!`](@ref) keeps the files, so a deleted session can be restored;
-`delete_session!(s; files = true)` removes them as well.
+`delete_session!(s; files = true)` removes them as well, tool call files included.
 
 ## Common errors
 

@@ -14,9 +14,10 @@ const _MODEL_HELP = """
     session restore                       choose a saved session from a menu and make it active
     session rm <name|id> [--files]        delete a session (not the active one); --files also
                                            deletes its saved files
-    tools                                 list tools (* = available to the active session)
+    tools                                 list tools by group (* = available to the active session)
     tools show <name>                     a tool's description and parameters
-    tools use <name>...                   restrict the active session to these tools
+    tools use <name>...                   restrict the active session to these tools; a
+                                           `group:<group>` argument stands for all tools in it
     tools add <name>... | drop <name>...  add to / remove from the active session's tools
     tools all | none                      every registered tool (the default) | no tools
     help, ?                               show this help
@@ -35,8 +36,8 @@ function _nargs(cmd, args, n::UnitRange)
                  "session use" => "session use <name|id>", "session restore" => "session restore",
                  "session rm" => "session rm <name|id> [--files]",
                  "tools" => "tools [show <name> | use|add|drop <name>... | all | none]",
-                 "tools show" => "tools show <name>", "tools use" => "tools use <name>...",
-                 "tools add" => "tools add <name>...", "tools drop" => "tools drop <name>...",
+                 "tools show" => "tools show <name>", "tools use" => "tools use <name|group:<group>>...",
+                 "tools add" => "tools add <name|group:<group>>...", "tools drop" => "tools drop <name|group:<group>>...",
                  "tools all" => "tools all", "tools none" => "tools none")
     throw(ArgumentError("usage: `$(get(usage, cmd, cmd))`"))
 end
@@ -159,11 +160,23 @@ function _list_tools(s::Session)
     println("Session \"", s.name, "\" uses ", s.tools === nothing ? "every registered tool" :
             "$(length(mine)) of $(length(all)) tools", ":")
     width = maximum(t -> length(t.name), all)
-    for t in all
-        desc = isempty(t.description) ? "" : _short(first(split(t.description, '\n')), 60)
-        println(t.name in mine ? "  * " : "    ", rpad(t.name, width), "  ", desc)
+    for g in _tool_groups()
+        printstyled("  ", g, "\n"; bold = true)
+        for t in all
+            t.group == g || continue
+            label = t.label == t.name ? "" : string(" (", repr(t.label), ")")
+            desc = isempty(t.description) ? "" : _short(first(split(t.description, '\n')), 60)
+            println(t.name in mine ? "  * " : "    ", rpad(t.name, width), "  ", desc, label)
+        end
     end
 end
+
+const _GROUP_ARG = "group:"
+
+# Tool names, with each `group:<group>` replaced by the names of that group's tools.
+_expand_tool_args(args) =
+    unique!(reduce(vcat, (startswith(a, _GROUP_ARG) ? [t.name for t in tools(a[length(_GROUP_ARG)+1:end])] : [a]
+                          for a in args); init = String[]))
 
 function _session_tools_changed(s::Session)
     println("Session \"", s.name, "\" tools: ", _tools_label(s))
@@ -180,6 +193,7 @@ function _cmd_tools(args)
         println()
     elseif sub in ("use", "add", "drop")
         isempty(names) && _nargs("tools $sub", names, 1:typemax(Int))
+        names = _expand_tool_args(names)
         _tool_names(names)
         if sub == "use"
             set_tools!(s, names)
@@ -251,8 +265,9 @@ function _complete_model_mode(before::AbstractString)
     elseif cmd == "tools"
         n == 2 && return _matching(("show", "use", "add", "drop", "all", "none"), partial)
         sub = parts[2]
-        (sub in ("use", "add", "drop") || (sub == "show" && n == 3)) &&
-            return _matching(sort!(collect(keys(_TOOLS))), partial)
+        sub in ("use", "add", "drop") && return _matching(
+            [sort!(collect(keys(_TOOLS))); [_GROUP_ARG * g for g in _tool_groups()]], partial)
+        sub == "show" && n == 3 && return _matching(sort!(collect(keys(_TOOLS))), partial)
     end
     return (String[], partial)
 end

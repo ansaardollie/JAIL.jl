@@ -31,18 +31,24 @@ struct ToolCall <: AbstractContentPart
 end
 
 """
-    ToolResult(call_id, name, content; is_error = false)
+    ToolResult(call_id, name, content; is_error = false, id = nothing)
 
 The outcome of running the [`ToolCall`](@ref) with id `call_id`: the text the model sees, and
 whether it is an error (the tool threw, the arguments were invalid, or the call was declined).
+
+`id` is JAIL's own version 7 UUID for the call/result pair, set by [`chat!`](@ref) when it runs
+the call; the pair is saved as `<storage_dir>/tools/<session id>/<id>.json` (see
+[`restore_session!`](@ref)). It is never sent to the provider.
 """
 struct ToolResult <: AbstractContentPart
     call_id::String
     name::String
     content::String
     is_error::Bool
-    ToolResult(call_id::AbstractString, name::AbstractString, content::AbstractString; is_error::Bool = false) =
-        new(String(call_id), String(name), String(content), is_error)
+    id::Union{Nothing,UUID}
+    ToolResult(call_id::AbstractString, name::AbstractString, content::AbstractString;
+               is_error::Bool = false, id::Union{Nothing,UUID} = nothing) =
+        new(String(call_id), String(name), String(content), is_error, id)
 end
 
 """

@@ -31,15 +31,21 @@ chat> Tell me a long story
 [stop reason: max_tokens]
 ```
 
-When the model calls tools, each call and its result is shown as a dim line between the
-reply's text (see [Tools](tools.md)). Without streaming, `thinking…` shows again while the
-results are sent back. If the tool round limit is reached, the turn ends with
-`[stop reason: tool_use]`.
+When the model calls tools, each finished turn starts with a `Tool calls` block: one line per
+call with ✓ or ✗ and the tool's label (see [Groups and labels](tools.md#Groups-and-labels)),
+followed by `View`, a link to the call's saved JSON file (see
+[Saving and restoring](sessions.md#Saving-and-restoring)) in terminals that support OSC 8
+hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). The reply text follows under an `Output:`
+heading. While the turn runs
+without streaming, a transient line shows `thinking…` or the tool being run. If the tool round
+limit is reached, the turn ends with `[stop reason: tool_use]`.
 
 ```text
 chat> Should I pack an umbrella for Paris?
-→ get_weather(city = "Paris")
-← Sunny for 3 days in Paris
+Tool calls (1):
+  ✓ get_weather  View
+
+Output:
   No, it will be sunny for the next three days.
 ```
 
@@ -48,9 +54,10 @@ This transcript is illustrative; the reply text depends on the model.
 ### Streaming
 
 With `stream = true` in the `[JAIL]` Preferences, a reply streams in as raw text on the
-terminal's alternate screen (like `less`), under your prompt, with tool call and result lines
-as they happen. When it's complete the normal screen comes back and only the rendered turn
-(Markdown text plus the tool lines) is printed, so the streamed text never ends
+terminal's alternate screen (like `less`), under your prompt, with a `→ label` line per tool
+call and a `← label: result` line per result as they happen. When it's complete the normal
+screen comes back and only the finished turn (the `Tool calls` block, then the rendered
+Markdown text) is printed, so the streamed text and tool lines never end
 up in the REPL output or scrollback. If the request fails or you press Ctrl-C, the normal screen
 comes back with just the error. Without the Preference, `thinking…` shows until the whole reply
 is ready.
@@ -135,10 +142,10 @@ In the model mode:
 | `session use <name\|id>` | Switch the active session (a menu picks among sessions sharing the name) | [`use_session!`](@ref) |
 | `session restore` | Choose a saved session from a menu and make it active | [`restore_session!`](@ref) |
 | `session rm <name\|id> [--files]` | Delete a session (not the active one); `--files` also deletes its saved files | [`delete_session!`](@ref) |
-| `tools` | List registered tools; `*` marks those the active session uses | [`tools`](@ref) |
-| `tools show <name>` | Show a tool's description and parameters | |
-| `tools use <name>...` | Restrict the active session to these tools | [`set_tools!`](@ref) |
-| `tools add <name>...`, `tools drop <name>...` | Add tools to, or remove them from, the active session | [`set_tools!`](@ref) |
+| `tools` | List registered tools by group; `*` marks those the active session uses | [`tools`](@ref) |
+| `tools show <name>` | Show a tool's group, label, description and parameters | |
+| `tools use <name>...` | Restrict the active session to these tools; `group:<group>` stands for every tool in that group | [`set_tools!`](@ref) |
+| `tools add <name>...`, `tools drop <name>...` | Add tools to, or remove them from, the active session (`group:<group>` works here too) | [`set_tools!`](@ref) |
 | `tools all`, `tools none` | Every registered tool (the default), or none | `set_tools!(nothing)`, `set_tools!([])` |
 | `help`, `?` | Show the command list | |
 
@@ -183,21 +190,31 @@ Active session: default (lmstudio/qwen3-8b)
 Deleted session "work"
 ```
 
-With two tools registered (`@tool get_weather list_directory`) on a session called `demo`:
+With two tools registered (`@tool get_weather` and `@tool group=files list_directory`) on a
+session called `demo`:
 
 ```text
 (demo: anthropic/claude-sonnet-4-5) model> tools
 Session "demo" uses every registered tool:
-  * get_weather     Get the weather forecast for a city.
+  files
   * list_directory  List the names of the files and folders in the current work…
+  global
+  * get_weather     Get the weather forecast for a city.
 (demo: anthropic/claude-sonnet-4-5) model> tools use get_weather
+Session "demo" tools: get_weather
+(demo: anthropic/claude-sonnet-4-5) model> tools add group:files
+Session "demo" tools: get_weather, list_directory
+(demo: anthropic/claude-sonnet-4-5) model> tools drop list_directory
 Session "demo" tools: get_weather
 (demo: anthropic/claude-sonnet-4-5) model> tools
 Session "demo" uses 1 of 2 tools:
-  * get_weather     Get the weather forecast for a city.
+  files
     list_directory  List the names of the files and folders in the current work…
+  global
+  * get_weather     Get the weather forecast for a city.
 (demo: anthropic/claude-sonnet-4-5) model> tools show get_weather
 ToolSpec get_weather(city::String, days::Int64 = …)
+  group: global, label: "get_weather"
   Get the weather forecast for a city.
   • city::String
   • days::Int64 (optional)

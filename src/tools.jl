@@ -120,8 +120,9 @@ function _json_schema(T::Type, seen)
     return _schema("type" => "object", "properties" => props, "required" => required)
 end
 
-function _tool_spec(f::Function)
+function _tool_spec(f::Function; group = _DEFAULT_GROUP, label = nothing)
     name = _tool_name(f)
+    group, label = _group_name(group), _label(f, label)
     m, nrequired = _tool_method(f)
     kws = unique!(reduce(vcat, (Base.kwarg_decl(x) for x in methods(f)); init = Symbol[]))
     description, arg_docs = _parse_docstring(_raw_docstring(f))
@@ -140,7 +141,24 @@ function _tool_spec(f::Function)
     end
     isempty(kws) || @warn "Keyword arguments of `$f` are not exposed to the model: $(join(kws, ", "))"
     isempty(description) && @warn "`$f` has no docstring; the model only sees its name and arguments"
-    return ToolSpec(name, description, params, f)
+    return ToolSpec(name, description, params, f, group, label)
+end
+
+const _DEFAULT_GROUP = "global"
+const _GROUP_NAME = r"^[A-Za-z0-9_.-]+$"
+
+function _group_name(g::Union{AbstractString,Symbol})
+    g = string(g)
+    occursin(_GROUP_NAME, g) || throw(ArgumentError(
+        "tool group $(repr(g)) is not a valid group name: use letters, digits, `_`, `-` or `.`"))
+    return g
+end
+
+function _label(f::Function, label)
+    label === nothing && return string(nameof(f))
+    l = strip(string(label))
+    isempty(l) && throw(ArgumentError("a tool label must not be empty"))
+    return String(l)
 end
 
 # JSON Schema object for all of a tool's arguments; providers wrap it in their tool shape.
@@ -154,7 +172,7 @@ function _parameters_schema(t::ToolSpec)
 end
 
 """
-    register_tool!(f::Function) -> ToolSpec
+    register_tool!(f::Function; group = "global", label = nothing) -> ToolSpec
 
 Make `f` available to models as a tool and return its [`ToolSpec`](@ref). Registering a name
 again replaces the earlier tool.
@@ -170,6 +188,13 @@ What the model sees comes from `f` itself:
 - **argument descriptions**: entries of the docstring's `# Arguments` section,
   ``- `city`: the city name``.
 
+The model never sees these:
+
+- **group**: files the tool under a group (letters, digits, `_`, `-`, `.`); `tools("shell")`
+  lists a group and `set_tools!(s, tools("shell"))` gives a session just that group.
+- **label**: how the tool's calls are shown in the `}` REPL mode and `chat!(...; stream = true)`;
+  defaults to the function name as written (`save!`).
+
 ```julia
 \"\"\"
     get_weather(city, days = 3)
@@ -183,12 +208,14 @@ Get the weather forecast for a city.
 get_weather(city::String, days::Int = 3) = "Sunny for \$days days in \$city"
 
 register_tool!(get_weather)
+register_tool!(get_weather; group = "web", label = "Weather forecast")
 ```
 
 See also [`@tool`](@ref), [`tools`](@ref), [`unregister_tool!`](@ref).
 """
-function register_tool!(f::Function)
-    spec = _tool_spec(f)
+function register_tool!(f::Function; group::Union{AbstractString,Symbol} = _DEFAULT_GROUP,
+                        label::Union{Nothing,AbstractString} = nothing)
+    spec = _tool_spec(f; group, label)
     old = get(_TOOLS, spec.name, nothing)
     old === nothing || old.f === f ||
         @warn "Tool \"$(spec.name)\" from `$(parentmodule(old.f)).$(nameof(old.f))` is replaced by `$(parentmodule(f)).$(nameof(f))`"
@@ -197,33 +224,65 @@ function register_tool!(f::Function)
 end
 
 """
-    @tool f1 f2 ...
+    @tool [group=name] [label="text"] f1 f2 ...
 
 Register each named function as a tool with [`register_tool!`](@ref); returns their
-[`ToolSpec`](@ref)s. Names may be qualified (`@tool MyPkg.search`).
+[`ToolSpec`](@ref)s. Names may be qualified (`@tool MyPkg.search`). `group=` (a name or a
+string) files them all under that group; `label=` sets the label of a single tool.
 
 ```julia
 @tool get_weather search_docs
+@tool group=shell execute_shell_command list_files
+@tool label="Shell command" group=shell execute_shell_command
 ```
 """
-macro tool(fs...)
-    isempty(fs) && throw(ArgumentError("@tool needs at least one function name, e.g. `@tool get_weather`"))
-    for f in fs
-        f isa Symbol || Meta.isexpr(f, :.) || throw(ArgumentError(
-            "@tool takes function names (e.g. `@tool get_weather MyPkg.search`), got " *
-            (f isa Expr ? "a `$(f.head)` expression" : repr(f)) *
-            ". Define and document the function first, then pass its name"))
+macro tool(args...)
+    opts, fs = Dict{Symbol,String}(), Any[]
+    for a in args
+        if Meta.isexpr(a, :(=), 2)
+            k, v = a.args
+            k in (:group, :label) || throw(ArgumentError(
+                "unknown @tool option `$k`; the options are `group=` and `label=`"))
+            haskey(opts, k) && throw(ArgumentError("@tool option `$k=` given twice"))
+            v isa Union{Symbol,String} || throw(ArgumentError(
+                "@tool `$k=` takes a name or a plain string, e.g. `@tool $k=shell f`, got `$v`"))
+            opts[k] = string(v)
+        elseif a isa Symbol || Meta.isexpr(a, :.)
+            push!(fs, a)
+        else
+            throw(ArgumentError(
+                "@tool takes function names (e.g. `@tool get_weather MyPkg.search`), got " *
+                (a isa Expr ? "a `$(a.head)` expression" : repr(a)) *
+                ". Define and document the function first, then pass its name"))
+        end
     end
+    isempty(fs) && throw(ArgumentError("@tool needs at least one function name, e.g. `@tool get_weather`"))
+    haskey(opts, :label) && length(fs) > 1 && throw(ArgumentError(
+        "@tool `label=` labels a single tool; register the other functions separately"))
     reg = GlobalRef(@__MODULE__, :register_tool!)
-    return :($(GlobalRef(@__MODULE__, :ToolSpec))[$((:($reg($(esc(f)))) for f in fs)...)])
+    kw = Expr(:parameters, (Expr(:kw, k, v) for (k, v) in opts)...)
+    return :($(GlobalRef(@__MODULE__, :ToolSpec))[$((Expr(:call, reg, kw, esc(f)) for f in fs)...)])
 end
 
 """
     tools() -> Vector{ToolSpec}
+    tools(group::AbstractString) -> Vector{ToolSpec}
 
-All registered tools, sorted by name.
+All registered tools, or those in `group`, sorted by name. Throws for a group with no tools.
 """
 tools() = sort!(collect(values(_TOOLS)); by = t -> t.name)
+
+function tools(group::Union{AbstractString,Symbol})
+    g = string(group)
+    ts = filter(t -> t.group == g, tools())
+    isempty(ts) && throw(ArgumentError("no tools in group \"$g\" (groups: $(join(_tool_groups(), ", ")))"))
+    return ts
+end
+
+_tool_groups() = sort!(unique(t.group for t in values(_TOOLS)))
+
+# How calls of the tool `name` are shown; unregistered names show as they are.
+_tool_label(name::AbstractString) = haskey(_TOOLS, name) ? _TOOLS[name].label : String(name)
 
 """
     unregister_tool!(name::AbstractString) -> ToolSpec
