@@ -26,6 +26,21 @@ tool_approval = "auto"
 # Tool rounds per chat! call before further calls are answered "not run".
 max_tool_rounds = 10
 
+# Built-in tool groups or tool names registered when JAIL loads ("read", "inspect", "edit",
+# "execute", "web", "interact", or names like "read_file"). Default: none.
+# builtin_tools = ["read", "inspect"]
+
+# Where the built-in execute_julia_code runs: "main" (Main) or "sandbox" (a module per session).
+julia_code_module = "main"
+
+# Paths, relative to the current directory, whose writes by built-in tools are always :high,
+# besides LocalPreferences.toml, Project.toml, .git and storage_dir. Default: none.
+# protected_paths = ["secrets", "docs/Project.toml"]
+
+# ENV vars removed from built-in tools' child processes, besides names ending in _KEY,
+# _CREDENTIALS or _CREDENTIAL. Default: none.
+# scrub_env_vars = ["GITHUB_TOKEN"]
+
 # Reply cap for chat! on every provider. Unset: Anthropic 8192, others none.
 # max_tokens = 8192
 

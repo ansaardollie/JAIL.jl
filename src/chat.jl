@@ -95,7 +95,9 @@ the model as error results rather than thrown. After `max_tool_rounds` rounds (d
 Preference `max_tool_rounds`, else 10) further calls are answered with "not run" results and
 the last reply (`stop_reason = :tool_use`) is returned. Whether a call is confirmed on the
 terminal first depends on the tool's `security` level, the Preference `tool_approval` and the
-tool's entry in [`tool_auto_approvals`](@ref) (see [`register_tool!`](@ref)).
+tool's entry in [`tool_auto_approvals`](@ref) (see [`register_tool!`](@ref)); the built-in
+`ask_user` is never confirmed. A tool can read the calling session and call with
+[`tool_context`](@ref).
 
 OpenAI and Google store replies server-side, and the next turn continues from the last one
 (`previous_response_id` / `previous_interaction_id`) so only the new turns are sent; so does
@@ -128,6 +130,7 @@ function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens
     on_text = t -> (print(stdout, t); isempty(t) || (ends_with_newline[] = endswith(t, '\n')))
     function on_step(x)
         x isa _Confirming && return true    # its preview is already on screen
+        x isa _Prompting && return
         x isa AssistantMessage && return
         ends_with_newline[] || println(stdout)
         _print_tool(stdout, x)
@@ -159,6 +162,11 @@ end
 # Passed to `on_step` just before the user is asked to confirm `call`; returning `true` says the
 # call's preview is already on screen.
 struct _Confirming
+    call::ToolCall
+end
+
+# Passed to `on_step` when a running tool is about to read the terminal (e.g. `ask_user`).
+struct _Prompting
     call::ToolCall
 end
 
@@ -211,7 +219,10 @@ function _tool_loop!(s::Session, limit::Int, approval::String; max_tokens, on_te
         for c in calls
             step(c)
             started = Dates.now(Dates.UTC)
-            r = _record_tool!(s, c, _run_tool(c, specs; approval, before_confirm = x -> step(_Confirming(x))), started)
+            r = with(_TOOL_CONTEXT => ToolContext(s, c), _PROMPT_HOOK => () -> step(_Prompting(c))) do
+                _run_tool(c, specs; approval, before_confirm = x -> step(_Confirming(x)))
+            end
+            r = _record_tool!(s, c, r, started)
             step(r)
             push!(results, r)
         end

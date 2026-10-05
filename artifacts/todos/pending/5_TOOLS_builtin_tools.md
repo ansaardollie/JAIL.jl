@@ -30,7 +30,15 @@ exists to run them.
 
 ## Acceptance Criteria
 
-- [ ] Decisions recorded for names, Preferences and registration
-- [ ] Confirmation enforced before running model-written code (agent constraint)
-- [ ] Mock-server tool round per provider using a built-in
-- [ ] `examples/tools.jl` (or a new example) and docs updated
+- [x] Decisions recorded for names, Preferences and registration (decisions 31, 32)
+- [x] Confirmation enforced before running model-written code (agent constraint)
+- [ ] Mock-server tool round per provider using a built-in (Responses, Chat Completions,
+      Anthropic done; Google not)
+- [x] `examples/builtin_tools.jl` and docs updated
+- [ ] The `&` agentic REPL mode using them (item 4)
+
+## Update (2026-10-05)
+
+Items 1–3 implemented as 25 built-in tools (`work_history/25_TOOLS_builtin_tools.md`, plan
+`implementation_plans/1_TOOLS_builtin_tools_catalogue.md`). Remaining: item 4, the `&` mode,
+which attaches the built-ins; and a Google mock round.

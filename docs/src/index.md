@@ -20,11 +20,15 @@ JAIL is an early rewrite. What works today:
 - **Tools**: Julia functions registered with [`register_tool!`](@ref) or [`@tool`](@ref);
   `chat!` runs the calls the model makes, asking first according to each tool's security level
   and your Preferences, and sends the results back.
+- **Built-in tools**: 25 opt-in tools for reading, searching and editing files, looking up
+  Julia source and docs, running Julia code and shell commands, fetching web pages and asking
+  you questions; register them with [`register_builtin_tools!`](@ref).
 - **REPL modes**: `|` for listing and switching providers, models, sessions and tools, `}` for
   chatting with the active session's model.
 
-Not implemented yet: images, requesting or displaying reasoning summaries, the agentic (`&`) REPL mode, built-in tools,
-and one-shot functions for text, code generation and extraction.
+Not implemented yet: images, requesting or displaying reasoning summaries, the agentic (`&`)
+REPL mode (which will attach the built-in tools itself), and one-shot functions for text, code
+generation and extraction.
 
 ## Quick start
 
@@ -57,7 +61,9 @@ chat> What does @inbounds do?
 - [Models](guide/models.md)
 - [Sessions](guide/sessions.md)
 - [Chat](guide/chat.md)
+- [Tools](guide/tools.md), including the [built-in tools](guide/tools.md#Built-in-tools)
 - [REPL modes](guide/repl.md)
 - [Reference](reference.md): every exported name.
+- [Built-in tools](builtin_tools.md): the docstrings the model sees for each built-in tool.
 
 Runnable scripts for each feature are in the repository's `examples/` folder.

@@ -79,4 +79,10 @@ set_tool_auto_approval!
 security_level
 needs_confirmation
 tool_preview
+builtin_tools
+register_builtin_tools!
+ToolContext
+tool_context
 ```
+
+The built-in tools themselves are documented in [Built-in tools](builtin_tools.md).

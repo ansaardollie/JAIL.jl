@@ -51,7 +51,9 @@ A tool is a documented Julia function registered with [`register_tool!`](@ref) o
 the model makes, and sends the results back. Tool calls and results are content parts and
 messages like any other, so they stay in the provider-agnostic history. Before a call runs, JAIL
 asks on the terminal if the tool's security level, the `tool_approval` Preference or a
-per-tool auto-approval says so. See [Tools](tools.md).
+per-tool auto-approval says so. JAIL also ships opt-in built-in tools (files, Julia source and
+docs, running code, shell, web, asking you); see [Built-in tools](tools.md#Built-in-tools).
+See [Tools](tools.md).
 
 ## Configuration lives in Preferences
 
@@ -71,8 +73,9 @@ The full list of keys is in [Preferences keys](providers.md#Preferences-keys).
 JAIL will be used in two ways that share the same code:
 
 - **REPL modes**: `|` for model, session and tool selection and `}` for chatting, including
-  tool calls (both available now), and `&` for agentic work with code generation and built-in
-  tools (planned). Each mode's prompt shows the model it is using.
+  tool calls (both available now), and `&` for agentic work with code generation, attaching the
+  built-in tools (planned; the built-in tools themselves can already be registered for `}`).
+  Each mode's prompt shows the model it is using.
 - **Functions** for one-shot text, generated Julia code, and extracting Julia objects from
   natural language (planned).
 

@@ -265,7 +265,11 @@ function register_tool!(f::Function; group::Union{AbstractString,Symbol} = _DEFA
                         security::Union{Symbol,AbstractString,Function} = :medium,
                         preview::Union{Nothing,Symbol,AbstractString,AbstractVector,Function} = nothing)
     spec = _tool_spec(f; group, label, security, preview)
-    old = get(_TOOLS, spec.name, nothing)
+    return _register!(spec)
+end
+
+function _register!(spec::ToolSpec)
+    f, old = spec.f, get(_TOOLS, spec.name, nothing)
     old === nothing || old.f === f ||
         @warn "Tool \"$(spec.name)\" from `$(parentmodule(old.f)).$(nameof(old.f))` is replaced by `$(parentmodule(f)).$(nameof(f))`"
     _TOOLS[spec.name] = spec
@@ -591,7 +595,8 @@ security_level(c::ToolCall) = _security_level(_spec_and_args(c)...)
 
 Whether the tool loop would ask on the terminal before running `call`: its entry in
 [`tool_auto_approvals`](@ref) if it has one, else its [`security_level`](@ref) under the
-`approval` mode (see [`tool_approval`](@ref)).
+`approval` mode (see [`tool_approval`](@ref)). Always `false` for the built-in `ask_user`,
+which is never confirmed.
 """
 needs_confirmation(c::ToolCall; approval::Union{AbstractString,Symbol} = tool_approval()) =
     _confirmation_needed(_spec_and_args(c)..., _approval_mode(approval))
@@ -610,7 +615,8 @@ shell.run_shell = false    # always asks, even with tool_approval = "yolo"
 files = true               # every tool in the "files" group
 ```
 
-Tools not listed follow their security level and [`tool_approval`](@ref). See also
+Tools not listed follow their security level and [`tool_approval`](@ref). The built-in
+`ask_user` is never confirmed, whatever its entry says. See also
 [`set_tool_auto_approval!`](@ref).
 """
 function tool_auto_approvals()
@@ -642,6 +648,7 @@ function _auto_approval(t::ToolSpec, table = tool_auto_approvals())
 end
 
 function _confirmation_needed(t::ToolSpec, args, mode::AbstractString)
+    _never_confirm(t) && return false
     a = _auto_approval(t)
     return a === nothing ? _needs_confirmation(_security_level(t, args), mode) : !a
 end
@@ -753,7 +760,7 @@ function _run_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; approval::Abstr
         e isa ArgumentError || rethrow()
         return err("Invalid arguments for `$(t.name)`: $(e.msg)")
     end
-    auto = _auto_approval(t)
+    auto = _never_confirm(t) ? true : _auto_approval(t)
     level = auto === true ? :low : _security_level(t, args)
     if auto === false || (auto === nothing && _needs_confirmation(level, approval))
         shown = before_confirm !== nothing && before_confirm(c) === true

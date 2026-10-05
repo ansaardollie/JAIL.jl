@@ -46,6 +46,10 @@ In a plain terminal `julia` (not the agent's tool REPL):
     `MODE`; prompts read `y`/`n`/`a` correctly in `}` (streamed and not); a streamed preview is
     not repeated in the prompt; `a` writes `[JAIL.tool_auto_approvals]`; `tools approve` /
     `unapprove` and the `[auto-approved]` / `[always asks]` marks.
+11. Built-in tools (see `work_history/25_TOOLS_builtin_tools.md`): run `examples/builtin_tools.jl`
+    and, with the owner's approval (live calls), `examples/builtin_tools_prompts.jl`; `ask_user`
+    with options shows the arrow-key menu; in `}` the status line is cleared before `ask_user`
+    asks; `execute_julia_code` / `run_shell` prompts read `y`/`n`/`a`.
 
 ## Why
 

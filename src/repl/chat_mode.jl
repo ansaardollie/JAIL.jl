@@ -141,7 +141,7 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     function on_step(x)
         x isa AssistantMessage && return
         # The confirmation prompt needs the line to itself; when streaming, the preview is shown.
-        x isa _Confirming && (clear_status(); return stream)
+        x isa Union{_Confirming,_Prompting} && (clear_status(); return stream)
         if stream
             clear_status()
             enter_alt()

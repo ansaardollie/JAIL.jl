@@ -21,6 +21,7 @@ export ToolSpec, register_tool!, @tool, tools, unregister_tool!, set_tools!
 export tool_approval, set_tool_approval!, security_level, needs_confirmation, tool_preview
 export tool_auto_approvals, set_tool_auto_approval!
 export ToolCall, ToolResult, ToolResultMessage
+export ToolContext, tool_context, builtin_tools, register_builtin_tools!
 
 include("preferences.jl")
 include("ontology/providers.jl")
@@ -39,13 +40,22 @@ include("system_prompt.jl")
 include("tools.jl")
 include("session.jl")
 include("persistence.jl")
+include("builtin_tools/common.jl")
 include("chat.jl")
 include("select.jl")
 include("repl/model_mode.jl")
 include("repl/chat_mode.jl")
 include("repl/install.jl")
+include("builtin_tools/glob.jl")
+include("builtin_tools/files.jl")
+include("builtin_tools/julia.jl")
+include("builtin_tools/source.jl")
+include("builtin_tools/process.jl")
+include("builtin_tools/web.jl")
+include("builtin_tools/repl.jl")
 
 function __init__()
+    _register_builtin_prefs!()
     _start_default_session!()
     _init_repl_modes()
 end

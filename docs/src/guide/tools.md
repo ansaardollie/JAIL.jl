@@ -275,6 +275,141 @@ tool_preview(c)                           # "rm -rf build/"
 [`tool_approval`](@ref) returns the current mode and [`set_tool_approval!`](@ref) saves a new
 one to the Preferences (`nothing` removes it).
 
+## Built-in tools
+
+JAIL ships tools for working in a Julia project: reading, searching and editing files, looking
+up Julia source and documentation, running Julia code and shell commands, fetching web pages
+and asking the user. [`builtin_tools`](@ref) lists them. None is registered when JAIL loads, so
+sessions don't offer them until you opt in, by group or by name:
+
+```julia
+register_builtin_tools!("read", "inspect")    # returns the ToolSpecs registered
+register_builtin_tools!(:execute_julia_code)
+unregister_tool!("execute_julia_code")        # as for any tool
+```
+
+or with the Preference `builtin_tools`, which registers them each time JAIL loads:
+
+```toml
+[JAIL]
+builtin_tools = ["read", "inspect", "interact"]
+```
+
+They are grouped by what they do, so a whole group can be selected
+(`set_tools!(s, tools("read"))`) or auto-approved (`tool_auto_approvals.read = true`). An
+auto-approval skips the security level entirely, so approving `read` also lets the model read
+files outside the workspace without asking.
+
+| Group | Tool | What it does | Security level |
+|---|---|---|---|
+| `read` | `read_file(path, start_line, end_line)` | lines of a text file | low; high outside the workspace |
+| | `list_dir(path)` | a folder's entries | low; high outside |
+| | `find_files(pattern, max_results)` | paths matching a glob (`*.jl`, `src/**/*.jl`), skipping git-ignored files | low |
+| | `grep_files(query, is_regex, include, max_results)` | `path:line: text` for matching lines | low |
+| | `check_julia_syntax(path)` | syntax errors with line and column (JuliaSyntax) | low; high outside |
+| | `git_changes(diff)` | `git status` and the staged and unstaged diffs | low |
+| `inspect` | `julia_source_method(signature)` | source of the method a call runs, e.g. `"Base.sum(::Vector{Int})"` | low |
+| | `julia_source_methods(name)` | source of every method of a function | low |
+| | `julia_source_struct(name)` | source of a `struct` / `abstract type` / `primitive type` | low |
+| | `julia_source_module(name)` | source of a `module … end` block | low |
+| | `julia_docs(name)` | a docstring as Markdown | low |
+| | `find_julia_symbols(query, max_results)` | public names of loaded modules containing `query` | low |
+| | `pkg_status()` | `Pkg.status()` of the active project | low |
+| | `repl_history(n)` | the last REPL inputs | medium |
+| | `last_result()` | the REPL's `ans` | medium |
+| `edit` | `create_file(path, content)` | a new file (fails if it exists) | medium; high outside or protected |
+| | `create_directory(path)` | a folder | low; high outside or protected |
+| | `replace_in_file(path, old, new)` | replaces text that occurs exactly once | medium; high outside or protected |
+| | `replace_in_files(edits)` | several replacements, all or none | the highest of its edits |
+| `execute` | `execute_julia_code(code)` | runs code; returns everything printed and the value | high |
+| | `run_shell(command, timeout_seconds)` | runs a shell command; returns output and exit code | high |
+| | `run_tests()` | `Pkg.test()` of the workspace project, in a new process | high |
+| | `pkg_add(packages)` | `Pkg.add` into the active project | high |
+| `web` | `fetch_url(url)` | a web page as text | medium for `https` to a public host; high otherwise |
+| `interact` | `ask_user(question, options)` | asks you in the terminal and returns the answer | never asks for approval |
+
+The model sees each tool's docstring; read it with `@doc JAIL.read_file`. Calls are confirmed
+following [Security levels and approval](#Security-levels-and-approval) like any tool, except
+`ask_user`, which is never confirmed (it is a question to you already), whatever `tool_approval`
+or `tool_auto_approvals` say. Answering `a` (always) works for high-level tools too.
+
+### The workspace and protected paths
+
+Paths are relative to the **workspace folder**, the current directory (`pwd()`). A call that
+touches a path **outside** it is always `:high`: an absolute path not under the workspace, a
+path whose first part is `..` (after tidying, so `src/../../x` counts), or a path through a
+symbolic link inside the workspace. `find_files` and `grep_files` only search the workspace and
+don't follow links.
+
+**Protected** paths make *writes* `:high` even inside the workspace (reading them keeps the
+normal level): `LocalPreferences.toml`, `Project.toml` and `.git` in the workspace folder,
+JAIL's `storage_dir` (`.jail` by default), and the entries of the Preference `protected_paths`.
+Entries are relative to the workspace folder: a bare name is a file or folder directly in it, a
+folder protects everything inside, and anything deeper needs its path. Without this, a
+`:medium` edit could, for example, set `tool_approval = "yolo"` in `LocalPreferences.toml`.
+
+```toml
+[JAIL]
+protected_paths = ["secrets", "docs/Project.toml"]
+```
+
+The source tools (`julia_source_*`) are always `:low`: they take names, not paths, and look
+them up without running any code, even when the source lives outside the workspace (Base,
+packages in `~/.julia`).
+
+### Running Julia code
+
+`execute_julia_code` is `:high`, so every call is confirmed first unless `tool_approval` is
+`"yolo"` or the tool is auto-approved (answering `a` at its prompt saves that). It captures
+everything the code prints (`stdout`, `stderr`, log messages and `display`ed values) and adds
+`=> ` and the last value as the REPL shows it, long arrays shortened (leave it out by ending
+the code with `;`). Relative paths in the code, such as `include("src/x.jl")`, are relative to
+the workspace folder. If the code throws, the model gets an error result that still holds the
+output, the error and the stack trace of its own code. Ctrl-C stops the code and, as for any
+interrupted turn, removes the turn from the history.
+
+The Preference `julia_code_module` chooses where the code runs:
+
+- `"main"` (default): in `Main`, sharing your REPL's variables and definitions;
+- `"sandbox"`: in a separate module per session, created on first use and not saved with the
+  session. This keeps names apart only: the code can still do anything Julia can (files, shell,
+  network, `ENV`), so the tool stays `:high`.
+
+### Child processes and secrets
+
+`run_shell`, `run_tests` and `git_changes` run in the workspace folder with no input (an
+interactive command fails instead of waiting), and without the environment variables whose
+names end in `_KEY`, `_CREDENTIALS` or `_CREDENTIAL` (ignoring case), nor those listed in the
+Preference `scrub_env_vars`:
+
+```toml
+[JAIL]
+scrub_env_vars = ["GITHUB_TOKEN", "DATABASE_URL"]
+```
+
+Code run by `execute_julia_code` is in your Julia process, so it can still read `ENV`.
+
+### Web pages
+
+`fetch_url` converts HTML to text (headings, lists and links kept) and returns other text
+formats as they are. It is `:medium` for `https` to a public host on the default port and
+`:high` for anything that could reach your machine or network: `http`, `localhost`, IP
+addresses, other ports, and host names that resolve to private addresses. Redirects are
+followed one by one and refused if they lead somewhere riskier than the URL that was approved.
+The result is marked as untrusted content.
+
+### Tool context
+
+A tool can find out which session and call it is running for with [`tool_context`](@ref),
+which returns a [`ToolContext`](@ref) during a call made by the tool loop and `nothing`
+otherwise:
+
+```julia
+"Name of the session that called this tool."
+session_name() = tool_context().session.name
+register_tool!(session_name; security = :low)
+```
+
 ## Preferences
 
 - `max_tool_rounds` (default 10): tool rounds per `chat!` call. When it is reached, further
@@ -285,6 +420,15 @@ one to the Preferences (`nothing` removes it).
   Preference is no longer read (JAIL warns once if it is set).
 - `tool_auto_approvals` (default empty): per-tool and per-group `true`/`false` overrides; see
   [Auto-approving tools](#Auto-approving-tools).
+- `builtin_tools` (default empty): built-in groups or tool names registered when JAIL loads; see
+  [Built-in tools](#Built-in-tools).
+- `julia_code_module` (default `"main"`): where `execute_julia_code` runs, `"main"` or
+  `"sandbox"`; see [Running Julia code](#Running-Julia-code).
+- `protected_paths` (default empty): paths, relative to the workspace folder, whose writes are
+  always `:high`, besides the built-in ones; see
+  [The workspace and protected paths](#The-workspace-and-protected-paths).
+- `scrub_env_vars` (default empty): extra environment variable names removed from child
+  processes; see [Child processes and secrets](#Child-processes-and-secrets).
 
 ```toml
 [JAIL]
