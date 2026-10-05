@@ -4,7 +4,9 @@ const _REPL_INSTRUCTIONS = """
 
     - Be concise: answer directly, no preamble or closing summary. Expand only when asked.
     - Assume questions are about Julia unless told otherwise.
-    - Put any code longer than one line in a fenced block with a language tag, e.g. ```julia."""
+    - Put any code longer than one line in a fenced block with a language tag, e.g. ```julia.
+    - Write every file path, directory path, or URL either in single backticks (`src/foo.jl`) or as a Markdown link ([docs](https://example.com)), never as bare text.
+    - In generated Julia code, always wrap string interpolations in parentheses: `"total: \$(n)"`, not `"total: \$n"`."""
 
 # Direct dependencies (`[deps]`) of the active project, i.e. the packages available to `using`.
 function _project_packages(project)
