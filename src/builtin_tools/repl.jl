@@ -45,35 +45,46 @@ function last_result()
 end
 
 """
-    ask_user(question, options = nothing)
+    ask_user(question, options = nothing, allow_free_text = true)
 
 Ask the user a question in the terminal and wait for the answer. Use it when you need a decision
 or information only the user has; don't use it to ask permission for tool calls (that happens
-automatically). With `options`, the user picks one of them (or, without a menu, types its number
-or their own answer).
+automatically). With `options`, the user picks one of them, or, if `allow_free_text` is true,
+types their own answer instead.
 
 # Arguments
 - `question`: the question, one or two sentences
 - `options`: the answers to choose from; omit for a free-text answer
+- `allow_free_text`: with `options`, whether the user may answer with their own text instead of an option
 """
-function ask_user(question::String, options::Union{Nothing,Vector{String}} = nothing)
+function ask_user(question::String, options::Union{Nothing,Vector{String}} = nothing,
+                  allow_free_text::Bool = true)
     _before_prompt()
     _discard_pending_input(stdin)
     printstyled(stdout, "? ", strip(question), "\n"; color = :magenta, bold = true)
-    if options === nothing || isempty(options)
-        print(stdout, "> ")
-        answer = strip(readline(stdin))
-        return isempty(answer) ? "(the user gave no answer)" : String(answer)
-    end
+    (options === nothing || isempty(options)) && return _free_text_answer()
     if stdin isa Base.TTY
-        i = _pick(_menu_terminal(), "", options)
-        return i === nothing ? "(the user cancelled without choosing)" : options[i]
+        labels = allow_free_text ? [options; "Other (type your own answer)"] : options
+        i = _pick(_menu_terminal(), "", labels)
+        i === nothing && return "(the user cancelled without choosing)"
+        return i <= length(options) ? options[i] : _free_text_answer()
     end
     foreach(((i, o),) -> println(stdout, "  ", i, ". ", o), enumerate(options))
+    hint = allow_free_text ? "number or your own answer" : "number"
+    while true
+        print(stdout, "(", hint, ") > ")
+        answer = strip(readline(stdin))
+        isempty(answer) && return "(the user gave no answer)"
+        k = tryparse(Int, answer)
+        k !== nothing && 1 <= k <= length(options) && return options[k]
+        allow_free_text && return String(answer)
+        println(stdout, "Please enter a number from 1 to ", length(options), ".")
+    end
+end
+
+function _free_text_answer()
     print(stdout, "> ")
     answer = strip(readline(stdin))
-    k = tryparse(Int, answer)
-    k !== nothing && 1 <= k <= length(options) && return options[k]
     return isempty(answer) ? "(the user gave no answer)" : String(answer)
 end
 

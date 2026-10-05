@@ -81,4 +81,5 @@ register_builtin_tools!(:ask_user)
 chat!("Ask me which colour I prefer (red, green or blue), then tell me my answer."; stream = true)
 
 
-chat!("Please ask me a question with multiple choice options"; stream = true)
+chat!("Please ask me a question with multiple choice options as well as free text input"; stream = true)
+chat!("Ask me to pick red, green or blue, and don't accept any other answer."; stream = true)

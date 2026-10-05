@@ -326,7 +326,7 @@ files outside the workspace without asking.
 | | `run_tests()` | `Pkg.test()` of the workspace project, in a new process | high |
 | | `pkg_add(packages)` | `Pkg.add` into the active project | high |
 | `web` | `fetch_url(url)` | a page's content as served (HTML as HTML) | medium for `https` to a public host; high otherwise |
-| `interact` | `ask_user(question, options)` | asks you in the terminal and returns the answer | never asks for approval |
+| `interact` | `ask_user(question, options, allow_free_text)` | asks you in the terminal (a menu for `options`, with an "Other" choice for your own answer unless `allow_free_text = false`) and returns the answer | never asks for approval |
 
 The model sees each tool's docstring; read it with `@doc JAIL.read_file`. Calls are confirmed
 following [Security levels and approval](#Security-levels-and-approval) like any tool, except
