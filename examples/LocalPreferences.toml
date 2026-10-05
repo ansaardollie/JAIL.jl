@@ -13,8 +13,15 @@ repl_modes = true
 # Stream replies in the `}` chat mode.
 stream = true
 
-# Ask [y/N] before each tool call.
-confirm_tools = false
+# When to ask [y/N] before a tool call, by the tool's security level:
+# "all" (every call), "auto" (medium and high), "none" (high only), "yolo" (never).
+tool_approval = "auto"
+
+# Per-tool overrides of tool_approval: true never asks, false always asks. "global" tools by
+# name; other groups as a table of tool names or a single true/false. Default: empty.
+# tool_auto_approvals.get_weather = true
+# tool_auto_approvals.files = true
+# tool_auto_approvals.shell.run_shell = false
 
 # Tool rounds per chat! call before further calls are answered "not run".
 max_tool_rounds = 10

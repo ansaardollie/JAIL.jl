@@ -72,4 +72,11 @@ tools
 tools(::Session)
 set_tools!
 unregister_tool!
+tool_approval
+set_tool_approval!
+tool_auto_approvals
+set_tool_auto_approval!
+security_level
+needs_confirmation
+tool_preview
 ```

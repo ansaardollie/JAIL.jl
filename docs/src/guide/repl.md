@@ -51,11 +51,20 @@ Output:
 
 This transcript is illustrative; the reply text depends on the model.
 
+A call that needs confirmation (see
+[Security levels and approval](tools.md#Security-levels-and-approval)) stops the turn with a
+prompt such as `get_weather(city = "Paris") [medium]: run it? [y/N/a = always]`; for a tool
+with a `preview`, its label and the preview are shown instead of every argument. `y` runs the
+call, anything else declines it (the model is told), and `a` runs it and auto-approves the tool
+from then on.
+
 ### Streaming
 
 With `stream = true` in the `[JAIL]` Preferences, a reply streams in as raw text on the
 terminal's alternate screen (like `less`), under your prompt, with a `→ label` line per tool
-call and a `← label: result` line per result as they happen. When it's complete the normal
+call (followed by the tool's `preview`, indented, if it has one) and a `← label: result` line per
+result as they happen. A confirmation prompt for a streamed call doesn't repeat the preview.
+When it's complete the normal
 screen comes back and only the finished turn (the `Tool calls` block, then the rendered
 Markdown text) is printed, so the streamed text and tool lines never end
 up in the REPL output or scrollback. If the request fails or you press Ctrl-C, the normal screen
@@ -147,6 +156,7 @@ In the model mode:
 | `tools use <name>...` | Restrict the active session to these tools; `group:<group>` stands for every tool in that group | [`set_tools!`](@ref) |
 | `tools add <name>...`, `tools drop <name>...` | Add tools to, or remove them from, the active session (`group:<group>` works here too) | [`set_tools!`](@ref) |
 | `tools all`, `tools none` | Every registered tool (the default), or none | `set_tools!(nothing)`, `set_tools!([])` |
+| `tools approve <name\|group:<group>>...`, `tools unapprove ...` | Run these tools' calls without asking, or remove that entry | [`set_tool_auto_approval!`](@ref) |
 | `help`, `?` | Show the command list | |
 
 `use` and `select` change only the active session. The saved default changes only with
@@ -214,10 +224,21 @@ Session "demo" uses 1 of 2 tools:
   * get_weather     Get the weather forecast for a city.
 (demo: anthropic/claude-sonnet-4-5) model> tools show get_weather
 ToolSpec get_weather(city::String, days::Int64 = …)
-  group: global, label: "get_weather"
+  group: global, label: "get_weather", security: medium
   Get the weather forecast for a city.
-  • city::String
-  • days::Int64 (optional)
+  • city::String: the city name, e.g. "Cape Town"
+  • days::Int64 (optional): how many days to forecast
+  approval: by security level and tool_approval
+(demo: anthropic/claude-sonnet-4-5) model> tools approve get_weather
+get_weather: auto-approved
+(demo: anthropic/claude-sonnet-4-5) model> tools
+Session "demo" uses 1 of 2 tools:
+  files
+    list_directory  List the names of the files and folders in the current work…
+  global
+  * get_weather     Get the weather forecast for a city.  [auto-approved]
+(demo: anthropic/claude-sonnet-4-5) model> tools unapprove get_weather
+get_weather: by security level and tool_approval
 (demo: anthropic/claude-sonnet-4-5) model> tools all
 Session "demo" tools: all (get_weather, list_directory)
 ```

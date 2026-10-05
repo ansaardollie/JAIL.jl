@@ -93,8 +93,9 @@ back and asks again, until a reply calls no tools; every step is added to the hi
 last reply is returned. Errors (unknown tool, bad arguments, a tool that throws) are sent to
 the model as error results rather than thrown. After `max_tool_rounds` rounds (default: the
 Preference `max_tool_rounds`, else 10) further calls are answered with "not run" results and
-the last reply (`stop_reason = :tool_use`) is returned. With the Preference
-`confirm_tools = true`, each call is confirmed on the terminal first.
+the last reply (`stop_reason = :tool_use`) is returned. Whether a call is confirmed on the
+terminal first depends on the tool's `security` level, the Preference `tool_approval` and the
+tool's entry in [`tool_auto_approvals`](@ref) (see [`register_tool!`](@ref)).
 
 OpenAI and Google store replies server-side, and the next turn continues from the last one
 (`previous_response_id` / `previous_interaction_id`) so only the new turns are sent; so does
@@ -126,6 +127,7 @@ function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens
     ends_with_newline = Ref(true)
     on_text = t -> (print(stdout, t); isempty(t) || (ends_with_newline[] = endswith(t, '\n')))
     function on_step(x)
+        x isa _Confirming && return true    # its preview is already on screen
         x isa AssistantMessage && return
         ends_with_newline[] || println(stdout)
         _print_tool(stdout, x)
@@ -143,16 +145,26 @@ function _max_tool_rounds(kw)
     return Int(n)
 end
 
-_print_tool(io::IO, c::ToolCall) = printstyled(io, "→ ", _tool_label(c.name), "\n"; color = :cyan)
+function _print_tool(io::IO, c::ToolCall)
+    printstyled(io, "→ ", _tool_label(c.name), "\n"; color = :cyan)
+    p = _call_preview(c)
+    p === nothing || _print_preview(io, p)
+end
 function _print_tool(io::IO, r::ToolResult)
     line = _short(first(split(r.content, '\n'; limit = 2)), 70)
     printstyled(io, "← ", _tool_label(r.name), r.is_error ? " error: " : ": ", line, "\n";
                 color = r.is_error ? :red : :light_black)
 end
 
+# Passed to `on_step` just before the user is asked to confirm `call`; returning `true` says the
+# call's preview is already on screen.
+struct _Confirming
+    call::ToolCall
+end
+
 # `on_text` is the streaming hook shared by `chat!(; stream = true)` and the `}` REPL mode;
-# `on_step` sees each AssistantMessage as it arrives, each ToolCall before it runs and its
-# ToolResult after.
+# `on_step` sees each AssistantMessage as it arrives, each ToolCall before it runs, a
+# `_Confirming` before a confirmation prompt, and each ToolResult after.
 function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
                 on_text = nothing, on_step = nothing, max_tool_rounds = nothing)
     s.model === nothing && error(
@@ -160,12 +172,13 @@ function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_token
         "or `select_model!()`")
     msg = prompt isa UserMessage ? prompt : UserMessage(prompt)
     isempty(strip(string(msg))) && throw(ArgumentError("prompt must not be empty"))
-    limit, confirm = _max_tool_rounds(max_tool_rounds), _confirm_tools()
+    limit, approval = _max_tool_rounds(max_tool_rounds), tool_approval()
+    tool_auto_approvals()   # a malformed table fails here, before the turn starts
     n0 = length(s.messages)
     push!(s.messages, msg)
     _sync!(s)
     try
-        return _tool_loop!(s, limit, confirm; max_tokens, on_text, on_step)
+        return _tool_loop!(s, limit, approval; max_tokens, on_text, on_step)
     catch
         resize!(s.messages, n0)
         # A first turn that failed leaves nothing worth restoring.
@@ -174,8 +187,8 @@ function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_token
     end
 end
 
-function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text, on_step)
-    step(x) = on_step === nothing || on_step(x)
+function _tool_loop!(s::Session, limit::Int, approval::String; max_tokens, on_text, on_step)
+    step(x) = on_step === nothing ? nothing : on_step(x)
     rounds = 0
     while true
         specs = tools(s)
@@ -198,7 +211,7 @@ function _tool_loop!(s::Session, limit::Int, confirm::Bool; max_tokens, on_text,
         for c in calls
             step(c)
             started = Dates.now(Dates.UTC)
-            r = _record_tool!(s, c, _run_tool(c, specs; confirm), started)
+            r = _record_tool!(s, c, _run_tool(c, specs; approval, before_confirm = x -> step(_Confirming(x))), started)
             step(r)
             push!(results, r)
         end

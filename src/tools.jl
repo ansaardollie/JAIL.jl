@@ -120,9 +120,10 @@ function _json_schema(T::Type, seen)
     return _schema("type" => "object", "properties" => props, "required" => required)
 end
 
-function _tool_spec(f::Function; group = _DEFAULT_GROUP, label = nothing)
+function _tool_spec(f::Function; group = _DEFAULT_GROUP, label = nothing, security = :medium,
+                    preview = nothing)
     name = _tool_name(f)
-    group, label = _group_name(group), _label(f, label)
+    group, label, security = _group_name(group), _label(f, label), _security_spec(security)
     m, nrequired = _tool_method(f)
     kws = unique!(reduce(vcat, (Base.kwarg_decl(x) for x in methods(f)); init = Symbol[]))
     description, arg_docs = _parse_docstring(_raw_docstring(f))
@@ -141,7 +142,33 @@ function _tool_spec(f::Function; group = _DEFAULT_GROUP, label = nothing)
     end
     isempty(kws) || @warn "Keyword arguments of `$f` are not exposed to the model: $(join(kws, ", "))"
     isempty(description) && @warn "`$f` has no docstring; the model only sees its name and arguments"
-    return ToolSpec(name, description, params, f, group, label)
+    return ToolSpec(name, description, params, f, group, label, security, _preview_spec(preview, params))
+end
+
+const _SECURITY_LEVELS = (:low, :medium, :high)
+
+_security_spec(f::Function) = f
+function _security_spec(level::Union{Symbol,AbstractString})
+    l = Symbol(level)
+    l in _SECURITY_LEVELS || throw(ArgumentError(
+        "tool security must be :low, :medium, :high or a function of the arguments, got $(repr(level))"))
+    return l
+end
+
+_preview_spec(::Nothing, params) = nothing
+_preview_spec(f::Function, params) = f
+_preview_spec(name::Union{Symbol,AbstractString}, params) = only(_preview_spec([name], params))
+function _preview_spec(names::AbstractVector, params)
+    isempty(names) && throw(ArgumentError("tool preview: give at least one argument name"))
+    out = String[]
+    for n in names
+        n isa Union{Symbol,AbstractString} || throw(ArgumentError(
+            "tool preview must be an argument name, a vector of them, or a function; got $(repr(n))"))
+        any(p -> p.name == string(n), params) || throw(ArgumentError(
+            "tool preview: no argument `$n` (arguments: $(join((p.name for p in params), ", ")))"))
+        push!(out, string(n))
+    end
+    return out
 end
 
 const _DEFAULT_GROUP = "global"
@@ -172,7 +199,8 @@ function _parameters_schema(t::ToolSpec)
 end
 
 """
-    register_tool!(f::Function; group = "global", label = nothing) -> ToolSpec
+    register_tool!(f::Function; group = "global", label = nothing, security = :medium,
+                   preview = nothing) -> ToolSpec
 
 Make `f` available to models as a tool and return its [`ToolSpec`](@ref). Registering a name
 again replaces the earlier tool.
@@ -194,6 +222,17 @@ The model never sees these:
   lists a group and `set_tools!(s, tools("shell"))` gives a session just that group.
 - **label**: how the tool's calls are shown in the `}` REPL mode and `chat!(...; stream = true)`;
   defaults to the function name as written (`save!`).
+- **security**: `:low`, `:medium` (default) or `:high`, or a function that gets the call's
+  arguments (every positional parameter of `f`, with `nothing` for optional ones the model left
+  out) and returns one. Together with the
+  Preference `tool_approval` it decides whether a call is confirmed first, unless the tool has an
+  entry in [`tool_auto_approvals`](@ref) (see the Tools guide).
+  A security function that throws or returns anything else counts as `:high`.
+- **preview**: which arguments are shown with a call (in the confirmation prompt and the
+  streamed `→ label` line): one argument name shows that argument's text as it is (for code or
+  a shell command), a vector of names shows those as `name = value`, and a function (given the
+  same arguments as a security function) returns the text to show. By default nothing is shown on the streamed line and the
+  prompt shows every argument.
 
 ```julia
 \"\"\"
@@ -208,14 +247,24 @@ Get the weather forecast for a city.
 get_weather(city::String, days::Int = 3) = "Sunny for \$days days in \$city"
 
 register_tool!(get_weather)
-register_tool!(get_weather; group = "web", label = "Weather forecast")
+register_tool!(get_weather; group = "web", label = "Weather forecast", security = :low)
+
+"Run a shell command."
+run_shell(cmd::String) = read(`sh -c \$cmd`, String)
+register_tool!(run_shell; security = :high, preview = :cmd)
+
+"Read a text file."
+read_text(path::String) = read(path, String)
+register_tool!(read_text; security = path -> startswith(abspath(path), pwd() * "/") ? :low : :high)
 ```
 
 See also [`@tool`](@ref), [`tools`](@ref), [`unregister_tool!`](@ref).
 """
 function register_tool!(f::Function; group::Union{AbstractString,Symbol} = _DEFAULT_GROUP,
-                        label::Union{Nothing,AbstractString} = nothing)
-    spec = _tool_spec(f; group, label)
+                        label::Union{Nothing,AbstractString} = nothing,
+                        security::Union{Symbol,AbstractString,Function} = :medium,
+                        preview::Union{Nothing,Symbol,AbstractString,AbstractVector,Function} = nothing)
+    spec = _tool_spec(f; group, label, security, preview)
     old = get(_TOOLS, spec.name, nothing)
     old === nothing || old.f === f ||
         @warn "Tool \"$(spec.name)\" from `$(parentmodule(old.f)).$(nameof(old.f))` is replaced by `$(parentmodule(f)).$(nameof(f))`"
@@ -224,29 +273,34 @@ function register_tool!(f::Function; group::Union{AbstractString,Symbol} = _DEFA
 end
 
 """
-    @tool [group=name] [label="text"] f1 f2 ...
+    @tool [group=name] [label="text"] [security=level] [preview=arg] f1 f2 ...
 
 Register each named function as a tool with [`register_tool!`](@ref); returns their
 [`ToolSpec`](@ref)s. Names may be qualified (`@tool MyPkg.search`). `group=` (a name or a
-string) files them all under that group; `label=` sets the label of a single tool.
+string), `security=` and `preview=` apply to every function named; `label=` sets the label of a
+single tool.
+
+- `security=` takes `low`, `medium` or `high`; any other name or expression is used as the
+  security function (`security=shell_level`, `security=cmd -> ...`).
+- `preview=` takes an argument name (`preview=cmd`), a vector of them (`preview=[path, mode]`),
+  or an anonymous function (`preview=(path, mode) -> path`). For a named function use
+  `register_tool!(f; preview = g)`, since a bare name here means an argument.
 
 ```julia
 @tool get_weather search_docs
 @tool group=shell execute_shell_command list_files
-@tool label="Shell command" group=shell execute_shell_command
+@tool label="Shell command" group=shell security=high preview=command execute_shell_command
 ```
 """
 macro tool(args...)
-    opts, fs = Dict{Symbol,String}(), Any[]
+    opts, fs = Dict{Symbol,Any}(), Any[]
     for a in args
         if Meta.isexpr(a, :(=), 2)
             k, v = a.args
-            k in (:group, :label) || throw(ArgumentError(
-                "unknown @tool option `$k`; the options are `group=` and `label=`"))
+            k in (:group, :label, :security, :preview) || throw(ArgumentError(
+                "unknown @tool option `$k`; the options are `group=`, `label=`, `security=` and `preview=`"))
             haskey(opts, k) && throw(ArgumentError("@tool option `$k=` given twice"))
-            v isa Union{Symbol,String} || throw(ArgumentError(
-                "@tool `$k=` takes a name or a plain string, e.g. `@tool $k=shell f`, got `$v`"))
-            opts[k] = string(v)
+            opts[k] = _tool_option(Val(k), v)
         elseif a isa Symbol || Meta.isexpr(a, :.)
             push!(fs, a)
         else
@@ -262,6 +316,30 @@ macro tool(args...)
     reg = GlobalRef(@__MODULE__, :register_tool!)
     kw = Expr(:parameters, (Expr(:kw, k, v) for (k, v) in opts)...)
     return :($(GlobalRef(@__MODULE__, :ToolSpec))[$((Expr(:call, reg, kw, esc(f)) for f in fs)...)])
+end
+
+_literal_name(v) = v isa Union{Symbol,String} ? string(v) : v isa QuoteNode && v.value isa Symbol ? string(v.value) : nothing
+
+function _tool_option(::Union{Val{:group},Val{:label}}, v)
+    s = _literal_name(v)
+    s === nothing && throw(ArgumentError("@tool `group=`/`label=` take a name or a plain string, got `$v`"))
+    return s
+end
+
+function _tool_option(::Val{:security}, v)
+    s = _literal_name(v)
+    return s !== nothing && Symbol(s) in _SECURITY_LEVELS ? QuoteNode(Symbol(s)) : esc(v)
+end
+
+function _tool_option(::Val{:preview}, v)
+    s = _literal_name(v)
+    s === nothing || return s
+    if Meta.isexpr(v, :vect)
+        names = map(_literal_name, v.args)
+        any(isnothing, names) && throw(ArgumentError("@tool `preview=[...]` takes argument names, got `$v`"))
+        return :(String[$(names...)])
+    end
+    return esc(v)
 end
 
 """
@@ -392,19 +470,276 @@ function _result_text(v)
     return repr(MIME"text/plain"(), v)
 end
 
-function _confirm_tools()
-    v = _load_pref("confirm_tools", false)
-    v isa Bool || throw(ArgumentError("Preference `confirm_tools` must be true or false, got $(repr(v))"))
-    return v
+const _APPROVAL_MODES = ("all", "auto", "none", "yolo")
+const _WARNED_CONFIRM_TOOLS = Ref(false)
+
+function _approval_mode(mode)
+    m = mode isa Symbol ? String(mode) : mode
+    m isa AbstractString && m in _APPROVAL_MODES || throw(ArgumentError(
+        "tool approval must be \"all\", \"auto\", \"none\" or \"yolo\", got $(repr(mode))"))
+    return String(m)
 end
 
-function _confirm(c::ToolCall, io::IO = stdout, input::IO = stdin)
-    printstyled(io, "Run ", _call_signature(c; n = 200), "? [y/N] "; color = :yellow)
-    return lowercase(strip(readline(input))) in ("y", "yes")
+"""
+    tool_approval() -> String
+
+The active tool approval mode, from the Preference `tool_approval` (default `"auto"`): which
+security levels are confirmed on the terminal before a tool call runs.
+
+| Confirm first? | `"all"` | `"auto"` | `"none"` | `"yolo"` |
+|---|---|---|---|---|
+| `:low` | yes | no | no | no |
+| `:medium` | yes | yes | no | no |
+| `:high` | yes | yes | yes | no |
+
+See also [`set_tool_approval!`](@ref), [`needs_confirmation`](@ref), and
+[`tool_auto_approvals`](@ref) for per-tool overrides.
+"""
+function tool_approval()
+    if !_WARNED_CONFIRM_TOOLS[] && _load_pref("confirm_tools") !== nothing
+        _WARNED_CONFIRM_TOOLS[] = true
+        @warn "The Preference `confirm_tools` is no longer read; set `tool_approval` to \"all\", \"auto\", \"none\" or \"yolo\" (default \"auto\") instead"
+    end
+    v = _load_pref("tool_approval", "auto")
+    v isa AbstractString && v in _APPROVAL_MODES || throw(ArgumentError(
+        "Preference `tool_approval` must be \"all\", \"auto\", \"none\" or \"yolo\", got $(repr(v))"))
+    return String(v)
+end
+
+"""
+    set_tool_approval!(mode) -> String
+
+Save the tool approval mode (`"all"`, `"auto"`, `"none"` or `"yolo"`, or the same as a Symbol)
+to the Preference `tool_approval`; `nothing` removes it, going back to `"auto"`. Takes effect
+from the next tool call. Returns the active mode.
+"""
+function set_tool_approval!(mode::Union{Nothing,AbstractString,Symbol})
+    mode === nothing ? _delete_pref!("tool_approval") : _save_pref!("tool_approval", _approval_mode(mode))
+    return tool_approval()
+end
+
+# Index into _SECURITY_LEVELS from which each mode asks first ("yolo" never asks).
+const _CONFIRM_FROM = Dict("all" => 1, "auto" => 2, "none" => 3, "yolo" => 4)
+_needs_confirmation(level::Symbol, mode::AbstractString) =
+    findfirst(==(level), _SECURITY_LEVELS) >= _CONFIRM_FROM[mode]
+
+# Security and preview functions get every parameter: `nothing` for optionals the model left out.
+_padded(t::ToolSpec, args) = Any[args; fill(nothing, length(t.parameters) - length(args))]
+
+function _security_level(t::ToolSpec, args)
+    t.security isa Symbol && return t.security
+    level = try
+        t.security(_padded(t, args)...)
+    catch e
+        e isa InterruptException && rethrow()
+        @warn "JAIL: the security function of tool `$(t.name)` threw; the call counts as :high" exception = e
+        return :high
+    end
+    level isa Symbol && level in _SECURITY_LEVELS && return level
+    @warn "JAIL: the security function of tool `$(t.name)` returned $(repr(level)), not :low, :medium or :high; the call counts as :high"
+    return :high
+end
+
+_preview_value(v::AbstractString) = String(v)
+_preview_value(v) = repr(v)
+
+# `args` are the converted positional arguments; trailing optionals the model left out are absent.
+function _preview_text(t::ToolSpec, args)
+    p, n = t.preview, length(args)
+    p === nothing && return nothing
+    if p isa String
+        i = findfirst(q -> q.name == p, t.parameters)
+        return i <= n ? _preview_value(args[i]) : nothing
+    elseif p isa Vector{String}
+        parts = [string(q.name, " = ", repr(args[i])) for (i, q) in enumerate(t.parameters) if i <= n && q.name in p]
+        return isempty(parts) ? nothing : join(parts, ", ")
+    end
+    try
+        return _preview_value(p(_padded(t, args)...))
+    catch e
+        e isa InterruptException && rethrow()
+        @warn "JAIL: the preview function of tool `$(t.name)` threw" exception = e
+        return nothing
+    end
+end
+
+# The registered tool and converted arguments of a call, as the tool loop would run it.
+function _spec_and_args(c::ToolCall)
+    t = get(_TOOLS, c.name, nothing)
+    t === nothing && throw(ArgumentError("no tool named \"$(c.name)\" is registered"))
+    haskey(c.arguments, _BAD_ARGUMENTS) &&
+        throw(ArgumentError("the arguments were not a valid JSON object: $(c.arguments[_BAD_ARGUMENTS])"))
+    return t, _call_args(t, c.arguments)
+end
+
+"""
+    security_level(call::ToolCall) -> Symbol
+
+The security level (`:low`, `:medium` or `:high`) of a call to a registered tool, as the tool
+loop computes it: the tool's fixed level, or its security function applied to the call's
+arguments (converted from JSON; `nothing` for optional arguments the call leaves out). Throws an
+`ArgumentError` for an unregistered tool or invalid arguments.
+
+```julia
+security_level(ToolCall("c1", "shell", Dict("cmd" => "ls -la")))   # :low, say
+```
+"""
+security_level(c::ToolCall) = _security_level(_spec_and_args(c)...)
+
+"""
+    needs_confirmation(call::ToolCall; approval = tool_approval()) -> Bool
+
+Whether the tool loop would ask on the terminal before running `call`: its entry in
+[`tool_auto_approvals`](@ref) if it has one, else its [`security_level`](@ref) under the
+`approval` mode (see [`tool_approval`](@ref)).
+"""
+needs_confirmation(c::ToolCall; approval::Union{AbstractString,Symbol} = tool_approval()) =
+    _confirmation_needed(_spec_and_args(c)..., _approval_mode(approval))
+
+"""
+    tool_auto_approvals() -> Dict{String,Any}
+
+The Preference `tool_auto_approvals`: per-tool overrides of the confirmation rule. Keys are tool
+names for tools in the `"global"` group, and group names for the others, holding either a table
+of tool names or a single `true`/`false` for the whole group:
+
+```toml
+[JAIL.tool_auto_approvals]
+get_weather = true         # never asks, whatever its security level or `tool_approval`
+shell.run_shell = false    # always asks, even with tool_approval = "yolo"
+files = true               # every tool in the "files" group
+```
+
+Tools not listed follow their security level and [`tool_approval`](@ref). See also
+[`set_tool_auto_approval!`](@ref).
+"""
+function tool_auto_approvals()
+    v = _load_pref("tool_auto_approvals", nothing)
+    v === nothing && return Dict{String,Any}()
+    v isa AbstractDict || throw(ArgumentError("Preference `tool_auto_approvals` must be a table, got $(repr(v))"))
+    out = Dict{String,Any}()
+    for (k, x) in v
+        if x isa Bool
+            out[k] = x
+        elseif x isa AbstractDict && all(y -> y isa Bool, values(x))
+            out[k] = Dict{String,Bool}(x)
+        else
+            throw(ArgumentError("Preference `tool_auto_approvals.$k` must be true, false, or a table of tool names = true/false; got $(repr(x))"))
+        end
+    end
+    return out
+end
+
+# true: never ask; false: always ask; nothing: the security level and approval mode decide.
+function _auto_approval(t::ToolSpec, table = tool_auto_approvals())
+    if t.group == _DEFAULT_GROUP
+        v = get(table, t.name, nothing)
+        return v isa Bool ? v : nothing
+    end
+    g = get(table, t.group, nothing)
+    g isa Bool && return g
+    return g isa AbstractDict ? get(g, t.name, nothing) : nothing
+end
+
+function _confirmation_needed(t::ToolSpec, args, mode::AbstractString)
+    a = _auto_approval(t)
+    return a === nothing ? _needs_confirmation(_security_level(t, args), mode) : !a
+end
+
+function _registered_tool(x::Union{AbstractString,Function})
+    name = x isa Function ? _tool_name(x) : String(x)
+    haskey(_TOOLS, name) || throw(ArgumentError("no tool named \"$name\" is registered"))
+    return _TOOLS[name]
+end
+
+"""
+    set_tool_auto_approval!(tool, value::Union{Bool,Nothing}) -> Dict{String,Any}
+
+Save one entry of the Preference [`tool_auto_approvals`](@ref): `true` runs the tool's calls
+without asking, `false` always asks, `nothing` removes the entry. `tool` is a registered tool's
+name, function or [`ToolSpec`](@ref), or `"group:<group>"` for a whole group (not `"global"`).
+Returns the updated table. Answering `a` at a confirmation prompt does
+`set_tool_auto_approval!(tool, true)`.
+
+```julia
+set_tool_auto_approval!(get_weather, true)
+set_tool_auto_approval!("group:shell", false)
+set_tool_auto_approval!(get_weather, nothing)
+```
+"""
+function set_tool_auto_approval!(tool::Union{AbstractString,Function,ToolSpec}, value::Union{Nothing,Bool})
+    table = tool_auto_approvals()
+    if tool isa AbstractString && startswith(tool, "group:")
+        g = _group_name(tool[length("group:")+1:end])
+        g == _DEFAULT_GROUP && throw(ArgumentError(
+            "tools of the \"$g\" group are approved one by one; name the tool instead"))
+        value === nothing ? delete!(table, g) : (table[g] = value)
+    else
+        t = tool isa ToolSpec ? tool : _registered_tool(tool)
+        if t.group == _DEFAULT_GROUP
+            get(table, t.name, nothing) isa AbstractDict && throw(ArgumentError(
+                "tool_auto_approvals.$(t.name) holds the group \"$(t.name)\"; rename the tool or the group"))
+            value === nothing ? delete!(table, t.name) : (table[t.name] = value)
+        else
+            g = get(table, t.group, nothing)
+            g isa Bool && throw(ArgumentError(
+                "the whole group \"$(t.group)\" is set to $g; change it with " *
+                "`set_tool_auto_approval!(\"group:$(t.group)\", nothing)` first"))
+            sub = g isa AbstractDict ? g : Dict{String,Bool}()
+            value === nothing ? delete!(sub, t.name) : (sub[t.name] = value)
+            isempty(sub) ? delete!(table, t.group) : (table[t.group] = sub)
+        end
+    end
+    isempty(table) ? _delete_pref!("tool_auto_approvals") : _save_pref!("tool_auto_approvals", table)
+    return tool_auto_approvals()
+end
+
+"""
+    tool_preview(call::ToolCall) -> Union{String,Nothing}
+
+The text shown for `call` in a confirmation prompt and under its streamed `→ label` line, from
+the tool's `preview` (see [`register_tool!`](@ref)); `nothing` when the tool has no preview.
+"""
+tool_preview(c::ToolCall) = _preview_text(_spec_and_args(c)...)
+
+# A registered call's preview, or nothing (no preview, or arguments that don't convert).
+function _call_preview(c::ToolCall)
+    t = get(_TOOLS, c.name, nothing)
+    (t === nothing || t.preview === nothing) && return nothing
+    try
+        return tool_preview(c)
+    catch e
+        e isa ArgumentError || rethrow()
+        return nothing
+    end
+end
+
+_print_preview(io::IO, text::AbstractString) = println(io, replace(rstrip(text), r"^"m => "    "))
+
+# `shown`: the preview was just printed under the call's streamed line, so don't repeat it.
+# Returns :yes, :no or :always.
+function _confirm(c::ToolCall, t::ToolSpec, args, level::Symbol; shown::Bool = false,
+                  io::IO = stdout, input::IO = stdin)
+    preview = _preview_text(t, args)
+    ask = "run it? [y/N/a = always] "
+    if preview === nothing
+        printstyled(io, _call_signature(c; n = 200), " [", level, "]: ", ask; color = :yellow)
+    elseif shown
+        printstyled(io, t.label, " [", level, "]: ", ask; color = :yellow)
+    else
+        printstyled(io, t.label, " [", level, "]\n"; color = :yellow)
+        _print_preview(io, preview)
+        printstyled(io, uppercasefirst(ask); color = :yellow)
+    end
+    answer = lowercase(strip(readline(input)))
+    return answer in ("y", "yes") ? :yes : answer in ("a", "always") ? :always : :no
 end
 
 # Never throws for problems the model can fix: they become error results it can read.
-function _run_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; confirm::Bool = false)
+# `before_confirm(c)` runs just before the user is asked; it returns true when it has already
+# shown the call's preview.
+function _run_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; approval::AbstractString,
+                   before_confirm = nothing)
     err(msg) = ToolResult(c.id, c.name, msg; is_error = true)
     i = findfirst(t -> t.name == c.name, specs)
     i === nothing && return err("Unknown tool `$(c.name)`. Available tools: " *
@@ -418,7 +753,21 @@ function _run_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; confirm::Bool =
         e isa ArgumentError || rethrow()
         return err("Invalid arguments for `$(t.name)`: $(e.msg)")
     end
-    confirm && !_confirm(c) && return err("The user declined to run this tool call.")
+    auto = _auto_approval(t)
+    level = auto === true ? :low : _security_level(t, args)
+    if auto === false || (auto === nothing && _needs_confirmation(level, approval))
+        shown = before_confirm !== nothing && before_confirm(c) === true
+        answer = _confirm(c, t, args, level; shown)
+        answer === :no && return err("The user declined to run this tool call.")
+        if answer === :always
+            try
+                set_tool_auto_approval!(t, true)
+            catch e
+                e isa InterruptException && rethrow()
+                @warn "JAIL: could not save the auto-approval for `$(t.name)`" exception = e
+            end
+        end
+    end
     value = try
         t.f(args...)
     catch e

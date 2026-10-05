@@ -18,7 +18,8 @@ JAIL is an early rewrite. What works today:
   `"default"` session started when JAIL loads.
 - **Chat**: [`chat!`](@ref) sends text turns on a session to any provider, optionally streamed.
 - **Tools**: Julia functions registered with [`register_tool!`](@ref) or [`@tool`](@ref);
-  `chat!` runs the calls the model makes and sends the results back.
+  `chat!` runs the calls the model makes, asking first according to each tool's security level
+  and your Preferences, and sends the results back.
 - **REPL modes**: `|` for listing and switching providers, models, sessions and tools, `}` for
   chatting with the active session's model.
 

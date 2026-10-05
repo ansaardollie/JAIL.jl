@@ -205,7 +205,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
 | `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |
 | `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`chat!`](@ref) call before further calls are answered "not run" (default 10) |
-| `confirm_tools` | `true` / `false` | by hand | Ask `[y/N]` on the terminal before each tool call (default `false`) |
+| `tool_approval` | `"all"` / `"auto"` / `"none"` / `"yolo"` | by hand | Which tool security levels are confirmed with `[y/N]` before running (default `"auto"`: medium and high) |
+| `tool_auto_approvals` | table of tool name (or group) → `true` / `false` | [`set_tool_auto_approval!`](@ref), `a` at a prompt, `tools approve` | `true`: never ask for that tool; `false`: always ask (default empty) |
 | `persist_sessions` | `true` / `false` | by hand | Save sessions to disk from their first message on (default `true`) |
 | `storage_dir` | path | by hand | Folder for saved sessions (default `".jail"`, relative to the working directory) |
 

@@ -121,7 +121,8 @@ doesn't show reasoning.
 
 `chat!(s, prompt; stream = true)` prints the reply's text to `stdout` as it arrives and still
 returns the full [`AssistantMessage`](@ref). Tool calls and their results are printed as
-`→ name(args)` and `← result` lines between the text. All built-in providers can stream. The
+`→ label` (plus the tool's `preview`, if any) and `← label: result` lines between the text (see
+[Tools](tools.md#Previewing-arguments)). All built-in providers can stream. The
 `}` REPL mode streams when the Preference `stream = true` is set (see [REPL modes](repl.md)).
 
 ## Options and Preferences
@@ -132,7 +133,8 @@ returns the full [`AssistantMessage`](@ref). Tool calls and their results are pr
 - `max_tool_rounds` caps tool rounds for one call: `chat!(s, "..."; max_tool_rounds = 2)`.
   Without it, the `max_tool_rounds` Preference applies (default 10).
 - `store_requests` (default `true`): see above.
-- `confirm_tools` (default `false`): see [Tools](tools.md#Preferences).
+- `tool_approval` (default `"auto"`) and `tool_auto_approvals` (default empty): which tool calls
+  are confirmed first; see [Tools](tools.md#Security-levels-and-approval).
 
 ```toml
 [JAIL]

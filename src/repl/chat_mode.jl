@@ -116,7 +116,6 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     s.model === nothing && throw(ArgumentError(
         "session \"$(s.name)\" has no model; choose one in the `|` mode with `use provider/model` or `select`"))
     stream = _stream_pref() && _supports_streaming(s.model.provider)
-    confirm = _confirm_tools()
     n0 = length(s.messages)
     status, alt, line_start = Ref(false), Ref(false), Ref(true)
     clear_status() = status[] && (print(io, "\r\e[2K"); status[] = false)
@@ -141,14 +140,15 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     end
     function on_step(x)
         x isa AssistantMessage && return
+        # The confirmation prompt needs the line to itself; when streaming, the preview is shown.
+        x isa _Confirming && (clear_status(); return stream)
         if stream
             clear_status()
             enter_alt()
             line_start[] || (println(io); line_start[] = true)
             _print_tool(io, x)
         elseif x isa ToolCall
-            # A confirmation prompt needs the line to itself.
-            confirm ? clear_status() : show_status("→ $(_tool_label(x.name))…", :cyan)
+            show_status("→ $(_tool_label(x.name))…", :cyan)
         else
             show_status("thinking…")
         end

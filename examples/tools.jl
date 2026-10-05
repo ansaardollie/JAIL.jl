@@ -12,7 +12,15 @@
 #
 # Preferences (in [JAIL] of LocalPreferences.toml):
 #   max_tool_rounds = 10     # tool rounds per chat! call before calls are answered "not run"
-#   confirm_tools = true     # ask [y/N] on the terminal before every tool call (default false)
+#   tool_approval = "auto"   # which security levels are confirmed [y/N] before running:
+#                            #   "all" every call, "auto" medium + high (default), "none" high
+#                            #   only, "yolo" never. Replaces `confirm_tools` (no longer read).
+#
+# Security and preview: each tool has a level (:low, :medium default, :high, or a function of
+# the call's arguments returning one) and an optional `preview` of its arguments shown in the
+# confirmation prompt and under the streamed `→ label` line (one argument's raw text, several
+# as `name = value`, or a function's text). examples/tool_security.jl runs them against a
+# scripted local model so the prompts and previews can be seen offline.
 #
 # REPL: in the `|` mode, `tools` lists tools by group (* = used by the active session), `tools
 # show <name>`, `tools use/add/drop <name>...` (`group:<group>` = every tool in it), `tools all`,
@@ -28,6 +36,8 @@
 # `persist_sessions = false`).
 #
 # Open / tentative:
+# - Security/preview functions get every parameter of the tool; optional ones the model left out
+#   are `nothing`.
 # - Descriptions come from the standard docstring above the function (not one inside the body).
 # - No `name =` override: functions whose names aren't valid tool names must be renamed.
 # - Calls run one after another; no `tool_choice` (forcing a tool) yet.
@@ -86,6 +96,35 @@ try
     @eval @tool label="Both" list_files read_text     # a label names one tool
 catch e
     println("ArgumentError: ", e.error.msg)
+end
+
+# --- 2c. Security levels and argument previews --------------------------------------------
+
+"Evaluate Julia code and return the printed output."
+run_julia(code::String) = sprint(io -> show(io, include_string(Module(), code)))
+
+# High: with the default tool_approval = "auto" every call is confirmed, showing only the code.
+@tool security=high preview=code label="Julia code" run_julia
+
+# Level from the arguments: low inside the working directory, high anywhere else.
+register_tool!(read_text; group = "files",
+               security = path -> startswith(abspath(path), pwd() * "/") ? :low : :high,
+               preview = [:path])
+
+@tool security=low get_weather                        # never confirmed unless "all"
+
+for t in (tools("global")..., tools("files")...)
+    println(rpad(t.name, 15), "security = ", t.security isa Symbol ? t.security : "by arguments",
+            ", preview = ", t.preview === nothing ? "none" : t.preview isa Function ? "custom" : t.preview)
+end
+
+for bad in (() -> register_tool!(run_julia; security = :critical),
+            () -> register_tool!(run_julia; preview = :source))
+    try
+        bad()
+    catch e
+        println("ArgumentError: ", e.msg)
+    end
 end
 
 # --- 3. Which tools a session offers -----------------------------------------------------

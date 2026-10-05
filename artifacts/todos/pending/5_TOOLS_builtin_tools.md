@@ -15,7 +15,10 @@
 
 1. `execute_julia_code`: runs model-provided code, captures all output, and asks the user to
    confirm before every run unless a Preference disables it. Ask the owner for the name, the
-   Preference key, the module it evaluates in, and how output/errors are returned.
+   module it evaluates in, and how output/errors are returned. Confirmation now exists
+   generically (`design_decisions/29_TOOLS_security_approval_preview.md`,
+   `30_TOOLS_auto_approvals.md`): register it with `security = :high, preview = :code` (and a
+   group, e.g. `"julia"`) rather than adding a separate Preference.
 2. Source lookup (`*_source_def`): given a type/method/module, return its source definition.
 3. How built-ins relate to the registry: auto-registered, opt-in, or only in the `&` mode.
 4. The `&` agentic REPL mode using them.

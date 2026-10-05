@@ -20,6 +20,9 @@ const _MODEL_HELP = """
                                            `group:<group>` argument stands for all tools in it
     tools add <name>... | drop <name>...  add to / remove from the active session's tools
     tools all | none                      every registered tool (the default) | no tools
+    tools approve <name|group:<group>>... run these tools' calls without asking (saved in
+                                           the Preference tool_auto_approvals)
+    tools unapprove <name|group:<group>>...  remove those entries (security level decides)
     help, ?                               show this help
 
     Press backspace on an empty line to leave this mode."""
@@ -35,10 +38,12 @@ function _nargs(cmd, args, n::UnitRange)
                  "session new" => "session new [name] [provider/model]",
                  "session use" => "session use <name|id>", "session restore" => "session restore",
                  "session rm" => "session rm <name|id> [--files]",
-                 "tools" => "tools [show <name> | use|add|drop <name>... | all | none]",
+                 "tools" => "tools [show <name> | use|add|drop|approve|unapprove <name>... | all | none]",
                  "tools show" => "tools show <name>", "tools use" => "tools use <name|group:<group>>...",
                  "tools add" => "tools add <name|group:<group>>...", "tools drop" => "tools drop <name|group:<group>>...",
-                 "tools all" => "tools all", "tools none" => "tools none")
+                 "tools all" => "tools all", "tools none" => "tools none",
+                 "tools approve" => "tools approve <name|group:<group>>...",
+                 "tools unapprove" => "tools unapprove <name|group:<group>>...")
     throw(ArgumentError("usage: `$(get(usage, cmd, cmd))`"))
 end
 
@@ -160,16 +165,22 @@ function _list_tools(s::Session)
     println("Session \"", s.name, "\" uses ", s.tools === nothing ? "every registered tool" :
             "$(length(mine)) of $(length(all)) tools", ":")
     width = maximum(t -> length(t.name), all)
+    table = tool_auto_approvals()
     for g in _tool_groups()
         printstyled("  ", g, "\n"; bold = true)
         for t in all
             t.group == g || continue
             label = t.label == t.name ? "" : string(" (", repr(t.label), ")")
             desc = isempty(t.description) ? "" : _short(first(split(t.description, '\n')), 60)
-            println(t.name in mine ? "  * " : "    ", rpad(t.name, width), "  ", desc, label)
+            print(t.name in mine ? "  * " : "    ", rpad(t.name, width), "  ", desc, label)
+            a = _auto_approval(t, table)
+            a === nothing || printstyled(a ? "  [auto-approved]" : "  [always asks]"; color = a ? :green : :yellow)
+            println()
         end
     end
 end
+
+_approval_label(a) = a === nothing ? "by security level and tool_approval" : a ? "auto-approved" : "always asks"
 
 const _GROUP_ARG = "group:"
 
@@ -190,7 +201,13 @@ function _cmd_tools(args)
         _nargs("tools show", names, 1:1)
         haskey(_TOOLS, names[1]) || throw(ArgumentError("no tool named \"$(names[1])\" is registered"))
         show(stdout, MIME"text/plain"(), _TOOLS[names[1]])
-        println()
+        println("\n  approval: ", _approval_label(_auto_approval(_TOOLS[names[1]])))
+    elseif sub in ("approve", "unapprove")
+        isempty(names) && _nargs("tools $sub", names, 1:typemax(Int))
+        for n in names
+            set_tool_auto_approval!(startswith(n, _GROUP_ARG) ? n : _registered_tool(n), sub == "approve" ? true : nothing)
+            println(n, ": ", sub == "approve" ? "auto-approved" : _approval_label(nothing))
+        end
     elseif sub in ("use", "add", "drop")
         isempty(names) && _nargs("tools $sub", names, 1:typemax(Int))
         names = _expand_tool_args(names)
@@ -210,7 +227,7 @@ function _cmd_tools(args)
         set_tools!(s, sub == "all" ? nothing : String[])
         _session_tools_changed(s)
     else
-        throw(ArgumentError("unknown `tools` subcommand `$sub`; use show, use, add, drop, all or none"))
+        throw(ArgumentError("unknown `tools` subcommand `$sub`; use show, use, add, drop, all, none, approve or unapprove"))
     end
 end
 
@@ -263,9 +280,9 @@ function _complete_model_mode(before::AbstractString)
         n == 3 && parts[2] in ("use", "rm") && return _matching(unique(s.name for s in _SESSIONS), partial)
         n in (3, 4) && parts[2] == "new" && return _complete_model_spec(partial)
     elseif cmd == "tools"
-        n == 2 && return _matching(("show", "use", "add", "drop", "all", "none"), partial)
+        n == 2 && return _matching(("show", "use", "add", "drop", "all", "none", "approve", "unapprove"), partial)
         sub = parts[2]
-        sub in ("use", "add", "drop") && return _matching(
+        sub in ("use", "add", "drop", "approve", "unapprove") && return _matching(
             [sort!(collect(keys(_TOOLS))); [_GROUP_ARG * g for g in _tool_groups()]], partial)
         sub == "show" && n == 3 && return _matching(sort!(collect(keys(_TOOLS))), partial)
     end

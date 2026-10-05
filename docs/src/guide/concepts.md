@@ -49,7 +49,9 @@ See [Chat](chat.md).
 A tool is a documented Julia function registered with [`register_tool!`](@ref) or
 [`@tool`](@ref). JAIL describes it to each provider in that provider's format, runs the calls
 the model makes, and sends the results back. Tool calls and results are content parts and
-messages like any other, so they stay in the provider-agnostic history. See [Tools](tools.md).
+messages like any other, so they stay in the provider-agnostic history. Before a call runs, JAIL
+asks on the terminal if the tool's security level, the `tool_approval` Preference or a
+per-tool auto-approval says so. See [Tools](tools.md).
 
 ## Configuration lives in Preferences
 

@@ -41,6 +41,11 @@ In a plain terminal `julia` (not the agent's tool REPL):
    JSON file (OSC 8) in VS Code's terminal and iTerm2; without streaming the `→ label…` line is
    erased; with `confirm_tools = true` and no streaming the prompt is not overwritten;
    `tools use group:<g>` and its Tab completion.
+10. Tool approval (see `design_decisions/29_TOOLS_security_approval_preview.md`,
+    `30_TOOLS_auto_approvals.md`): run `examples/tool_security.jl` in a terminal REPL with each
+    `MODE`; prompts read `y`/`n`/`a` correctly in `}` (streamed and not); a streamed preview is
+    not repeated in the prompt; `a` writes `[JAIL.tool_auto_approvals]`; `tools approve` /
+    `unapprove` and the `[auto-approved]` / `[always asks]` marks.
 
 ## Why
 

@@ -143,7 +143,8 @@ same for the active session, and `group:<group>` stands for a whole group (see
 When a reply contains [`ToolCall`](@ref)s (`stop_reason = :tool_use`), `chat!`:
 
 1. runs each call in order, converting the JSON arguments to the parameter types (omitted
-   optional arguments use the function's defaults);
+   optional arguments use the function's defaults), after asking on the terminal when the call
+   needs confirmation (see [Security levels and approval](#Security-levels-and-approval));
 2. appends a [`ToolResultMessage`](@ref) with one [`ToolResult`](@ref) per call, each with its
    own `id` (a version 7 UUID), and saves the call and result together as
    `<storage_dir>/tools/<session id>/<id>.json` (see
@@ -166,16 +167,127 @@ s.messages   # UserMessage, AssistantMessage (get_weather call), ToolResultMessa
 chat!(s, "And Rome?"; stream = true)   # also prints → label and ← label: result lines
 ```
 
+## Security levels and approval
+
+Every tool has a security level: `:low`, `:medium` (the default) or `:high`. The Preference
+`tool_approval` (default `"auto"`) decides which levels are confirmed on the terminal before
+the call runs:
+
+| Confirm first? | `"all"` | `"auto"` | `"none"` | `"yolo"` |
+|---|---|---|---|---|
+| `:low` | yes | no | no | no |
+| `:medium` | yes | yes | no | no |
+| `:high` | yes | yes | yes | no |
+
+So by default every call of a tool registered without `security` is confirmed. A declined call
+is reported to the model as an error result. Give tools that run code or shell commands, or that
+change files, `security = :high`: then only an explicit choice (`tool_approval = "yolo"`, or an
+auto-approval below) runs them without asking.
+
+The level can also depend on the arguments: give a function that takes the same positional
+arguments as the tool and returns a level. It always gets every parameter: an optional argument
+the model left out is passed as `nothing` (the tool itself still gets its default). A function
+that throws or returns anything else makes the call `:high`.
+
+```julia
+"Read a text file."
+read_text(path::String) = read(path, String)
+"Run a shell command and return its output."
+run_shell(cmd::String) = read(`sh -c $cmd`, String)
+
+# Low inside the working directory, high anywhere else.
+register_tool!(read_text; security = path -> startswith(abspath(path), pwd() * "/") ? :low : :high)
+register_tool!(run_shell; security = :high, preview = :cmd)
+@tool security=low get_weather
+```
+
+## Previewing arguments
+
+`preview` chooses what is shown for a call: in the confirmation prompt and under the streamed
+`→ label` line.
+
+| `preview` | Shown |
+|---|---|
+| `nothing` (default) | nothing on the streamed line; the prompt shows `name(arg = value, …)` |
+| `:cmd` | the argument's text as it is (multi-line code or a command, no quotes) |
+| `[:path, :mode]` | those arguments as `path = "…", mode = …` |
+| a function | the text it returns; it gets the same arguments as a security function |
+
+```text
+run_shell [high]
+    rm -rf build/
+Run it? [y/N/a = always]
+```
+
+When the call was just streamed (its preview is already under `→ label`), the prompt is a
+single line: `run_shell [high]: run it? [y/N/a = always]`. Answering `a` runs the call and
+auto-approves the tool from then on (see below).
+
+`@tool preview=cmd run_shell` takes an argument name, `preview=[path, mode]` several, and
+`preview=(path, mode) -> path` a function. A bare name means an argument, so pass a named
+function with `register_tool!(f; preview = g)`.
+
+## Auto-approving tools
+
+The Preference `tool_auto_approvals` overrides the rule above for chosen tools or groups,
+whatever their security level and `tool_approval` (including `"all"` and `"yolo"`):
+
+- `true`: the tool's calls run without asking;
+- `false`: they are always confirmed;
+- not listed: the security level and `tool_approval` decide.
+
+Tools of the `"global"` group are keyed by name. Other tools sit under their group, which can
+instead be a single `true`/`false` for all of its tools (TOML can't hold both for one group):
+
+```toml
+[JAIL.tool_auto_approvals]
+get_weather = true          # a "global" tool
+files = true                # every tool in the "files" group
+
+[JAIL.tool_auto_approvals.shell]
+run_shell = false           # always ask, even with tool_approval = "yolo"
+```
+
+[`set_tool_auto_approval!`](@ref) edits one entry (`nothing` removes it) and
+[`tool_auto_approvals`](@ref) reads the table; answering `a` at a prompt saves `true` for that
+tool. In the `|` REPL mode, `tools approve <name|group:<group>>...` and `tools unapprove ...` do
+the same, and `tools` marks tools as `[auto-approved]` or `[always asks]`.
+
+```julia
+set_tool_auto_approval!(get_weather, true)
+set_tool_auto_approval!("group:shell", false)
+set_tool_auto_approval!(get_weather, nothing)
+```
+
+## Checking a call
+
+These answer what the tool loop would do with a [`ToolCall`](@ref), converting its JSON
+arguments the same way:
+
+```julia
+c = ToolCall("c1", "run_shell", Dict("cmd" => "rm -rf build/"))
+security_level(c)                         # :high
+needs_confirmation(c)                     # under tool_auto_approvals() and tool_approval()
+needs_confirmation(c; approval = "yolo")  # false
+tool_preview(c)                           # "rm -rf build/"
+```
+
+[`tool_approval`](@ref) returns the current mode and [`set_tool_approval!`](@ref) saves a new
+one to the Preferences (`nothing` removes it).
+
 ## Preferences
 
 - `max_tool_rounds` (default 10): tool rounds per `chat!` call. When it is reached, further
   calls are answered with "not run" error results and the last reply is returned with
   `stop_reason = :tool_use`. `chat!(...; max_tool_rounds = n)` overrides it for one call.
-- `confirm_tools` (default `false`): ask `Run get_weather(city = "Paris")? [y/N]` on the
-  terminal before each call; a declined call is reported to the model.
+- `tool_approval` (default `"auto"`): `"all"`, `"auto"`, `"none"` or `"yolo"`; see
+  [Security levels and approval](#Security-levels-and-approval). The older `confirm_tools`
+  Preference is no longer read (JAIL warns once if it is set).
+- `tool_auto_approvals` (default empty): per-tool and per-group `true`/`false` overrides; see
+  [Auto-approving tools](#Auto-approving-tools).
 
 ```toml
 [JAIL]
 max_tool_rounds = 5
-confirm_tools = true
+tool_approval = "none"
 ```

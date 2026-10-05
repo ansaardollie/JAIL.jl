@@ -1,3 +1,5 @@
+> **Superseded in part by:** `29_TOOLS_security_approval_preview.md` (`confirm_tools` → `tool_approval` + security levels)
+
 # Decision: Session tools, tool-call types and the tool loop
 
 | Field | Value |
