@@ -16,41 +16,56 @@ return to `julia>`.
 ## The chat mode
 
 Each line is sent with [`chat!`](@ref) as the next turn of the active session, so the
-conversation carries on across lines and stays in `session.messages`. The reply is rendered
-as Markdown. While waiting, a dim `thinking…` shows; Ctrl-C cancels the request and leaves the
-history unchanged. A line is printed after the reply only when it didn't end normally:
+conversation carries on across lines and stays in `session.messages`. The finished turn is
+printed in a purple box, like the box of an `@info` message, holding a green
+`Response (model; N in; M out):` box with the reply rendered as Markdown (the colors are the
+Julia logo's, in 24-bit color); the
+tokens are summed over every request of the turn. While waiting, a dim `thinking…` shows;
+Ctrl-C cancels the request and leaves the history unchanged. A line is printed after the box
+only when the reply didn't end normally:
 
 ```text
 chat> How do I append to a vector?
-  Use push!:
-
-  v = [1, 2]
-  push!(v, 3)
+┏ Chat: default
+┃ ┏ Response (anthropic/claude-sonnet-4-5; 14 in; 30 out):
+┃ ┃   Use push!:
+┃ ┃
+┃ ┃   v = [1, 2]
+┃ ┃   push!(v, 3)
+┃ ┗
+┗
 chat> Tell me a long story
-  Once upon
+┏ Chat: default
+┃ ┏ Response (anthropic/claude-sonnet-4-5; 60 in; 10 out):
+┃ ┃   Once upon
+┃ ┗
+┗
 [stop reason: max_tokens]
 ```
 
-When the model calls tools, each finished turn starts with a `Tool calls` block: one line per
+When the model calls tools, a red `Tool calls` box comes before the response: one line per
 call with ✓ or ✗ and the tool's label (see [Groups and labels](tools.md#Groups-and-labels)),
 followed by `View`, a link to the call's saved JSON file (see
 [Saving and restoring](sessions.md#Saving-and-restoring)) in terminals that support OSC 8
-hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). The reply text follows under a
-`Response (model; N in; M out):` heading, with the input and output tokens summed over every
-request of the turn. While the turn runs
+hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). When Julia is not interactive (a script run
+with `julia script.jl` calling `chat!(...; stream = true)`), a blue `Prompt:` box with the
+prompt comes first. While the turn runs
 without streaming, a transient line shows `thinking…` or the tool being run. If the tool round
 limit is reached, the turn ends with `[stop reason: tool_use]`.
 
 ```text
 chat> Should I pack an umbrella for Paris?
-Tool calls (1):
-  ✓ get_weather  View
-
-Response (anthropic/claude-sonnet-4-5; 1840 in; 52 out):
-  No, it will be sunny for the next three days.
+┏ Chat: default
+┃ ┏ Tool calls (1):
+┃ ┃   ✓ get_weather  View
+┃ ┗
+┃ ┏ Response (anthropic/claude-sonnet-4-5; 1840 in; 52 out):
+┃ ┃   No, it will be sunny for the next three days.
+┃ ┗
+┗
 ```
 
-This transcript is illustrative; the reply text depends on the model.
+These transcripts are illustrative; the reply text and token counts depend on the model.
 
 A call that needs confirmation (see
 [Security levels and approval](tools.md#Security-levels-and-approval)) stops the turn with a
@@ -66,8 +81,8 @@ terminal's alternate screen (like `less`), under your prompt, with a `→ label`
 call (followed by the tool's `preview`, indented, if it has one) and a `← label: result` line per
 result as they happen. A confirmation prompt for a streamed call doesn't repeat the preview.
 When it's complete the normal
-screen comes back and only the finished turn (the `Tool calls` block, then the rendered
-Markdown text) is printed, so the streamed text and tool lines never end
+screen comes back and only the finished turn (the boxes described above) is printed, so the
+streamed text and tool lines never end
 up in the REPL output or scrollback. If the request fails or you press Ctrl-C, the normal screen
 comes back with just the error. Without the Preference, `thinking…` shows until the whole reply
 is ready.

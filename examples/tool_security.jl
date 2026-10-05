@@ -227,8 +227,8 @@ for bad in (() -> register_tool!(shell; security = :critical),
     end
 end
 
-# The same prompts in the `}` REPL mode show the finished turn as a `Tool calls` block
-# (✓/✗, label, View link) followed by `Response (model; N in; M out):`:
+# The same prompts in the `}` REPL mode show the finished turn boxed: a `Tool calls` box
+# (✓/✗, label, View link) followed by a `Response (model; N in; M out):` box:
 use_session!(s)
 #   chat> Clean up the build folder
 # close(server) when done.

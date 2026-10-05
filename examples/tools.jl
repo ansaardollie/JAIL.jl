@@ -25,8 +25,8 @@
 # REPL: in the `|` mode, `tools` lists tools by group (* = used by the active session), `tools
 # show <name>`, `tools use/add/drop <name>...` (`group:<group>` = every tool in it), `tools all`,
 # `tools none`. The `}` mode streams `→ label` / `← label: result` lines as calls happen; the
-# finished turn shows a `Tool calls` block (✓/✗, label, `View` link to the call's JSON via
-# OSC 8), then `Response (model; N in; M out):` and the reply text.
+# finished turn is boxed: a `Tool calls` box (✓/✗, label, `View` link to the call's JSON via
+# OSC 8), then a `Response (model; N in; M out):` box with the reply text.
 #
 # Groups and labels: every tool is in a group ("global" unless `group=` is given) and has a
 # label for display (default: the function name as written). The model sees neither.

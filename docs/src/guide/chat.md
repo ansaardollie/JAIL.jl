@@ -122,11 +122,12 @@ doesn't show reasoning.
 `chat!(s, prompt; stream = true)` shows the turn as the `}` REPL mode does (see
 [REPL modes](repl.md)): on a terminal the reply streams on the alternate screen, with
 `→ label` (plus the tool's `preview`, if any) and `← label: result` lines for tool calls (see
-[Tools](tools.md#Previewing-arguments)); then the normal screen gets the `Tool calls` block and
+[Tools](tools.md#Previewing-arguments)); then the normal screen gets the `Tool calls` box and
 the REPL's display of the returned [`AssistantMessage`](@ref) shows the text, once, rendered as
 Markdown (any `AssistantMessage` displays this way). Inside a
-script (`include`), where nothing displays the return value, the reply is also printed,
-rendered as Markdown. When `stdout` isn't a terminal, text and tool lines are printed as they
+script (`include`), where nothing displays the return value, the whole turn is printed in the
+`}` mode's boxes instead (with a `Prompt:` box first when Julia is not interactive). When
+`stdout` isn't a terminal, text and tool lines are printed as they
 arrive. All built-in providers can stream. The `}` REPL mode streams when the Preference
 `stream = true` is set.
 

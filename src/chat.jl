@@ -113,10 +113,11 @@ else the provider's default (Anthropic requires one and uses 8192; others let th
 
 `stream = true` shows the turn as the `}` REPL mode does: on a terminal the reply streams on the
 alternate screen with a line per tool call and result, then the normal screen gets the
-`Tool calls` block, and the returned reply (displayed by the REPL) holds the text. Inside a
-script (`include`), where nothing displays the return value, the reply is also printed,
-rendered as Markdown under `Response (model; N in; M out):`; when Julia is not interactive
-(`julia script.jl`), the prompt is printed first under `Prompt:`. When `stdout` isn't a terminal, the text and tool lines are printed as
+`Tool calls` box, and the returned reply (displayed by the REPL) holds the text. Inside a
+script (`include`), where nothing displays the return value, the whole turn is printed instead,
+boxed as in the `}` mode: the `Tool calls` box and the reply, rendered as Markdown, in a
+`Response (model; N in; M out):` box; when Julia is not interactive (`julia script.jl`), a
+`Prompt:` box comes first. When `stdout` isn't a terminal, the text and tool lines are printed as
 they arrive. All built-in providers can stream; the full reply is always returned. The `}` REPL
 mode streams when the Preference `stream = true` is set.
 

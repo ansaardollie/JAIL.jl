@@ -70,12 +70,9 @@ _hyperlink(text::AbstractString, path::AbstractString) =
 
 # One line per call of the turn: ✓/✗, the tool's label, and a link to its saved call/result JSON
 # (on a terminal `View`, else the path).
-function _render_tool_summary(io::IO, s::Session, messages; tty::Bool)
-    results = ToolResult[r for m in messages if m isa ToolResultMessage for r in m.content]
-    isempty(results) && return false
+function _render_tool_rows(io::IO, s::Session, results::Vector{ToolResult}; tty::Bool)
     labels = [_tool_label(r.name) for r in results]
     width = maximum(textwidth, labels)
-    printstyled(io, "Tool calls (", length(results), "):\n"; bold = true)
     for (r, label) in zip(results, labels)
         printstyled(io, "  ", r.is_error ? "✗ " : "✓ "; color = r.is_error ? :red : :green)
         path = (r.id === nothing || s._store.dir === nothing) ? nothing :
@@ -89,7 +86,6 @@ function _render_tool_summary(io::IO, s::Session, messages; tty::Bool)
         end
         println(io)
     end
-    return true
 end
 
 function _render_stop(io::IO, reply::AssistantMessage)
@@ -99,7 +95,7 @@ function _render_stop(io::IO, reply::AssistantMessage)
 end
 
 # `Response (model; N in; M out):`, with the tokens summed over every reply of the turn.
-function _render_response_header(io::IO, messages)
+function _response_title(messages)
     replies = [m for m in messages if m isa AssistantMessage]
     parts = String[]
     i = findlast(r -> r.model !== nothing, replies)
@@ -107,13 +103,68 @@ function _render_response_header(io::IO, messages)
     used = [r.usage for r in replies if r.usage !== nothing]
     isempty(used) || push!(parts, string(sum(u -> u.input_tokens, used), " in"),
                            string(sum(u -> u.output_tokens, used), " out"))
-    printstyled(io, "Response", isempty(parts) ? "" : string(" (", join(parts, "; "), ")"), ":\n"; bold = true)
+    return string("Response", isempty(parts) ? "" : string(" (", join(parts, "; "), ")"), ":")
 end
 
-function _render_prompt(io::IO, prompt)
-    printstyled(io, "Prompt:\n"; bold = true)
-    show(io, MIME"text/plain"(), Markdown.parse(string(prompt)))
-    println(io, "\n")
+# Julia logo colors: purple around the whole turn, blue / red / green for its parts.
+const _CHAT_COLOR = Colors.JULIA_LOGO_COLORS.purple
+const _PROMPT_COLOR = Colors.JULIA_LOGO_COLORS.blue
+const _TOOLS_COLOR = Colors.JULIA_LOGO_COLORS.red
+const _RESPONSE_COLOR = Colors.JULIA_LOGO_COLORS.green
+
+# Bold 24-bit color text, plain when `io` has no color.
+function _print_rgb(io::IO, c::Colors.RGB, text...)
+    get(io, :color, false) || return print(io, text...)
+    rgb = (round(Int, 255 * Float64(f(c))) for f in (Colors.red, Colors.green, Colors.blue))
+    print(io, "\e[1m\e[38;2;", join(rgb, ';'), 'm', text..., "\e[39m\e[22m")
+end
+
+_blank_line(l) = isempty(strip(replace(l, r"\e\[[0-9;]*m" => "")))
+
+# What `f(io)` prints, as lines, keeping `io`'s color setting and narrowed by `indent` columns.
+function _captured_lines(f, io::IO, indent::Int)
+    h, w = displaysize(io)
+    buf = IOBuffer()
+    f(IOContext(buf, :color => get(io, :color, false), :displaysize => (h, max(20, w - indent))))
+    lines = String.(split(String(take!(buf)), '\n'))
+    # Trailing blank lines may still hold style resets: fold them into the last kept line.
+    while length(lines) > 1 && _blank_line(lines[end])
+        tail = pop!(lines)
+        lines[end] *= tail
+    end
+    return length(lines) == 1 && _blank_line(lines[1]) ? String[] : lines
+end
+
+# A box like `@info`'s, in heavy lines (bold alone doesn't thicken box glyphs in most terminals).
+function _box(io::IO, color::Colors.RGB, title::AbstractString, lines)
+    _print_rgb(io, color, "┏ ", title)
+    println(io)
+    for l in lines
+        _print_rgb(io, color, "┃")
+        _blank_line(l) ? println(io, l) : println(io, " ", l)
+    end
+    _print_rgb(io, color, "┗")
+    println(io)
+end
+
+_prompt_lines(io::IO, prompt, indent::Int) =
+    _captured_lines(o -> show(o, MIME"text/plain"(), Markdown.parse(string(prompt))), io, indent)
+_prompt_box(io::IO, prompt) = _box(io, _PROMPT_COLOR, "Prompt:", _prompt_lines(io, prompt, 2))
+
+# The finished turn: with `response`, one box in the chat color around the Prompt (when
+# `prompt` is given), Tool calls and Response boxes; without, just the Tool calls box.
+function _render_turn(io::IO, s::Session, turn; tty::Bool, prompt = nothing, response::Bool = true)
+    results = ToolResult[r for m in turn if m isa ToolResultMessage for r in m.content]
+    indent = response ? 4 : 2
+    sections = Tuple{Colors.RGB,String,Vector{String}}[]
+    prompt === nothing || push!(sections, (_PROMPT_COLOR, "Prompt:", _prompt_lines(io, prompt, indent)))
+    isempty(results) || push!(sections, (_TOOLS_COLOR, "Tool calls ($(length(results))):",
+        _captured_lines(o -> _render_tool_rows(o, s, results; tty), io, indent)))
+    response && push!(sections, (_RESPONSE_COLOR, _response_title(turn),
+        _captured_lines(o -> _render_texts(o, turn), io, indent)))
+    draw(o) = foreach(((c, t, ls),) -> _box(o, c, t, ls), sections)
+    response ? _box(io, _CHAT_COLOR, "Chat: $(s.name)", _captured_lines(draw, io, 2)) : draw(io)
+    return nothing
 end
 
 function _stream_pref()
@@ -179,7 +230,9 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
             show_status("thinking…")
         end
     end
-    output && !isinteractive() && _render_prompt(io, prompt)
+    show_prompt = output && !isinteractive()
+    # Text streamed to a non-terminal is printed as it comes, so the prompt goes first.
+    stream && !tty && show_prompt && _prompt_box(io, prompt)
     show_status("thinking…")
     reply = try
         _chat!(s, prompt; on_text = stream ? show_delta : nothing, on_step, kwargs...)
@@ -191,13 +244,9 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
     if stream && !tty
         # Not a terminal: the streamed raw text and tool lines stay as printed.
         line_start[] || println(io)
-        _render_tool_summary(io, s, turn; tty)
-    elseif output
-        _render_tool_summary(io, s, turn; tty) && println(io)
-        _render_response_header(io, turn)
-        _render_texts(io, turn)
+        _render_turn(io, s, turn; tty, response = false)
     else
-        _render_tool_summary(io, s, turn; tty)
+        _render_turn(io, s, turn; tty, response = output, prompt = show_prompt ? prompt : nothing)
     end
     return reply
 end

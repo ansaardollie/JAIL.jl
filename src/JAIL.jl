@@ -1,5 +1,6 @@
 module JAIL
 
+using Colors: Colors
 using Dates: Dates, DateTime
 using HTTP: HTTP
 using JSON: JSON
