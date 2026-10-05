@@ -116,6 +116,14 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     s.model === nothing && throw(ArgumentError(
         "session \"$(s.name)\" has no model; choose one in the `|` mode with `use provider/model` or `select`"))
     stream = _stream_pref() && _supports_streaming(s.model.provider)
+    reply = _display_turn(io, s, line; stream, tty, header = _CHAT_PROMPT * line)
+    return _render_stop(io, reply)
+end
+
+# One turn shown as in the `}` mode, also used by `chat!(...; stream = true)`. `output = false`
+# leaves out the rendered reply text (the REPL displays the returned reply instead).
+function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io isa Base.TTY,
+                       header::AbstractString = string(prompt), output::Bool = true, kwargs...)
     n0 = length(s.messages)
     status, alt, line_start = Ref(false), Ref(false), Ref(true)
     clear_status() = status[] && (print(io, "\r\e[2K"); status[] = false)
@@ -129,7 +137,7 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
         if tty && !alt[]
             print(io, _ALT_SCREEN_ON)
             alt[] = true
-            printstyled(io, _CHAT_PROMPT, line, "\n\n"; color = :light_black)
+            printstyled(io, header, "\n\n"; color = :light_black)
         end
     end
     function show_delta(t)
@@ -155,7 +163,7 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     end
     show_status("thinking…")
     reply = try
-        _chat!(s, line; on_text = stream ? show_delta : nothing, on_step)
+        _chat!(s, prompt; on_text = stream ? show_delta : nothing, on_step, kwargs...)
     finally
         clear_status()
         alt[] && print(io, _ALT_SCREEN_OFF)
@@ -165,11 +173,13 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
         # Not a terminal: the streamed raw text and tool lines stay as printed.
         line_start[] || println(io)
         _render_tool_summary(io, s, turn; tty)
-    else
+    elseif output
         _render_tool_summary(io, s, turn; tty) && printstyled(io, "\nOutput:\n"; bold = true)
         _render_texts(io, turn)
+    else
+        _render_tool_summary(io, s, turn; tty)
     end
-    return _render_stop(io, reply)
+    return reply
 end
 
 function _chat_command(line::AbstractString; io::IO = stdout)

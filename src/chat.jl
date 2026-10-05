@@ -111,8 +111,12 @@ format that produced them.
 `max_tokens` caps the reply length. Without it the `max_tokens` Preference is used if set,
 else the provider's default (Anthropic requires one and uses 8192; others let the model decide).
 
-`stream = true` prints the reply's text to `stdout` as it arrives (all built-in providers can
-stream), plus a line per tool call and result; the full reply is still returned. The `}` REPL
+`stream = true` shows the turn as the `}` REPL mode does: on a terminal the reply streams on the
+alternate screen with a line per tool call and result, then the normal screen gets the
+`Tool calls` block, and the returned reply (displayed by the REPL) holds the text. Inside a
+script (`include`), where nothing displays the return value, the reply is also printed,
+rendered as Markdown. When `stdout` isn't a terminal, the text and tool lines are printed as
+they arrive. All built-in providers can stream; the full reply is always returned. The `}` REPL
 mode streams when the Preference `stream = true` is set.
 
 ```julia
@@ -120,25 +124,14 @@ s = Session("anthropic/claude-sonnet-4-5"; system = "Be terse.")
 reply = chat!(s, "Name a prime number.")
 string(reply)        # the text
 reply.stop_reason    # :end_turn
-chat!(s, "Another?"; stream = true)   # prints as it arrives
+chat!(s, "Another?"; stream = true)   # streams, then shows the reply once
 ```
 """
 function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
                stream::Bool = false, max_tool_rounds = nothing)
-    stream || return _chat!(s, prompt; max_tokens, max_tool_rounds)
-    ends_with_newline = Ref(true)
-    on_text = t -> (print(stdout, t); isempty(t) || (ends_with_newline[] = endswith(t, '\n')))
-    function on_step(x)
-        x isa _Confirming && return true    # its preview is already on screen
-        x isa _Prompting && return
-        x isa AssistantMessage && return
-        ends_with_newline[] || println(stdout)
-        _print_tool(stdout, x)
-        ends_with_newline[] = true
-    end
-    reply = _chat!(s, prompt; max_tokens, on_text, on_step, max_tool_rounds)
-    ends_with_newline[] || println(stdout)
-    return reply
+    (stream && s.model !== nothing) || return _chat!(s, prompt; max_tokens, max_tool_rounds)
+    return _display_turn(stdout, s, prompt; stream = _supports_streaming(s.model.provider),
+                         output = Base.source_path(nothing) !== nothing, max_tokens, max_tool_rounds)
 end
 
 function _max_tool_rounds(kw)

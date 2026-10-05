@@ -50,6 +50,9 @@ In a plain terminal `julia` (not the agent's tool REPL):
     and, with the owner's approval (live calls), `examples/builtin_tools_prompts.jl`; `ask_user`
     with options shows the arrow-key menu; in `}` the status line is cleared before `ask_user`
     asks; `execute_julia_code` / `run_shell` prompts read `y`/`n`/`a`.
+12. `chat!(s, "..."; stream = true)` at the prompt (see `design_decisions/33_STREAMING_chat_uses_chat_mode_display.md`):
+    streams on the alternate screen, then only the `Tool calls` block, then the REPL's
+    `AssistantMessage (...)` display with the text once; a `}` turn still looks as before.
 
 ## Why
 
