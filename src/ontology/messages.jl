@@ -129,7 +129,8 @@ end
 """
     Usage(input_tokens, output_tokens)
 
-Token counts the provider reported for one reply.
+Token counts the provider reported for one reply. `input_tokens` includes tokens read from or
+written to a prompt cache.
 """
 struct Usage
     input_tokens::Int

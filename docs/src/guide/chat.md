@@ -85,7 +85,12 @@ s.messages
   [`restore_session!`](@ref) in a new Julia process, or the stored reply is gone (the provider
   answers HTTP 400/404; JAIL retries once with the full history).
 - **Anthropic, OpenAI-compatible servers and `GoogleEnterprise` with `api = :generate_content`**
-  always get the full history.
+  always get the full history. Anthropic requests can turn on automatic prompt caching
+  (`"cache_control": {"type": "ephemeral"}` on the whole request), so the part of the history
+  sent before is read from the cache instead of processed again. The Preference
+  `providers.anthropic.prompt_cache` sets it: `"off"` (default), `"5m"` (a 5-minute cache) or
+  `"1h"` (a 1-hour cache, whose writes cost twice the input price). A reply's
+  `usage.input_tokens` is the total, cached tokens included.
 
 Set the Preference `store_requests = false` to send `store = false` to OpenAI, Google and
 `GoogleEnterprise` (Interactions) and always send the full history. Stored responses are kept by

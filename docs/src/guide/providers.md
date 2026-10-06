@@ -200,6 +200,7 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `providers.google_enterprise.service_account_path` | string | same | Path to a service-account key file (optional) |
 | `providers.google_enterprise.api` | `"generate_content"` | same | Only written when not `:interactions` |
 | `providers.openai.tool_search`, `providers.anthropic.tool_search` | `"hosted"` / `"client"` | by hand | How the model finds tools that are registered but not loaded: the provider's own tool search (default `"hosted"`; needs `gpt-5.4` or later, or Claude 4.5 or later) or JAIL's `tool_search`/`tool_load` tools. Other providers always use JAIL's |
+| `providers.anthropic.prompt_cache` | `"off"` / `"5m"` / `"1h"` | by hand | Automatic prompt caching of each Anthropic request (`cache_control` on the whole request): none (default), a 5-minute cache, or a 1-hour one (cache writes cost 2× input); see [Chat](chat.md#What-gets-sent) |
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
 | `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic the model's max output, others none) |
 | `thinking_effort` | string such as `"low"`, `"high"` | by hand | Reasoning effort for [`chat!`](@ref) and the `}` mode when neither the call nor the session sets one, sent as-is (unset: not sent) |

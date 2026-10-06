@@ -69,6 +69,10 @@ function _request_body(p::Anthropic, req::_Request)
     end
     body = Dict{String,Any}("model" => req.model.id, "messages" => messages,
                             "max_tokens" => req.max_tokens)
+    # Automatic prompt caching: the breakpoint follows the last cacheable block as the chain grows,
+    # claude-docs/claude-docs-50-prompt-caching.md#L279-L299, #L475-L489 (TTL "1h" #L487-L493)
+    cache = _anthropic_cache(p)
+    cache === nothing || (body["cache_control"] = cache)
     req.system === nothing || (body["system"] = req.system)
     req.stream && (body["stream"] = true)   # #L3287
     # Tool #L5059-L5103; claude-docs/claude-docs-25-define-tools.md#L16-L53
@@ -83,6 +87,15 @@ function _request_body(p::Anthropic, req::_Request)
     req.temperature === nothing || (body["temperature"] = req.temperature)   # #L3569-L3577
     _anthropic_thinking!(body, req)
     return body
+end
+
+# Preference `providers.anthropic.prompt_cache`: "off" (default), "5m" or "1h".
+function _anthropic_cache(p::Anthropic)
+    v = get(_provider_prefs(provider_name(p)), "prompt_cache", "off")
+    v == "off" && return nothing
+    v == "5m" && return Dict{String,Any}("type" => "ephemeral")
+    v == "1h" && return Dict{String,Any}("type" => "ephemeral", "ttl" => "1h")
+    throw(ArgumentError("Preference `providers.anthropic.prompt_cache` must be \"5m\", \"1h\" or \"off\", got $(repr(v))"))
 end
 
 # Neither field is in the local spec. output_config.effort: claude-docs/claude-docs-10-effort.md#L40-L58,
@@ -164,9 +177,18 @@ function _parse_reply(::Anthropic, req::_Request, json)
         t in _ANTHROPIC_SEARCH_BLOCKS && push!(parts, ToolSearchPart(:anthropic, b))
     end
     reason = _stop_reason(parts, get(_ANTHROPIC_STOP, something(get(json, "stop_reason", nothing), ""), :other))
-    usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L5172
+    usage = _anthropic_usage(get(json, "usage", nothing))  # #L5172
     return AssistantMessage(parts; model = req.model, stop_reason = reason, usage,
                             id = get(json, "id", nothing))
+end
+
+# With caching, input_tokens covers only the uncached part; the total adds cache reads and writes
+# (claude-docs/claude-docs-50-prompt-caching.md#L689-L694), as other providers report it.
+function _anthropic_usage(u)
+    u === nothing && return nothing
+    n(k) = something(get(u, k, 0), 0)
+    return Usage(n("input_tokens") + n("cache_read_input_tokens") + n("cache_creation_input_tokens"),
+                 n("output_tokens"))
 end
 
 # Stream events: claude-docs/claude-docs-15-streaming.md#L296-L306 (flow), #L318-L319 (error),
@@ -201,7 +223,7 @@ function _stream_event!(st::_AnthropicStream, data::AbstractString, on::_StreamH
         m = ev["message"]
         st.id = get(m, "id", nothing)
         u = something(get(m, "usage", nothing), Dict())
-        st.input_tokens = something(get(u, "input_tokens", 0), 0)
+        st.input_tokens = _anthropic_usage(u).input_tokens
         st.output_tokens = something(get(u, "output_tokens", 0), 0)
     elseif t == "content_block_start"
         b = ev["content_block"]

@@ -98,6 +98,8 @@ storage_dir = ".jail"
     api_key_env = "ANTHROPIC_API_KEY"
     # "hosted" (Claude's BM25 tool search; Claude 4.5 or later) or "client" (JAIL's tools).
     tool_search = "hosted"
+    # Automatic prompt caching of the whole request: "off", "5m" or "1h" (writes cost 2x input).
+    prompt_cache = "off"
 
     [JAIL.providers.google]
     default_model = "gemini-3.1-flash-lite"
