@@ -107,7 +107,8 @@ try
     end
 
     # Streaming: the run-alone call gets its own `→` line, the calls that ran together share
-    # one, and no `←` result lines are printed (the Tool calls box lists the results).
+    # one (`→ weather (Paris) | weather (Rome)`), and no `←` result lines are printed (the Tool
+    # calls box lists the results).
     Preferences.set_preferences!(JAIL, "parallel_tool_calls" => true; force = true)
     QUIET[] = true
     println("\nstream = true")

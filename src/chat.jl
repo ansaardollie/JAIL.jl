@@ -284,11 +284,11 @@ end
 # Passed to `on_step` once a round of parallel calls has finished.
 struct _ToolsFinished end
 
-# One line for calls that run together: `→ label (preview)  → label …`.
+# One line for calls that run together: `→ label (preview) | label | …`.
 function _print_tool(io::IO, x::_RunningTogether)
     item(c) = (p = _call_preview(c);
-               string("→ ", _tool_label(c.name), p === nothing ? "" : string(" (", _short(first(split(p, '\n')), 40), ")")))
-    printstyled(io, join(map(item, x.calls), "  "), "\n"; color = :cyan)
+               string(_tool_label(c.name), p === nothing ? "" : string(" (", _short(first(split(p, '\n')), 40), ")")))
+    printstyled(io, "→ ", join(map(item, x.calls), " | "), "\n"; color = :cyan)
 end
 
 # Passed to `on_step` after a successful turn whose reasoning summaries were saved to `paths`.

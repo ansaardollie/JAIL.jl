@@ -272,7 +272,7 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
         elseif x isa ToolCall
             show_status("→ $(_tool_label(x.name))…", :cyan)
         elseif x isa _RunningTogether
-            show_status("→ $(join((_tool_label(c.name) for c in x.calls), ", "))…", :cyan)
+            show_status("→ $(join((_tool_label(c.name) for c in x.calls), " | "))…", :cyan)
         else
             show_status("thinking…")
         end

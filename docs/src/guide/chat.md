@@ -213,7 +213,8 @@ OpenAI-compatible servers have no counting endpoint, and `count_tokens` throws f
 `chat!(s, prompt; stream = true)` shows the turn as the `}` REPL mode does (see
 [REPL modes](repl.md)): on a terminal the reply streams on the alternate screen, with
 `→ label` (plus the tool's `preview`, if any) and `← label: result` lines for tool calls (see
-[Tools](tools.md#Previewing-arguments); parallel calls that run together share one `→` line and
+[Tools](tools.md#Previewing-arguments); parallel calls that run together share one `→` line,
+separated by `|`, and
 show no `←` lines, see [Parallel tool calls](tools.md#Parallel-tool-calls)); then the normal screen gets the `Tool calls` box and
 the REPL's display of the returned [`AssistantMessage`](@ref) shows the text, once, rendered as
 Markdown (any `AssistantMessage` displays this way). Inside a

@@ -230,9 +230,11 @@ Preference `parallel_tool_calls` on (the default), JAIL:
    network, processes or `sleep`.
 
 The results go back in the order of the calls. When streaming, a confirmed call or a call that
-runs alone gets its own `→ label` line, the other calls that run together share one line
-(`→ weather (Paris)  → weather (Rome)`), and no `←` result lines are shown; the `Tool calls`
-box lists every result. A tool that runs concurrently may run on another
+runs alone gets its own `→ label` line, the other calls that run together share one line, their
+labels (and preview, shortened) separated by `|` (`→ weather (Paris) | weather (Rome)`), and no
+`←` result lines are shown; the `Tool calls` box lists every result. Without streaming, the
+status line shows the labels the same way (`→ weather | weather…`) while they run. A tool that
+runs concurrently may run on another
 thread at the same time as other tools, so it must be safe to do so. Register tools that read
 the terminal, redirect `stdout`, or change shared state with `concurrent = false`
 (`@tool concurrent=false f`). Of the built-in tools, `ask_user`, `execute_julia_code`,
