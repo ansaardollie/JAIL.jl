@@ -8,10 +8,13 @@ struct _Request
     store::Bool
     previous_id::Union{Nothing,String}
     stream::Bool
-    tools::Vector{ToolSpec}
+    tools::Vector{ToolSpec}                  # loaded: sent as plain tools
     thinking_effort::Union{Nothing,Symbol}   # sent as-is; the provider rejects levels it lacks
     temperature::Union{Nothing,Float64}
     show_reasoning::Bool                     # ask for readable reasoning summaries
+    # Registered but not loaded: sent with `defer_loading` plus the provider's tool search tool.
+    # Only non-empty for providers whose _tool_search_mode is :hosted.
+    deferred::Vector{ToolSpec}
 end
 
 # What a stream reports as it arrives: `text(delta)` for reply text, `reasoning(delta)` for
@@ -49,6 +52,8 @@ _has_store_field(::Type{<:AbstractProvider}) = false
 _supports_chaining(::Type{<:AbstractProvider}) = false
 # Whether replies can be streamed as server-sent events.
 _supports_streaming(::Type{<:AbstractProvider}) = false
+# Whether the provider can search deferred tools itself (`defer_loading` + a tool search tool).
+_supports_hosted_tool_search(::Type{<:AbstractProvider}) = false
 
 # Token counting interface (src/tokens.jl), each provider implements:
 #   _count_url(p, model)           -> URL of the provider's input-token counting endpoint
@@ -63,6 +68,17 @@ _count_needs_messages(::Type{<:AbstractProvider}) = false
 _has_store_field(p::AbstractProvider) = _has_store_field(typeof(p))
 _supports_chaining(p::AbstractProvider) = _supports_chaining(typeof(p))
 _supports_streaming(p::AbstractProvider) = _supports_streaming(typeof(p))
+
+# :hosted (the provider searches the deferred tools) or :client (JAIL's tool_search / tool_load
+# tools). Providers with hosted search read the Preference `providers.<name>.tool_search`.
+function _tool_search_mode(p::AbstractProvider)
+    _supports_hosted_tool_search(typeof(p)) || return :client
+    name = provider_name(p)
+    v = get(_provider_prefs(name), "tool_search", "hosted")
+    v in ("hosted", "client") || throw(ArgumentError(
+        "Preference `providers.$name.tool_search` must be \"hosted\" or \"client\", got $(repr(v))"))
+    return Symbol(v)
+end
 
 # Messages with no text and no tool calls (e.g. a reply that only hit max_tokens) are skipped.
 _replayable(messages) = (m for m in messages if m isa ToolResultMessage || !isempty(string(m)) ||

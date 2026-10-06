@@ -59,6 +59,8 @@ function _request_body(p::Anthropic, req::_Request)
     for m in _replayable(req.messages)
         role = m isa AssistantMessage ? "assistant" : "user"
         blocks = _anthropic_blocks(m, p)
+        # Search blocks go back only while the request has the search tool.
+        isempty(req.deferred) && filter!(b -> !(get(b, "type", nothing) in _ANTHROPIC_SEARCH_BLOCKS), blocks)
         if !isempty(messages) && messages[end]["role"] == role
             append!(messages[end]["content"], blocks)
         else
@@ -70,7 +72,14 @@ function _request_body(p::Anthropic, req::_Request)
     req.system === nothing || (body["system"] = req.system)
     req.stream && (body["stream"] = true)   # #L3287
     # Tool #L5059-L5103; claude-docs/claude-docs-25-define-tools.md#L16-L53
-    isempty(req.tools) || (body["tools"] = [_function_json(t; schema_key = "input_schema") for t in req.tools])
+    tools = Any[_function_json(t; schema_key = "input_schema") for t in req.tools]
+    # Hosted tool search: the BM25 search tool (never deferred) plus every deferred definition,
+    # claude-docs/claude-docs-35-tool-search-tool.md#L66-L72, #L546-L597
+    if !isempty(req.deferred)
+        push!(tools, Dict{String,Any}("type" => "tool_search_tool_bm25_20251119", "name" => "tool_search_tool_bm25"))
+        append!(tools, (_deferred(_function_json(t; schema_key = "input_schema")) for t in req.deferred))
+    end
+    isempty(tools) || (body["tools"] = tools)
     req.temperature === nothing || (body["temperature"] = req.temperature)   # #L3569-L3577
     _anthropic_thinking!(body, req)
     return body
@@ -121,10 +130,15 @@ function _anthropic_blocks(m::AssistantMessage, p)
                                            "input" => c.arguments))
         elseif c isa ReasoningPart && _replays(c, m, p, :anthropic)
             push!(blocks, c.data)
+        elseif c isa ToolSearchPart && _replays(c, m, p, :anthropic)
+            push!(blocks, c.data)
         end
     end
     return blocks
 end
+
+# Hosted search blocks, passed back unchanged: claude-docs/claude-docs-35-tool-search-tool.md#L617-L668
+const _ANTHROPIC_SEARCH_BLOCKS = ("server_tool_use", "tool_search_tool_result")
 
 # RequestToolResultBlock #L4926-L4966; must come first in the user turn
 # (claude-docs/claude-docs-26-handle-tool-calls.md#L63-L67)
@@ -147,6 +161,7 @@ function _parse_reply(::Anthropic, req::_Request, json)
         t == "tool_use" && push!(parts, ToolCall(b["id"], b["name"], _arguments(get(b, "input", nothing))))
         t in ("thinking", "redacted_thinking") &&
             push!(parts, ReasoningPart(something(get(b, "thinking", nothing), ""), :anthropic, b))
+        t in _ANTHROPIC_SEARCH_BLOCKS && push!(parts, ToolSearchPart(:anthropic, b))
     end
     reason = _stop_reason(parts, get(_ANTHROPIC_STOP, something(get(json, "stop_reason", nothing), ""), :other))
     usage = _usage(get(json, "usage", nothing), "input_tokens", "output_tokens")  # #L5172
@@ -159,20 +174,25 @@ end
 # tool_use blocks start with `input: {}` and stream input_json_delta.partial_json (#L933-L960).
 # thinking blocks stream thinking_delta then one signature_delta; redacted_thinking arrives whole
 # in content_block_start (claude-docs-21-thinking.md#L511, #L776-L791, #L1133-L1138).
+# Tool search: server_tool_use streams like tool_use; tool_search_tool_result arrives whole
+# (claude-docs-35-tool-search-tool.md#L796-L813, claude-docs-30-server-tools.md#L1088).
 _supports_streaming(::Type{Anthropic}) = true
+# claude-docs/claude-docs-35-tool-search-tool.md#L38-L58 (Claude 4.5 models and later)
+_supports_hosted_tool_search(::Type{Anthropic}) = true
 
 mutable struct _AnthropicStream
     id::Any
     text::Dict{Int,IOBuffer}          # content block index => text (text blocks only)
     calls::Dict{Int,Vector{Any}}      # content block index => [id, name, input JSON buffer]
     thinking::Dict{Int,Dict{String,Any}}  # content block index => thinking / redacted_thinking block
+    search::Dict{Int,Vector{Any}}     # content block index => [search block, input JSON buffer or nothing]
     stop_reason::Any
     input_tokens::Int
     output_tokens::Int
     error::Union{Nothing,String}
     reasoned::Bool                    # some reasoning text was reported
 end
-_stream_state(::Anthropic, req::_Request) = _AnthropicStream(nothing, Dict(), Dict(), Dict(), nothing, 0, 0, nothing, false)
+_stream_state(::Anthropic, req::_Request) = _AnthropicStream(nothing, Dict(), Dict(), Dict(), Dict(), nothing, 0, 0, nothing, false)
 
 function _stream_event!(st::_AnthropicStream, data::AbstractString, on::_StreamHooks)
     ev = JSON.parse(data)
@@ -189,6 +209,8 @@ function _stream_event!(st::_AnthropicStream, data::AbstractString, on::_StreamH
         bt == "text" && (st.text[ev["index"]] = IOBuffer())
         bt == "tool_use" && (st.calls[ev["index"]] = Any[b["id"], b["name"], IOBuffer()])
         bt in ("thinking", "redacted_thinking") && (st.thinking[ev["index"]] = Dict{String,Any}(b))
+        bt == "server_tool_use" && (st.search[ev["index"]] = Any[Dict{String,Any}(b), IOBuffer()])
+        bt == "tool_search_tool_result" && (st.search[ev["index"]] = Any[Dict{String,Any}(b), nothing])
     elseif t == "content_block_delta"
         d = ev["delta"]
         if get(d, "type", nothing) == "text_delta"
@@ -196,6 +218,9 @@ function _stream_event!(st::_AnthropicStream, data::AbstractString, on::_StreamH
             on.text(d["text"])
         elseif get(d, "type", nothing) == "input_json_delta" && haskey(st.calls, ev["index"])
             write(st.calls[ev["index"]][3], d["partial_json"])
+        elseif get(d, "type", nothing) == "input_json_delta" && haskey(st.search, ev["index"]) &&
+               st.search[ev["index"]][2] !== nothing
+            write(st.search[ev["index"]][2], d["partial_json"])
         elseif get(d, "type", nothing) == "thinking_delta" && haskey(st.thinking, ev["index"])
             b = st.thinking[ev["index"]]
             prev = get(b, "thinking", "")
@@ -221,11 +246,19 @@ end
 
 function _stream_finish(st::_AnthropicStream, req::_Request)
     st.error === nothing || error("anthropic stream error: ", st.error)
+    function search_block(i)
+        b, buf = st.search[i]
+        buf === nothing && return b
+        streamed = String(take!(buf))
+        b["input"] = isempty(streamed) ? something(get(b, "input", nothing), Dict{String,Any}()) : _arguments(streamed)
+        return b
+    end
     block(i) = haskey(st.thinking, i) ? st.thinking[i] :
+        haskey(st.search, i) ? search_block(i) :
         haskey(st.text, i) ? _text_block(String(take!(st.text[i]))) :
         Dict{String,Any}("type" => "tool_use", "id" => st.calls[i][1], "name" => st.calls[i][2],
                          "input" => _arguments(String(take!(st.calls[i][3]))))
-    blocks = [block(i) for i in sort!(collect(union(keys(st.text), keys(st.calls), keys(st.thinking))))]
+    blocks = [block(i) for i in sort!(collect(union(keys(st.text), keys(st.calls), keys(st.thinking), keys(st.search))))]
     json = Dict{String,Any}("id" => st.id, "content" => blocks, "stop_reason" => st.stop_reason,
                             "usage" => Dict("input_tokens" => st.input_tokens,
                                             "output_tokens" => st.output_tokens))

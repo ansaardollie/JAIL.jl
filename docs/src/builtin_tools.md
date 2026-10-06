@@ -74,3 +74,13 @@ read_memory
 add_memory
 remove_memory
 ```
+
+## Tool search (not registered)
+
+JAIL adds these two to a request instead of the session's registered tools when the provider has
+no hosted tool search (see [Tool search](guide/tools.md#Tool-search)). They never need approval.
+
+```@docs
+tool_search
+tool_load
+```

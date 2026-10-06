@@ -48,6 +48,8 @@ _supports_streaming(::Type{<:AbstractOpenAIProvider}) = true
 _has_store_field(::Type{OpenAI}) = true
 # previous_response_id #L69250-L69257; conversation-state doc #L554-L602
 _supports_chaining(::Type{OpenAI}) = true
+# tool-guides/openai-tool-guides-09-tool-search-20260926.md#L7 (gpt-5.4 and later)
+_supports_hosted_tool_search(::Type{OpenAI}) = true
 
 # POST /responses. openapi/api_spec.yaml#L21038, CreateResponse #L45451-L45600
 _request_url(::_ResponsesAPI, p) = p.base_url * "/responses"
@@ -65,7 +67,17 @@ function _request_body(::_ResponsesAPI, p, req::_Request)
     req.stream && (body["stream"] = true)
     # FunctionTool #L79526-L79575; `strict` omitted so the server normalises when it can
     # (tool-guides/openai-tool-guides-02-function-calling-20260926.md#L1045-L1053)
-    isempty(req.tools) || (body["tools"] = [_function_json(t; type = "function") for t in req.tools])
+    tools = Any[_function_json(t; type = "function") for t in req.tools]
+    # Hosted tool search: FunctionTool.defer_loading #L79567 plus ToolSearchToolParam #L80094-L80121
+    # (tool-guides/openai-tool-guides-09-tool-search-20260926.md#L13-L14, #L78). Search items in the
+    # history go back only while the request has the search tool.
+    if isempty(req.deferred)
+        filter!(i -> !(get(i, "type", nothing) in _OPENAI_SEARCH_ITEMS), input)
+    else
+        append!(tools, (_deferred(_function_json(t; type = "function")) for t in req.deferred))
+        push!(tools, Dict{String,Any}("type" => "tool_search"))
+    end
+    isempty(tools) || (body["tools"] = tools)
     req.temperature === nothing || (body["temperature"] = req.temperature)   # #L54160-L54172
     # reasoning #L45481-L45484: Reasoning.effort #L66705, ReasoningEffort #L66769; summary #L66706-L66722
     reasoning = Dict{String,Any}()
@@ -81,6 +93,11 @@ function _function_json(t::ToolSpec; type = nothing, schema_key = "parameters")
     isempty(t.description) || (d["description"] = t.description)
     return d
 end
+
+_deferred(d::Dict{String,Any}) = (d["defer_loading"] = true; d)
+
+# ToolSearchCallItemParam / ToolSearchOutputItemParam #L81240-L81310
+const _OPENAI_SEARCH_ITEMS = ("tool_search_call", "tool_search_output")
 
 _responses_items!(input, m::UserMessage, p) = push!(input, Dict("role" => "user", "content" => string(m)))
 
@@ -103,6 +120,8 @@ function _responses_items!(input, m::AssistantMessage, p)
             push!(input, Dict("type" => "function_call", "call_id" => c.id, "name" => c.name,
                               "arguments" => JSON.json(c.arguments)))
         elseif c isa ReasoningPart && _replays(c, m, p, :openai_responses)
+            push!(input, c.data)
+        elseif c isa ToolSearchPart && _replays(c, m, p, :openai_responses)
             push!(input, c.data)
         end
         text = nothing
@@ -132,6 +151,10 @@ function _parse_reply(::_ResponsesAPI, req::_Request, json)
             text = _summary_text(get(item, "summary", nothing))
             isempty(text) && (text = _summary_text(get(item, "content", nothing)))
             push!(parts, ReasoningPart(text, :openai_responses, data))
+            continue
+        elseif t in _OPENAI_SEARCH_ITEMS
+            # Hosted search steps, tool-guides/openai-tool-guides-09-tool-search-20260926.md#L341-L401
+            push!(parts, ToolSearchPart(:openai_responses, item))
             continue
         end
         t == "message" || continue

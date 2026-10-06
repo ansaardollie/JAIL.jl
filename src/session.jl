@@ -10,8 +10,8 @@ end
 _SessionStore() = _SessionStore(nothing, 0, UInt(0))
 
 """
-    Session(model; name = nothing, system = nothing, tools = nothing, thinking_effort = nothing, temperature = nothing)
-    Session(; name = nothing, system = nothing, tools = nothing, thinking_effort = nothing, temperature = nothing)
+    Session(model; name = nothing, system = nothing, tools = nothing, loaded_tools = nothing, thinking_effort = nothing, temperature = nothing)
+    Session(; name = nothing, system = nothing, tools = nothing, loaded_tools = nothing, thinking_effort = nothing, temperature = nothing)
 
 One conversation: a `name`, the active `model`, optional `system` instructions, the tools the
 model may call, and the typed message history in `messages`. `model` may be a [`Model`](@ref)
@@ -21,6 +21,11 @@ error is thrown if none is set.
 `tools = nothing` gives the session every registered tool (see [`register_tool!`](@ref)),
 including ones registered later; a vector of tool names or functions restricts it (see
 [`set_tools!`](@ref)).
+
+`loaded_tools` are the session's tools the model sees in full from the start; its other tools
+are only found through tool search (see [`load_tools!`](@ref)). `nothing` takes them from the
+Preference `loaded_tools` (default none); a vector of tool names, functions or group names
+replaces it.
 
 `thinking_effort` and `temperature` apply to every [`chat!`](@ref) on the session unless the
 call passes its own; `nothing` leaves them to the Preferences of the same name (see
@@ -51,6 +56,7 @@ mutable struct Session
     model::Union{Nothing,AbstractModel}
     system::Union{Nothing,String}
     tools::Union{Nothing,Vector{String}}
+    loaded_tools::Vector{String}
     thinking_effort::Union{Nothing,Symbol}
     temperature::Union{Nothing,Float64}
     const messages::Vector{AbstractMessage}
@@ -58,9 +64,9 @@ mutable struct Session
     function Session(::_Register, name::AbstractString, model, system, tools = nothing;
                      id::UUID = uuid7(), messages = AbstractMessage[],
                      store::_SessionStore = _SessionStore(), thinking_effort = nothing,
-                     temperature = nothing)
+                     temperature = nothing, loaded_tools = _default_loaded())
         s = new(id, _uuid7_time(id), String(name), model,
-                system === nothing ? nothing : String(system), tools,
+                system === nothing ? nothing : String(system), tools, loaded_tools,
                 _check_effort(thinking_effort), _check_temperature(temperature), messages, store)
         push!(_SESSIONS, s)
         return s
@@ -72,12 +78,14 @@ const _ACTIVE = Ref{Session}()
 
 function Session(model::AbstractModel; name::Union{Nothing,AbstractString} = nothing,
                  system::Union{Nothing,AbstractString} = nothing, tools = nothing,
+                 loaded_tools::Union{Nothing,AbstractVector} = nothing,
                  thinking_effort = nothing, temperature = nothing)
     name === nothing || _check_session_name(name)
     names = _tool_names(tools)
+    loaded = loaded_tools === nothing ? _default_loaded() : _load_names(loaded_tools; strict = true)
     system = system === nothing ? _default_system() : isempty(system) ? nothing : system
     return Session(_Register(), something(name, "session"), model, system, names;
-                   thinking_effort, temperature)
+                   thinking_effort, temperature, loaded_tools = loaded)
 end
 Session(model::AbstractString; kwargs...) = Session(Model(model); kwargs...)
 
@@ -156,13 +164,14 @@ end
 
 """
     new_session!(name = nothing; model = nothing, system = nothing, tools = nothing,
-                 thinking_effort = nothing, temperature = nothing) -> Session
+                 loaded_tools = nothing, thinking_effort = nothing, temperature = nothing) -> Session
 
 Create a session and make it the active one. `model` defaults to the saved default model.
 """
 function new_session!(name::Union{Nothing,AbstractString} = nothing; model = nothing, system = nothing,
-                      tools = nothing, thinking_effort = nothing, temperature = nothing)
-    kw = (; name, system, tools, thinking_effort, temperature)
+                      tools = nothing, loaded_tools = nothing, thinking_effort = nothing,
+                      temperature = nothing)
+    kw = (; name, system, tools, loaded_tools, thinking_effort, temperature)
     s = model === nothing ? Session(; kw...) : Session(model; kw...)
     return _ACTIVE[] = s
 end
@@ -203,7 +212,8 @@ function _start_default_session!()
         @warn "JAIL: the default session has no system instructions" exception = e
         nothing
     end
-    _ACTIVE[] = Session(_Register(), "default", model, system, nothing)
+    _ACTIVE[] = Session(_Register(), "default", model, system, nothing;
+                        loaded_tools = _default_loaded(; warn = true))
     return nothing
 end
 
@@ -308,6 +318,113 @@ set_tools!(s, nothing)
 set_tools!(s::Session, xs::Union{Nothing,AbstractVector}) = (s.tools = _tool_names(xs); _sync_meta!(s); tools(s))
 set_tools!(xs::Union{Nothing,AbstractVector}) = set_tools!(active_session(), xs)
 
+const _ToolRef = Union{AbstractString,Symbol,Function,ToolSpec}
+
+# Tool names for tool references: a function or ToolSpec is its tool; a string or symbol is a
+# registered tool's name, else a group (`group:<g>` or just `<g>`) of registered tools. With
+# `strict`, anything else throws; without, it is kept as a name (a tool registered later).
+function _load_names(xs; strict::Bool)
+    out = String[]
+    for x in xs
+        x isa Function && (push!(out, _tool_name(x)); continue)
+        x isa ToolSpec && (push!(out, x.name); continue)
+        x isa _ToolRef || throw(ArgumentError("expected tool names, functions or groups, got $(repr(x))"))
+        n = string(x)
+        g = startswith(n, "group:") ? n[length("group:")+1:end] : nothing
+        if g === nothing && haskey(_TOOLS, n)
+            push!(out, n)
+        elseif (grp = something(g, n); any(t -> t.group == grp, values(_TOOLS)))
+            append!(out, sort!([t.name for t in values(_TOOLS) if t.group == grp]))
+        elseif strict
+            throw(ArgumentError("no tool or tool group named \"$n\" is registered"))
+        else
+            push!(out, n)
+        end
+    end
+    return unique!(out)
+end
+
+# Loaded tools for a new session, from the Preference `loaded_tools`.
+function _default_loaded(; warn::Bool = false)
+    try
+        return _load_names(_string_list_pref("loaded_tools"); strict = false)
+    catch e
+        e isa ArgumentError && warn || rethrow()
+        @warn "JAIL: the Preference `loaded_tools` is ignored" exception = e
+        return String[]
+    end
+end
+
+_loaded_specs(s::Session) = ToolSpec[t for t in tools(s) if t.name in s.loaded_tools]
+
+"""
+    load_tools!(session::Session, tools...) -> Vector{ToolSpec}
+    load_tools!(tools...)
+
+Load registered tools in the session (or the [`active_session`](@ref)): each is a tool name,
+function, [`ToolSpec`](@ref) or group name (`"read"`, or `"group:read"` when a tool has the
+same name). Returns the session's loaded tools.
+
+A session sends its tools in two ways. **Loaded** tools are given to the model in full on every
+request. Every other tool of the session is only **registered**: the model finds it through
+tool search and loads it when it needs it, which keeps large tool sets out of the context.
+OpenAI and Anthropic search natively (`defer_loading`); for the other providers, JAIL gives the
+model two tools of its own, `tool_search` and `tool_load` (see the Tools guide).
+
+New sessions load the tools named in the Preference `loaded_tools` (default none). Loaded tools
+are saved with the session. See also [`unload_tools!`](@ref), [`tool_status`](@ref).
+
+```julia
+load_tools!(s, "read_file", "grep_files")
+load_tools!(get_weather)
+load_tools!(s, "memory")     # a whole group
+```
+"""
+function load_tools!(s::Session, xs::_ToolRef...)
+    isempty(xs) && throw(ArgumentError("name the tools or groups to load, e.g. `load_tools!(s, \"read_file\")`"))
+    names = _load_names(xs; strict = true)
+    append!(s.loaded_tools, setdiff(names, s.loaded_tools))
+    _sync_meta!(s)
+    return _loaded_specs(s)
+end
+load_tools!(xs::_ToolRef...) = load_tools!(active_session(), xs...)
+
+"""
+    unload_tools!(session::Session, tools...) -> Vector{ToolSpec}
+    unload_tools!(tools...)
+
+Take tools (names, functions, [`ToolSpec`](@ref)s or group names, as for
+[`load_tools!`](@ref)) out of the session's loaded tools, so they are found through tool search
+again. Returns the session's loaded tools.
+"""
+function unload_tools!(s::Session, xs::_ToolRef...)
+    isempty(xs) && throw(ArgumentError("name the tools or groups to unload, e.g. `unload_tools!(s, \"read_file\")`"))
+    names = _load_names(xs; strict = false)
+    unknown = filter(n -> !(n in s.loaded_tools) && !haskey(_TOOLS, n), names)
+    isempty(unknown) || throw(ArgumentError("no tool or tool group named $(join(repr.(unknown), ", ")) is registered"))
+    filter!(n -> !(n in names), s.loaded_tools)
+    _sync_meta!(s)
+    return _loaded_specs(s)
+end
+unload_tools!(xs::_ToolRef...) = unload_tools!(active_session(), xs...)
+
+"""
+    tool_status(session::Session, tool) -> Symbol
+    tool_status(tool)
+
+The status of a tool (a name, function or [`ToolSpec`](@ref)) in the session (or the
+[`active_session`](@ref)): `:unregistered` (not in the registry, see [`register_tool!`](@ref)),
+`:registered` (found through tool search) or `:loaded` (given to the model in full, see
+[`load_tools!`](@ref)). Tools the session is restricted from (see [`set_tools!`](@ref)) are
+never sent, whatever their status.
+"""
+function tool_status(s::Session, x::Union{AbstractString,Symbol,Function,ToolSpec})
+    name = x isa Function ? _tool_name(x) : x isa ToolSpec ? x.name : string(x)
+    haskey(_TOOLS, name) || return :unregistered
+    return name in s.loaded_tools ? :loaded : :registered
+end
+tool_status(x::Union{AbstractString,Symbol,Function,ToolSpec}) = tool_status(active_session(), x)
+
 Base.show(io::IO, s::Session) = print(io, "Session(", repr(s.name), ", ",
     something(_model_string(s), "no model"), ", ", length(s.messages), " messages)")
 
@@ -350,6 +467,7 @@ function _show_details(io::IO, s::Session; status::Bool = false)
     end
     row("system", s.system === nothing ? "none" : _system_preview(s.system))
     row("tools", _tools_label(s))
+    row("loaded", _loaded_label(s))
     row("thinking", _setting_label(s.thinking_effort, "thinking_effort", x -> _check_effort(x)))
     row("temperature", _setting_label(s.temperature, "temperature", x -> _check_temperature(x)))
     row("reasoning", _reasoning_label())
@@ -360,6 +478,19 @@ function _tools_label(s::Session)
     ts = tools(s)
     names = isempty(ts) ? "none" : join((t.name for t in ts), ", ")
     return s.tools === nothing ? "all ($names)" : names
+end
+
+function _loaded_label(s::Session)
+    ts = _loaded_specs(s)
+    names = isempty(ts) ? "none" : join((t.name for t in ts), ", ")
+    s.model === nothing && return names
+    mode = try
+        _tool_search_mode(s.model.provider)
+    catch
+        return names
+    end
+    return string(names, " (others found with ", mode === :hosted ? "the provider's tool search" :
+                  "JAIL's tool_search/tool_load", ")")
 end
 
 function _system_preview(text::AbstractString, n = 60)

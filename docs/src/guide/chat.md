@@ -35,7 +35,8 @@ tools; see [Tools](tools.md).
 History is provider-agnostic, so a session can switch model or provider between turns with
 [`set_model!`](@ref). A message's `content` is a vector of content parts: [`TextPart`](@ref),
 [`ToolCall`](@ref) / [`ToolResult`](@ref) when tools are used, and in replies the model's
-[`ReasoningPart`](@ref)s. `string(msg)` returns the text.
+[`ReasoningPart`](@ref)s and the steps of a provider's own tool search
+([`ToolSearchPart`](@ref), see [Tool search](tools.md#Tool-search)). `string(msg)` returns the text.
 
 ```@example chat
 using JAIL

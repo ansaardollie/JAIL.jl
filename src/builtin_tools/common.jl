@@ -206,8 +206,10 @@ they do:
 | `"interact"` | `ask_user` |
 | `"memory"` | `read_memory`, `add_memory`, `remove_memory` |
 
-None is registered when JAIL loads: opt in with [`register_builtin_tools!`](@ref) or the
-Preference `builtin_tools`. See the Tools guide for their security levels.
+Every built-in is registered when JAIL loads, unless the Preference `registered_tools` lists
+which (groups or tool names; `[]` for none). Registered tools are found by the model through
+tool search; load the ones it should always see with [`load_tools!`](@ref) or the Preference
+`loaded_tools`. See the Tools guide for their security levels.
 """
 builtin_tools() = sort!(collect(values(_builtins())); by = t -> t.name)
 
@@ -224,7 +226,8 @@ register_builtin_tools!("read", "inspect")
 register_builtin_tools!(:execute_julia_code)
 ```
 
-The Preference `builtin_tools` (a list of the same names) registers them each time JAIL loads.
+The Preference `registered_tools` (a list of the same names; default every built-in) chooses
+the ones registered each time JAIL loads.
 """
 function register_builtin_tools!(names::Union{AbstractString,Symbol}...)
     isempty(names) && throw(ArgumentError(
@@ -245,11 +248,14 @@ function register_builtin_tools!(names::Union{AbstractString,Symbol}...)
 end
 
 function _register_builtin_prefs!()
+    _load_pref("builtin_tools") === nothing ||
+        @warn "JAIL: the Preference `builtin_tools` is no longer read; every built-in tool is registered unless `registered_tools` lists which"
     try
-        names = _string_list_pref("builtin_tools")
+        names = _load_pref("registered_tools") === nothing ? collect(_BUILTIN_GROUPS) :
+                _string_list_pref("registered_tools")
         isempty(names) || register_builtin_tools!(names...)
     catch e
-        @warn "JAIL: could not register the built-in tools listed in the Preference `builtin_tools`" exception = e
+        @warn "JAIL: could not register the built-in tools listed in the Preference `registered_tools`" exception = e
     end
     return nothing
 end

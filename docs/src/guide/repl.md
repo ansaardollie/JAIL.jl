@@ -177,7 +177,7 @@ In the model mode:
 
 | Command | Does | Same as |
 |---|---|---|
-| `status`, `st` | Show the active session's details (as `show(session)` does: id, model and provider, system instructions, tools, thinking effort, temperature, whether reasoning is shown, message count) and the saved default if it differs | |
+| `status`, `st` | Show the active session's details (as `show(session)` does: id, model and provider, system instructions, tools, loaded tools, thinking effort, temperature, whether reasoning is shown, message count) and the saved default if it differs | |
 | `providers` | List providers and whether their key ENV var is set | [`providers`](@ref) |
 | `models [provider]` | List models (default: the active model's provider) | [`list_models`](@ref) |
 | `select [provider]` | Choose the active session's model from menus | [`select_model!`](@ref) |
@@ -190,11 +190,12 @@ In the model mode:
 | `session use <name\|id>` | Switch the active session (a menu picks among sessions sharing the name) | [`use_session!`](@ref) |
 | `session restore` | Choose a saved session from a menu and make it active | [`restore_session!`](@ref) |
 | `session rm <name\|id> [--files]` | Delete a session (not the active one); `--files` also deletes its saved files | [`delete_session!`](@ref) |
-| `tools` | List registered tools by group; `*` marks those the active session uses | [`tools`](@ref) |
-| `tools show <name>` | Show a tool's group, label, description and parameters | |
+| `tools` | List registered tools by group; `*` marks those the active session uses, `L` those it has loaded | [`tools`](@ref) |
+| `tools show <name>` | Show a tool's group, label, description, parameters, approval and status in the active session | [`tool_status`](@ref) |
 | `tools use <name>...` | Restrict the active session to these tools; `group:<group>` stands for every tool in that group | [`set_tools!`](@ref) |
 | `tools add <name>...`, `tools drop <name>...` | Add tools to, or remove them from, the active session (`group:<group>` works here too) | [`set_tools!`](@ref) |
 | `tools all`, `tools none` | Every registered tool (the default), or none | `set_tools!(nothing)`, `set_tools!([])` |
+| `tools load <name>...`, `tools unload <name>...` | Load tools in the active session (the model sees them in full), or leave them to tool search (`group:<group>` works here too) | [`load_tools!`](@ref), [`unload_tools!`](@ref) |
 | `tools approve <name\|group:<group>>...`, `tools unapprove ...` | Run these tools' calls without asking, or remove that entry | [`set_tool_auto_approval!`](@ref) |
 | `tokens [provider/model]` | Count the active session's input tokens (system, tools, messages) for its model or the one given | [`count_tokens`](@ref) |
 | `help`, `?` | Show the command list | |
@@ -215,7 +216,8 @@ Session "default"
   model:       openai/gpt-5
   provider:    OpenAI("https://api.openai.com/v1", "OPENAI_API_KEY")
   system:      "You are an assistant inside an interactive Julia REPL sessi…" (970 chars)
-  tools:       all (none)
+  tools:       all (add_memory, ask_user, check_julia_syntax, create_directory, …)
+  loaded:      none (others found with the provider's tool search)
   thinking:    medium (Preference)
   temperature: model default
   reasoning:   hidden
@@ -248,16 +250,26 @@ Active session: default (lmstudio/qwen3-8b)
 Deleted session "work"
 ```
 
-With two tools registered (`@tool get_weather` and `@tool group=files list_directory`) on a
-session called `demo`:
+With two tools registered (`@tool get_weather` and `@tool group=files list_directory`, the
+built-in tools unregistered to keep it short) on a session called `demo`:
 
 ```text
 (demo: anthropic/claude-sonnet-4-5) model> tools
 Session "demo" uses every registered tool:
   files
-  * list_directory  List the names of the files and folders in the current work…
+  *   list_directory  List the names of the files and folders in the current work…
   global
-  * get_weather     Get the weather forecast for a city.
+  *   get_weather     Get the weather forecast for a city.
+(demo: anthropic/claude-sonnet-4-5) model> tools load get_weather
+Session "demo" loaded tools: get_weather (others found with the provider's tool search)
+(demo: anthropic/claude-sonnet-4-5) model> tools
+Session "demo" uses every registered tool:
+  files
+  *   list_directory  List the names of the files and folders in the current work…
+  global
+  * L get_weather     Get the weather forecast for a city.
+(demo: anthropic/claude-sonnet-4-5) model> tools unload get_weather
+Session "demo" loaded tools: none (others found with the provider's tool search)
 (demo: anthropic/claude-sonnet-4-5) model> tools use get_weather
 Session "demo" tools: get_weather
 (demo: anthropic/claude-sonnet-4-5) model> tools add group:files
@@ -267,9 +279,9 @@ Session "demo" tools: get_weather
 (demo: anthropic/claude-sonnet-4-5) model> tools
 Session "demo" uses 1 of 2 tools:
   files
-    list_directory  List the names of the files and folders in the current work…
+      list_directory  List the names of the files and folders in the current work…
   global
-  * get_weather     Get the weather forecast for a city.
+  *   get_weather     Get the weather forecast for a city.
 (demo: anthropic/claude-sonnet-4-5) model> tools show get_weather
 ToolSpec get_weather(city::String, days::Int64 = …)
   group: global, label: "get_weather", security: medium
@@ -277,14 +289,15 @@ ToolSpec get_weather(city::String, days::Int64 = …)
   • city::String: the city name, e.g. "Cape Town"
   • days::Int64 (optional): how many days to forecast
   approval: by security level and tool_approval
+  status: registered in session "demo"
 (demo: anthropic/claude-sonnet-4-5) model> tools approve get_weather
 get_weather: auto-approved
 (demo: anthropic/claude-sonnet-4-5) model> tools
 Session "demo" uses 1 of 2 tools:
   files
-    list_directory  List the names of the files and folders in the current work…
+      list_directory  List the names of the files and folders in the current work…
   global
-  * get_weather     Get the weather forecast for a city.  [auto-approved]
+  *   get_weather     Get the weather forecast for a city.  [auto-approved]
 (demo: anthropic/claude-sonnet-4-5) model> tools unapprove get_weather
 get_weather: by security level and tool_approval
 (demo: anthropic/claude-sonnet-4-5) model> tools all

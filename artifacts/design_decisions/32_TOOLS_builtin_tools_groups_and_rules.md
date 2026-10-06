@@ -1,3 +1,5 @@
+> **Superseded in part by:** `42_TOOLS_tool_search_and_loaded_tools.md` (availability/opt-in: built-ins registered at load; `builtin_tools` → `registered_tools`)
+
 # Decision: Built-in tools — opt-in, effect groups, source-definition tools, path and env rules, tool context, dependencies
 
 | Field | Value |

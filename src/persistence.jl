@@ -37,6 +37,8 @@ _part_json(c::ToolCall) = (type = "tool_call", id = c.id, name = c.name, argumen
 
 _part_json(r::ReasoningPart) = (type = "reasoning", text = r.text, format = string(r.format), data = r.data)
 
+_part_json(t::ToolSearchPart) = (type = "tool_search", format = string(t.format), data = t.data)
+
 # Tool output that is JSON (an object, array or number) is stored as that value, but only when it
 # re-serialises to the identical text, so restoring gives back the exact string the model saw.
 function _result_value(text::String)
@@ -70,7 +72,7 @@ end
 
 _session_json(s::Session) = (version = _FORMAT_VERSION, id = string(s.id), name = s.name,
     created = _iso(s.created), model = _model_string(s), system = s.system, tools = s.tools,
-    available_tools = sort!([t.name for t in tools(s)]),
+    available_tools = sort!([t.name for t in tools(s)]), loaded_tools = s.loaded_tools,
     thinking_effort = s.thinking_effort === nothing ? nothing : string(s.thinking_effort),
     temperature = s.temperature)
 
@@ -234,6 +236,8 @@ function _restore_parts!(parts, d)
                                 is_error = d["is_error"], id = id === nothing ? nothing : UUID(id)))
     elseif t == "reasoning"
         push!(parts, ReasoningPart(d["text"], Symbol(d["format"]), d["data"]))
+    elseif t == "tool_search"
+        push!(parts, ToolSearchPart(Symbol(d["format"]), d["data"]))
     else
         throw(ArgumentError("unknown content part type $(repr(t))"))
     end
@@ -299,12 +303,15 @@ function _load_session(dir::AbstractString, id::UUID)
     meta = JSON.parse(read(path, String))
     messages, bad = _read_messages(_messages_path(dir, id))
     tools = meta["tools"]
+    loaded = get(meta, "loaded_tools", nothing)
     _restore_tools!(String[something(tools, String[]); get(meta, "available_tools", String[])], meta["name"])
     store = _SessionStore(dir, bad ? typemax(Int) : length(messages), UInt(0))
     s = Session(_Register(), meta["name"], _restore_model(meta["model"], "the session's"),
                 meta["system"], tools === nothing ? nothing : String[t for t in tools];
                 id, messages, store, thinking_effort = get(meta, "thinking_effort", nothing),
-                temperature = get(meta, "temperature", nothing))
+                temperature = get(meta, "temperature", nothing),
+                # Sessions saved before loaded tools existed get the Preference's.
+                loaded_tools = loaded === nothing ? _default_loaded(; warn = true) : String[n for n in loaded])
     # Record what is on disk so an unchanged session isn't rewritten; skipped lines are dropped
     # from the file on the next sync.
     store.meta = hash(read(path, String))

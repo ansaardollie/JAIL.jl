@@ -27,8 +27,13 @@ tool_approval = "auto"
 max_tool_rounds = 10
 
 # Built-in tool groups or tool names registered when JAIL loads ("read", "inspect", "edit",
-# "execute", "web", "interact", or names like "read_file"). Default: none.
-# builtin_tools = ["read", "inspect"]
+# "execute", "web", "interact", "memory", or names like "read_file"). Default: every built-in;
+# [] registers none. (Replaces the old `builtin_tools`, which is no longer read.)
+# registered_tools = ["read", "inspect"]
+
+# Tool or group names a new session loads (sent in full); the session's other tools are found
+# through tool search. Default: none.
+# loaded_tools = ["read_file", "ask_user"]
 
 # Where the built-in execute_julia_code runs: "main" (Main) or "sandbox" (a module per session).
 julia_code_module = "main"
@@ -84,11 +89,15 @@ storage_dir = ".jail"
     default_model = "gpt-6-luna"
     base_url = "https://api.openai.com/v1"
     api_key_env = "OPENAI_API_KEY"
+    # "hosted" (OpenAI's tool_search; gpt-5.4 or later) or "client" (JAIL's tool_search/tool_load).
+    tool_search = "hosted"
 
     [JAIL.providers.anthropic]
     default_model = "claude-sonnet-5"
     base_url = "https://api.anthropic.com"
     api_key_env = "ANTHROPIC_API_KEY"
+    # "hosted" (Claude's BM25 tool search; Claude 4.5 or later) or "client" (JAIL's tools).
+    tool_search = "hosted"
 
     [JAIL.providers.google]
     default_model = "gemini-3.1-flash-lite"

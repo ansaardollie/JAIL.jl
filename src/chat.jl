@@ -47,6 +47,7 @@ _fp_part(p::TextPart) = p.text
 _fp_part(c::ToolCall) = (c.id, c.name, c.arguments)
 _fp_part(r::ToolResult) = (r.call_id, r.content, r.is_error)
 _fp_part(r::ReasoningPart) = (r.format, r.text, r.data)
+_fp_part(t::ToolSearchPart) = (t.format, t.data)
 _fp_part(p::AbstractContentPart) = p
 _fingerprint(messages) = hash([(_role(m), map(_fp_part, m.content)) for m in messages])
 
@@ -81,6 +82,7 @@ end
 function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
                    system::Union{Nothing,AbstractString}; max_tokens = nothing, on_text = nothing,
                    on_reasoning = nothing, tools::Vector{ToolSpec} = ToolSpec[],
+                   deferred::Vector{ToolSpec} = ToolSpec[],
                    thinking_effort = nothing, temperature = nothing, show_reasoning = nothing)
     p = model.provider
     n, store = _max_tokens(model, max_tokens), _store_requests()
@@ -88,7 +90,7 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
                               _show_reasoning(show_reasoning)
     stream = on_text !== nothing && _supports_streaming(p)
     on = _StreamHooks(on_text, something(on_reasoning, Returns(nothing)))
-    request(ms, id) = _Request(model, ms, system, n, store, id, stream, tools, effort, temp, summaries)
+    request(ms, id) = _Request(model, ms, system, n, store, id, stream, tools, effort, temp, summaries, deferred)
     full = request(messages, nothing)
     chain = _chain_point(p, messages, store)
     reply = if chain === nothing
@@ -188,6 +190,18 @@ function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens
                          output = Base.source_path(nothing) !== nothing, opts...)
 end
 
+# (loaded, deferred, runnable): the tools sent in full, the tools sent for the provider's own
+# search, and every tool a call may name. Without hosted search the registered tools stay out of
+# the request and the model gets JAIL's tool_search / tool_load instead.
+function _request_tools(s::Session, p::AbstractProvider)
+    all = tools(s)
+    loaded = ToolSpec[t for t in all if t.name in s.loaded_tools]
+    deferred = ToolSpec[t for t in all if !(t.name in s.loaded_tools)]
+    (isempty(deferred) || _tool_search_mode(p) === :hosted) && return loaded, deferred, all
+    client = _client_search_specs()
+    return ToolSpec[loaded; client], ToolSpec[], ToolSpec[all; client]
+end
+
 function _max_tool_rounds(kw)
     n = something(kw, _load_pref("max_tool_rounds", 10))
     n isa Integer && n >= 0 || throw(ArgumentError(
@@ -204,6 +218,32 @@ function _print_tool(io::IO, r::ToolResult)
     line = _short(first(split(r.content, '\n'; limit = 2)), 70)
     printstyled(io, "← ", _tool_label(r.name), r.is_error ? " error: " : ": ", line, "\n";
                 color = r.is_error ? :red : :light_black)
+end
+
+# A line for a hosted tool search step: the search the model ran, or the tools it found.
+function _search_line(t::ToolSearchPart)
+    kind, d = _search_kind(t), t.data
+    if kind in ("server_tool_use", "tool_search_call")
+        args = get(d, kind == "server_tool_use" ? "input" : "arguments", nothing)
+        return string("⌕ tool search", isempty(something(args, ())) ? "" : ": " * _short(JSON.json(args), 70))
+    end
+    names = String[]
+    if kind == "tool_search_tool_result"
+        c = get(d, "content", nothing)
+        c isa AbstractDict || return nothing
+        get(c, "type", nothing) == "tool_search_tool_result_error" &&
+            return string("⌕ tool search failed: ", get(c, "error_code", "error"))
+        append!(names, string(get(r, "tool_name", "?")) for r in something(get(c, "tool_references", nothing), ()))
+    elseif kind == "tool_search_output"
+        for x in something(get(d, "tools", nothing), ())
+            inner = get(x, "tools", nothing)
+            inner === nothing ? push!(names, string(get(x, "name", "?"))) :
+                append!(names, string(get(x, "name", "?"), ".", get(y, "name", "?")) for y in inner)
+        end
+    else
+        return nothing
+    end
+    return string("⌕ found: ", isempty(names) ? "no tools" : join(names, ", "))
 end
 
 # Passed to `on_step` just before the user is asked to confirm `call`; returning `true` says the
@@ -262,8 +302,9 @@ function _tool_loop!(s::Session, limit::Int, approval::String; on_step, opts...)
     step(x) = on_step === nothing ? nothing : on_step(x)
     rounds = 0
     while true
-        specs = tools(s)
-        reply = _complete(s.model, s.messages, s.system; opts..., tools = specs)
+        # Recomputed every round: `tool_load` changes the session's loaded tools.
+        loaded, deferred, specs = _request_tools(s, s.model.provider)
+        reply = _complete(s.model, s.messages, s.system; opts..., tools = loaded, deferred)
         push!(s.messages, reply)
         _sync!(s)
         step(reply)

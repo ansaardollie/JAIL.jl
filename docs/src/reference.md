@@ -58,6 +58,7 @@ Usage
 AbstractContentPart
 TextPart
 ReasoningPart
+ToolSearchPart
 ToolCall
 ToolResult
 ToolResultMessage
@@ -80,6 +81,9 @@ register_tool!
 tools
 tools(::Session)
 set_tools!
+load_tools!
+unload_tools!
+tool_status
 unregister_tool!
 tool_approval
 set_tool_approval!

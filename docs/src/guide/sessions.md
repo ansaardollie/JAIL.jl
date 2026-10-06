@@ -5,7 +5,9 @@ instructions, the `tools` its model may call, and the typed message history in `
 It can also set a `thinking_effort` and `temperature` for its requests (see
 [Thinking effort and temperature](#Thinking-effort-and-temperature)).
 [`chat!`](@ref) sends turns on a session (see [Chat](chat.md)). A new session offers every
-registered tool; see [Tools on a session](tools.md#Tools-on-a-session) to restrict it.
+registered tool; see [Tools on a session](tools.md#Tools-on-a-session) to restrict it. Its
+`loaded_tools` are the ones the model sees in full; the rest it finds through
+[tool search](tools.md#Tool-search).
 
 ## The default session
 
@@ -35,7 +37,8 @@ active_session()
 s = Session("anthropic/claude-sonnet-4-5"; name = "review", system = "Be terse.")
 ```
 
-The detailed display (also the `|` mode's `status`). `thinking` and `temperature` show what
+The detailed display (also the `|` mode's `status`). `loaded` lists the session's loaded tools
+and how the model finds the others. `thinking` and `temperature` show what
 the session's requests will send: its own value, the Preference marked `(Preference)`, or
 `model default` when neither is set. `reasoning` reflects the Preference `show_reasoning`:
 
@@ -120,8 +123,9 @@ end
 ## System instructions
 
 A session created without `system` (including `"default"` and REPL `session new`) gets JAIL's
-built-in instructions: it is running in a Julia REPL, should be concise, and should put code
-in fenced ```` ``` ```` blocks. They end with a line describing the environment when the
+built-in instructions: it is running in a Julia REPL, should be concise, should put code
+in fenced ```` ``` ```` blocks, and has tool search, so it should check for a relevant tool
+before starting a task. They end with a line describing the environment when the
 session was created: Julia version, OS, active project, and the packages in that project's
 `[deps]` (the packages available to `using`, whether loaded or not).
 
@@ -139,7 +143,8 @@ print(Session("openai/gpt-5"; name = "sys").system)
 
 The REPL modes and session-less calls act on the [`active_session`](@ref). Every function
 that changes or uses a session also works without one: `set_model!(model)`,
-`select_model!()`, `set_tools!(tools)`, `set_thinking_effort!(level)`, `set_temperature!(t)`
+`select_model!()`, `set_tools!(tools)`, `load_tools!(tools...)`, `unload_tools!(tools...)`,
+`tool_status(tool)`, `set_thinking_effort!(level)`, `set_temperature!(t)`
 and `chat!(prompt)`. The exception is
 [`tools`](@ref): `tools()` lists the tool registry, so use `tools(active_session())` for the
 active session's tools.
@@ -174,12 +179,13 @@ resolved against the working directory when the session is first saved):
 
 - `sessions/<id>.json`: name, id, creation time, model (as `"provider/model-id"`), system
   instructions, tools (`null` for every registered tool), the names of the tools the session
-  could use when last saved (`available_tools`), thinking effort and temperature.
+  could use when last saved (`available_tools`), its loaded tools (`loaded_tools`), thinking
+  effort and temperature.
 - `messages/<id>.jsonl`: one message per line. Each new message is appended, so saving adds
   almost nothing to a chat turn. Tool calls are stored with their arguments as a JSON object;
   a tool result whose text is JSON is stored as that JSON value, other results as text.
-  [`ReasoningPart`](@ref)s are stored with their provider data, so a restored session can still
-  send them back.
+  [`ReasoningPart`](@ref)s and [`ToolSearchPart`](@ref)s are stored with their provider data,
+  so a restored session can still send them back.
 - `tools/<id>/<pair id>.json`: one file per tool call and its result, named by the
   [`ToolResult`](@ref)'s `id` (a version 7 UUID, also stored with the result in the messages
   file). It holds the session id, model, start and finish times, the tool (name, label, group),
@@ -190,8 +196,8 @@ resolved against the working directory when the session is first saved):
   The `}` mode links to them (see [Chat](chat.md#Thinking-effort,-temperature-and-reasoning)).
 
 A session with no messages is not saved, and a turn that fails is removed from the file too.
-[`set_model!`](@ref), [`set_tools!`](@ref), [`set_thinking_effort!`](@ref),
-[`set_temperature!`](@ref) and `empty!` update the files. Set the Preference
+[`set_model!`](@ref), [`set_tools!`](@ref), [`load_tools!`](@ref), [`unload_tools!`](@ref),
+[`set_thinking_effort!`](@ref), [`set_temperature!`](@ref) and `empty!` update the files. Set the Preference
 `persist_sessions = false` to stop saving.
 
 [`restore_session!`](@ref) brings a saved session back, in this or a later Julia process, and
@@ -208,7 +214,8 @@ restore_session!(id)     # a UUID, or its string form
   provider was removed), the session comes back without a model and a warning is shown; pick
   one with [`set_model!`](@ref).
 - Built-in tools the session could use (or chose with [`set_tools!`](@ref)) are registered
-  again if they aren't (see [`register_builtin_tools!`](@ref)). Your own tools can't be
+  again if they aren't (for example when the Preference `registered_tools` leaves them out; see
+  [`register_builtin_tools!`](@ref)). Your own tools can't be
   restored from disk: a warning names those that are not registered, so you can
   [`register_tool!`](@ref) them again.
 - Restoring a session that is already loaded just makes it active.

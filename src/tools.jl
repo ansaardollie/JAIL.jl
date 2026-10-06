@@ -200,10 +200,12 @@ end
 
 """
     register_tool!(f::Function; group = "global", label = nothing, security = :medium,
-                   preview = nothing) -> ToolSpec
+                   preview = nothing, load = false) -> ToolSpec
 
 Make `f` available to models as a tool and return its [`ToolSpec`](@ref). Registering a name
-again replaces the earlier tool.
+again replaces the earlier tool. A registered tool is found by the model through tool search;
+`load = true` also loads it in the [`active_session`](@ref), so the model sees it in full from
+the next request (see [`load_tools!`](@ref)).
 
 What the model sees comes from `f` itself:
 
@@ -263,9 +265,11 @@ See also [`@tool`](@ref), [`tools`](@ref), [`unregister_tool!`](@ref).
 function register_tool!(f::Function; group::Union{AbstractString,Symbol} = _DEFAULT_GROUP,
                         label::Union{Nothing,AbstractString} = nothing,
                         security::Union{Symbol,AbstractString,Function} = :medium,
-                        preview::Union{Nothing,Symbol,AbstractString,AbstractVector,Function} = nothing)
-    spec = _tool_spec(f; group, label, security, preview)
-    return _register!(spec)
+                        preview::Union{Nothing,Symbol,AbstractString,AbstractVector,Function} = nothing,
+                        load::Bool = false)
+    spec = _register!(_tool_spec(f; group, label, security, preview))
+    load && isassigned(_ACTIVE) && load_tools!(active_session(), spec)
+    return spec
 end
 
 function _register!(spec::ToolSpec)
@@ -277,12 +281,12 @@ function _register!(spec::ToolSpec)
 end
 
 """
-    @tool [group=name] [label="text"] [security=level] [preview=arg] f1 f2 ...
+    @tool [group=name] [label="text"] [security=level] [preview=arg] [load=true] f1 f2 ...
 
 Register each named function as a tool with [`register_tool!`](@ref); returns their
 [`ToolSpec`](@ref)s. Names may be qualified (`@tool MyPkg.search`). `group=` (a name or a
-string), `security=` and `preview=` apply to every function named; `label=` sets the label of a
-single tool.
+string), `security=`, `preview=` and `load=` apply to every function named; `label=` sets the
+label of a single tool. `load=true` also loads them in the active session.
 
 - `security=` takes `low`, `medium` or `high`; any other name or expression is used as the
   security function (`security=shell_level`, `security=cmd -> ...`).
@@ -301,8 +305,8 @@ macro tool(args...)
     for a in args
         if Meta.isexpr(a, :(=), 2)
             k, v = a.args
-            k in (:group, :label, :security, :preview) || throw(ArgumentError(
-                "unknown @tool option `$k`; the options are `group=`, `label=`, `security=` and `preview=`"))
+            k in (:group, :label, :security, :preview, :load) || throw(ArgumentError(
+                "unknown @tool option `$k`; the options are `group=`, `label=`, `security=`, `preview=` and `load=`"))
             haskey(opts, k) && throw(ArgumentError("@tool option `$k=` given twice"))
             opts[k] = _tool_option(Val(k), v)
         elseif a isa Symbol || Meta.isexpr(a, :.)
@@ -333,6 +337,11 @@ end
 function _tool_option(::Val{:security}, v)
     s = _literal_name(v)
     return s !== nothing && Symbol(s) in _SECURITY_LEVELS ? QuoteNode(Symbol(s)) : esc(v)
+end
+
+function _tool_option(::Val{:load}, v)
+    v isa Bool || throw(ArgumentError("@tool `load=` takes `true` or `false`, got `$v`"))
+    return v
 end
 
 function _tool_option(::Val{:preview}, v)

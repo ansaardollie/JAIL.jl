@@ -2,7 +2,8 @@
 
 A tool is an ordinary Julia function that a model may ask JAIL to call. Registering a function
 reflects on it and stores a [`ToolSpec`](@ref) in JAIL's tool registry. Every session offers
-the registered tools to its model, and [`chat!`](@ref) runs the calls the model makes. Tools
+the registered tools to its model (in full when the session has loaded them, otherwise through
+[tool search](#Tool-search)), and [`chat!`](@ref) runs the calls the model makes. Tools
 can be filed under groups and given a label for display (see [Groups and labels](#Groups-and-labels)).
 
 ## Defining a tool
@@ -75,6 +76,9 @@ echo(value) = value
 @tool add_todo! echo
 ```
 
+`@tool load=true f` (or `register_tool!(f; load = true)`) also loads the tool in the active
+session; see [Tool search](#Tool-search).
+
 ## Groups and labels
 
 Every tool belongs to a group, `"global"` unless another is given, and has a label: the text
@@ -105,16 +109,19 @@ tools("files")
 ## The registry
 
 Tools are keyed by name. Registering a name again replaces the earlier tool.
-[`tools`](@ref) lists them and [`unregister_tool!`](@ref) removes one, by name or function:
+[`tools`](@ref) lists them and [`unregister_tool!`](@ref) removes one, by name or function.
+The registry also holds the [built-in tools](#Built-in-tools), registered when JAIL loads, so
+here they are filtered out:
 
 ```@example tools
-tools()
+mine() = filter(t -> !(t in builtin_tools()), tools())
+mine()
 ```
 
 ```@example tools
 unregister_tool!("echo")
 unregister_tool!(add_todo!)
-tools()
+mine()
 ```
 
 ## Tools on a session
@@ -137,6 +144,50 @@ s
 the `|` REPL mode, `tools use`, `tools add`, `tools drop`, `tools all` and `tools none` do the
 same for the active session, and `group:<group>` stands for a whole group (see
 [REPL modes](repl.md)).
+
+## Tool search
+
+A session's tools are either **loaded** or just **registered**:
+
+| Status | What the model gets |
+|---|---|
+| `:unregistered` | nothing |
+| `:registered` | nothing up front: it finds the tool with tool search when a task needs it |
+| `:loaded` | the full definition on every request |
+
+So many tools can be registered without filling the model's context. Loaded tools belong to a
+session: [`load_tools!`](@ref) and [`unload_tools!`](@ref) change them (by name, function or
+group), [`tool_status`](@ref) reports a tool's status, and `Session(model; loaded_tools = [...])`
+sets them from the start. New sessions load the tools named in the Preference `loaded_tools`
+(default none), and `register_tool!(f; load = true)` (or `@tool load=true f`) also loads the
+tool in the active session. Loaded tools are saved with the session.
+
+```julia
+s = Session("anthropic/claude-sonnet-4-5"; loaded_tools = ["read_file"])
+load_tools!(s, get_weather, "memory")   # a function and a whole group
+tool_status(s, "grep_files")             # :registered
+unload_tools!(s, "memory")
+```
+
+How the model searches depends on the provider:
+
+- **OpenAI** and **Anthropic** search natively: the registered tools are sent with
+  `defer_loading`, together with the provider's search tool (OpenAI `tool_search`, Anthropic
+  `tool_search_tool_bm25_20251119`). The search runs on the provider's side and shows up in the
+  reply as [`ToolSearchPart`](@ref)s (and as `⌕` lines when streaming). It needs `gpt-5.4` or
+  later, or Claude Opus/Sonnet/Haiku 4.5 or later; for older models set the Preference
+  `providers.<name>.tool_search = "client"`.
+- **Google**, **GoogleEnterprise** and **OpenAI-compatible** servers (and OpenAI/Anthropic with
+  `tool_search = "client"`) get two tools of JAIL's instead, never registered and never
+  confirmed: `tool_search(keywords)` lists the registered tools whose name or description
+  matches any keyword (case-insensitive regular expressions; no keywords lists them all), and
+  `tool_load(names)` loads tools in the calling session, so they are sent in full from the next
+  request on.
+
+Either way, a session whose tools are all loaded sends them as plain tools, without search. The
+built-in system instructions tell the model that tool search is available and to check for a
+relevant tool before starting a task. In the `|` REPL mode, `tools load <name>...` and
+`tools unload <name>...` change the active session's loaded tools, and `tools` marks them `L`.
 
 ## The tool loop
 
@@ -279,20 +330,21 @@ one to the Preferences (`nothing` removes it).
 
 JAIL ships tools for working in a Julia project: reading, searching and editing files, looking
 up Julia source and documentation, running Julia code and shell commands, fetching web pages,
-sending HTTP requests, asking the user and keeping per-session memories. [`builtin_tools`](@ref) lists them. None is registered when JAIL loads, so
-sessions don't offer them until you opt in, by group or by name:
+sending HTTP requests, asking the user and keeping per-session memories. [`builtin_tools`](@ref) lists them. All of them are registered when JAIL loads and none is loaded, so the
+model finds them through [tool search](#Tool-search). The Preference `registered_tools` chooses
+which are registered instead, by group or by name (`[]` for none):
+
+```toml
+[JAIL]
+registered_tools = ["read", "inspect", "interact"]
+```
+
+and [`register_builtin_tools!`](@ref) registers more at any time:
 
 ```julia
 register_builtin_tools!("read", "inspect")    # returns the ToolSpecs registered
 register_builtin_tools!(:execute_julia_code)
 unregister_tool!("execute_julia_code")        # as for any tool
-```
-
-or with the Preference `builtin_tools`, which registers them each time JAIL loads:
-
-```toml
-[JAIL]
-builtin_tools = ["read", "inspect", "interact"]
 ```
 
 They are grouped by what they do, so a whole group can be selected
@@ -485,8 +537,14 @@ register_tool!(session_name; security = :low)
   Preference is no longer read (JAIL warns once if it is set).
 - `tool_auto_approvals` (default empty): per-tool and per-group `true`/`false` overrides; see
   [Auto-approving tools](#Auto-approving-tools).
-- `builtin_tools` (default empty): built-in groups or tool names registered when JAIL loads; see
-  [Built-in tools](#Built-in-tools).
+- `registered_tools` (default: every built-in): built-in groups or tool names registered when
+  JAIL loads (`[]` for none); see [Built-in tools](#Built-in-tools). The older `builtin_tools`
+  is no longer read (JAIL warns if it is set).
+- `loaded_tools` (default empty): tool or group names a new session loads; see
+  [Tool search](#Tool-search).
+- `providers.openai.tool_search`, `providers.anthropic.tool_search` (default `"hosted"`):
+  `"client"` makes that provider use JAIL's `tool_search`/`tool_load`; see
+  [Tool search](#Tool-search).
 - `julia_code_module` (default `"main"`): where `execute_julia_code` runs, `"main"` or
   `"sandbox"`; see [Running Julia code](#Running-Julia-code).
 - `protected_paths` (default empty): paths, relative to the workspace folder, whose writes are

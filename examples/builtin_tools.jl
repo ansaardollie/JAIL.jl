@@ -8,8 +8,9 @@
 #   execute   execute_julia_code, run_shell, run_tests, pkg_add
 #   web       fetch_url
 #   interact  ask_user
-# None is registered when JAIL loads: opt in with register_builtin_tools!(groups or names...) or
-# the Preference `builtin_tools`. (The future `&` agentic mode will attach them itself.)
+# All are registered when JAIL loads (none loaded: the model finds them through tool search, see
+# examples/tool_search.jl). The Preference `registered_tools` chooses which instead;
+# register_builtin_tools!(groups or names...) registers more later.
 #
 # Security: paths are relative to the workspace folder (pwd()). Anything outside it (absolute
 # paths elsewhere, `..` first, symlinks) is :high; writes to protected paths (LocalPreferences.toml,
@@ -41,9 +42,9 @@ MODE = "auto"     # tool_approval for section 4: "all", "auto", "none" or "yolo"
 for t in sort(builtin_tools(), by=(t -> (t.group, t.name)))
     println(rpad(t.group, 9), rpad(t.name, 22), t.security isa Symbol ? t.security : "by arguments")
 end
-println("\nregistered before opting in: ", [t.name for t in tools() if t in builtin_tools()])
+println("\nregistered at load: ", [t.name for t in tools() if t in builtin_tools()])
 
-# --- 2. Opting in -------------------------------------------------------------------------
+# --- 2. Registering again (e.g. after unregister_tool!) -----------------------------------
 
 registered = register_builtin_tools!("read", "inspect", "interact", :execute_julia_code, :create_file,
                                      :replace_in_file, :fetch_url)

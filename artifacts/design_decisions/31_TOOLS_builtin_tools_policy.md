@@ -1,3 +1,5 @@
+> **Superseded in part by:** `42_TOOLS_tool_search_and_loaded_tools.md` (every built-in is registered at load, none loaded; Preference `builtin_tools` → `registered_tools`)
+
 # Decision: Built-in tools — availability, names, workspace folder, Julia evaluation target, output size, secret scrubbing
 
 | Field | Value |

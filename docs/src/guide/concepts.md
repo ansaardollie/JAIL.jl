@@ -42,7 +42,8 @@ session can switch model (even provider) mid-conversation. A history holds
 [`UserMessage`](@ref)s, [`AssistantMessage`](@ref)s and, when tools run,
 [`ToolResultMessage`](@ref)s; system instructions live on the session, not in the history.
 A thinking model's reasoning is kept on its replies as [`ReasoningPart`](@ref)s so it can be
-sent back to the provider that produced it.
+sent back to the provider that produced it; so are the steps of a provider's own tool search
+([`ToolSearchPart`](@ref)).
 See [Chat](chat.md).
 
 ## Tools are Julia functions
@@ -52,8 +53,12 @@ A tool is a documented Julia function registered with [`register_tool!`](@ref) o
 the model makes, and sends the results back. Tool calls and results are content parts and
 messages like any other, so they stay in the provider-agnostic history. Before a call runs, JAIL
 asks on the terminal if the tool's security level, the `tool_approval` Preference or a
-per-tool auto-approval says so. JAIL also ships opt-in built-in tools (files, Julia source and
-docs, running code, shell, web, asking you); see [Built-in tools](tools.md#Built-in-tools).
+per-tool auto-approval says so. Each session **loads** some tools (the model gets their full
+definitions) and leaves the other registered tools to **tool search**, so large tool sets don't
+fill the context: OpenAI and Anthropic search natively, and other providers get JAIL's
+`tool_search` and `tool_load` tools; see [Tool search](tools.md#Tool-search). JAIL also ships
+built-in tools (files, Julia source and docs, running code, shell, web, asking you), all
+registered when it loads; see [Built-in tools](tools.md#Built-in-tools).
 See [Tools](tools.md).
 
 ## Configuration lives in Preferences
@@ -78,8 +83,8 @@ The full list of keys is in [Preferences keys](providers.md#Preferences-keys).
 JAIL will be used in two ways that share the same code:
 
 - **REPL modes**: `|` for model, session and tool selection and `}` for chatting, including
-  tool calls (both available now), and `&` for agentic work with code generation, attaching the
-  built-in tools (planned; the built-in tools themselves can already be registered for `}`).
+  tool calls (both available now), and `&` for agentic work with code generation (planned; the
+  built-in tools are already registered for `}`).
   Each mode's prompt shows the model it is using.
 - **Functions** for one-shot text, generated Julia code, and extracting Julia objects from
   natural language (planned).

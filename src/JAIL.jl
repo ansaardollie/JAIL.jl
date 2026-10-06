@@ -16,9 +16,10 @@ export AbstractModel, Model
 export configure_provider!, register_provider!, providers
 export set_default_model!, default_model, list_models, select_model!
 export AbstractMessage, Session, set_model!, use_provider!, set_thinking_effort!, set_temperature!
-export AbstractContentPart, TextPart, ReasoningPart, UserMessage, AssistantMessage, Usage, chat!
+export AbstractContentPart, TextPart, ReasoningPart, ToolSearchPart, UserMessage, AssistantMessage, Usage, chat!
 export sessions, active_session, new_session!, use_session!, delete_session!, restore_session!
 export ToolSpec, register_tool!, @tool, tools, unregister_tool!, set_tools!
+export load_tools!, unload_tools!, tool_status
 export tool_approval, set_tool_approval!, security_level, needs_confirmation, tool_preview
 export tool_auto_approvals, set_tool_auto_approval!
 export ToolCall, ToolResult, ToolResultMessage
@@ -57,6 +58,7 @@ include("builtin_tools/process.jl")
 include("builtin_tools/web.jl")
 include("builtin_tools/repl.jl")
 include("builtin_tools/memory.jl")
+include("builtin_tools/tool_search.jl")
 
 function __init__()
     _register_builtin_prefs!()

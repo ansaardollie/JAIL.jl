@@ -2,7 +2,8 @@
     AbstractContentPart
 
 One piece of a message's content: [`TextPart`](@ref), a [`ToolCall`](@ref) the model made, a
-[`ToolResult`](@ref) sent back, or the model's [`ReasoningPart`](@ref).
+[`ToolResult`](@ref) sent back, the model's [`ReasoningPart`](@ref), or a step of a provider's
+hosted tool search ([`ToolSearchPart`](@ref)).
 """
 abstract type AbstractContentPart end
 
@@ -78,6 +79,26 @@ struct ReasoningPart <: AbstractContentPart
     data::Dict{String,Any}
     ReasoningPart(text::AbstractString, format::Symbol, data::AbstractDict = Dict{String,Any}()) =
         new(String(text), format, Dict{String,Any}(string(k) => v for (k, v) in data))
+end
+
+"""
+    ToolSearchPart(format::Symbol, data = Dict())
+
+A step of the provider's own (hosted) tool search inside an [`AssistantMessage`](@ref): the
+search the model ran or the tools it found, as the provider's opaque record `data` in the wire
+`format` it came from (`:anthropic` for `server_tool_use` / `tool_search_tool_result` blocks,
+`:openai_responses` for `tool_search_call` / `tool_search_output` items). Don't edit `data`;
+providers require it back unchanged.
+
+It is not part of `string(msg)`. When the history is sent again in full, it goes back only to
+the provider type and wire format that produced it, and only while that request uses hosted tool
+search. See the Tools guide on tool search.
+"""
+struct ToolSearchPart <: AbstractContentPart
+    format::Symbol
+    data::Dict{String,Any}
+    ToolSearchPart(format::Symbol, data::AbstractDict = Dict{String,Any}()) =
+        new(format, Dict{String,Any}(string(k) => v for (k, v) in data))
 end
 
 """
@@ -183,9 +204,13 @@ Base.show(io::IO, c::ToolCall) = print(io, "ToolCall(", _call_signature(c), ")")
 Base.show(io::IO, r::ToolResult) =
     print(io, "ToolResult(", r.name, r.is_error ? " error " : " ", repr(_short(r.content, 40)), ")")
 Base.show(io::IO, r::ReasoningPart) = print(io, "ReasoningPart(:", r.format, ", ", repr(_short(r.text, 40)), ")")
+Base.show(io::IO, t::ToolSearchPart) = print(io, "ToolSearchPart(:", t.format, ", ", repr(_search_kind(t)), ")")
 
-# Reasoning goes back only to the provider type and wire format that produced it.
-_replays(r::ReasoningPart, m::AssistantMessage, p::AbstractProvider, format::Symbol) =
+# Wire type of the block or item (`server_tool_use`, `tool_search_output`, ...).
+_search_kind(t::ToolSearchPart) = string(get(t.data, "type", ""))
+
+# Reasoning and tool search steps go back only to the provider type and wire format that produced them.
+_replays(r::Union{ReasoningPart,ToolSearchPart}, m::AssistantMessage, p::AbstractProvider, format::Symbol) =
     r.format === format && m.model !== nothing && typeof(m.model.provider) === typeof(p)
 
 Base.show(io::IO, m::UserMessage) = print(io, "UserMessage(", repr(_preview(m)), ")")

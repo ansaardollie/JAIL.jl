@@ -14,12 +14,15 @@ const _MODEL_HELP = """
     session restore                       choose a saved session from a menu and make it active
     session rm <name|id> [--files]        delete a session (not the active one); --files also
                                            deletes its saved files
-    tools                                 list tools by group (* = available to the active session)
+    tools                                 list tools by group (* = available to the active
+                                           session, L = loaded in it)
     tools show <name>                     a tool's description and parameters
     tools use <name>...                   restrict the active session to these tools; a
                                            `group:<group>` argument stands for all tools in it
     tools add <name>... | drop <name>...  add to / remove from the active session's tools
     tools all | none                      every registered tool (the default) | no tools
+    tools load <name>... | unload <name>...  load tools in the active session (the model sees
+                                           them in full) | leave them to tool search
     tools approve <name|group:<group>>... run these tools' calls without asking (saved in
                                            the Preference tool_auto_approvals)
     tools unapprove <name|group:<group>>...  remove those entries (security level decides)
@@ -41,10 +44,12 @@ function _nargs(cmd, args, n::UnitRange)
                  "session new" => "session new [name] [provider/model]",
                  "session use" => "session use <name|id>", "session restore" => "session restore",
                  "session rm" => "session rm <name|id> [--files]",
-                 "tools" => "tools [show <name> | use|add|drop|approve|unapprove <name>... | all | none]",
+                 "tools" => "tools [show <name> | use|add|drop|load|unload|approve|unapprove <name>... | all | none]",
                  "tools show" => "tools show <name>", "tools use" => "tools use <name|group:<group>>...",
                  "tools add" => "tools add <name|group:<group>>...", "tools drop" => "tools drop <name|group:<group>>...",
                  "tools all" => "tools all", "tools none" => "tools none",
+                 "tools load" => "tools load <name|group:<group>>...",
+                 "tools unload" => "tools unload <name|group:<group>>...",
                  "tools approve" => "tools approve <name|group:<group>>...",
                  "tools unapprove" => "tools unapprove <name|group:<group>>...",
                  "tokens" => "tokens [provider/model]")
@@ -167,7 +172,8 @@ function _list_tools(s::Session)
             t.group == g || continue
             label = t.label == t.name ? "" : string(" (", repr(t.label), ")")
             desc = isempty(t.description) ? "" : _short(first(split(t.description, '\n')), 60)
-            print(t.name in mine ? "  * " : "    ", rpad(t.name, width), "  ", desc, label)
+            print(t.name in mine ? "  * " : "    ", t.name in s.loaded_tools ? "L " : "  ",
+                  rpad(t.name, width), "  ", desc, label)
             a = _auto_approval(t, table)
             a === nothing || printstyled(a ? "  [auto-approved]" : "  [always asks]"; color = a ? :green : :yellow)
             println()
@@ -197,6 +203,7 @@ function _cmd_tools(args)
         haskey(_TOOLS, names[1]) || throw(ArgumentError("no tool named \"$(names[1])\" is registered"))
         show(stdout, MIME"text/plain"(), _TOOLS[names[1]])
         println("\n  approval: ", _approval_label(_auto_approval(_TOOLS[names[1]])))
+        println("  status: ", tool_status(s, names[1]), " in session \"", s.name, "\"")
     elseif sub in ("approve", "unapprove")
         isempty(names) && _nargs("tools $sub", names, 1:typemax(Int))
         for n in names
@@ -217,12 +224,16 @@ function _cmd_tools(args)
             set_tools!(s, setdiff(s.tools === nothing ? [t.name for t in tools()] : s.tools, names))
         end
         _session_tools_changed(s)
+    elseif sub in ("load", "unload")
+        isempty(names) && _nargs("tools $sub", names, 1:typemax(Int))
+        sub == "load" ? load_tools!(s, names...) : unload_tools!(s, names...)
+        println("Session \"", s.name, "\" loaded tools: ", _loaded_label(s))
     elseif sub in ("all", "none")
         _nargs("tools $sub", names, 0:0)
         set_tools!(s, sub == "all" ? nothing : String[])
         _session_tools_changed(s)
     else
-        throw(ArgumentError("unknown `tools` subcommand `$sub`; use show, use, add, drop, all, none, approve or unapprove"))
+        throw(ArgumentError("unknown `tools` subcommand `$sub`; use show, use, add, drop, load, unload, all, none, approve or unapprove"))
     end
 end
 
@@ -282,9 +293,9 @@ function _complete_model_mode(before::AbstractString)
         n == 3 && parts[2] in ("use", "rm") && return _matching(unique(s.name for s in _SESSIONS), partial)
         n in (3, 4) && parts[2] == "new" && return _complete_model_spec(partial)
     elseif cmd == "tools"
-        n == 2 && return _matching(("show", "use", "add", "drop", "all", "none", "approve", "unapprove"), partial)
+        n == 2 && return _matching(("show", "use", "add", "drop", "load", "unload", "all", "none", "approve", "unapprove"), partial)
         sub = parts[2]
-        sub in ("use", "add", "drop", "approve", "unapprove") && return _matching(
+        sub in ("use", "add", "drop", "load", "unload", "approve", "unapprove") && return _matching(
             [sort!(collect(keys(_TOOLS))); [_GROUP_ARG * g for g in _tool_groups()]], partial)
         sub == "show" && n == 3 && return _matching(sort!(collect(keys(_TOOLS))), partial)
     end

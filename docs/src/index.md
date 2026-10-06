@@ -21,15 +21,16 @@ JAIL is an early rewrite. What works today:
   summaries shown as they stream.
 - **Tools**: Julia functions registered with [`register_tool!`](@ref) or [`@tool`](@ref);
   `chat!` runs the calls the model makes, asking first according to each tool's security level
-  and your Preferences, and sends the results back.
-- **Built-in tools**: 26 opt-in tools for reading, searching and editing files, looking up
-  Julia source and docs, running Julia code and shell commands, fetching web pages and asking
-  you questions; register them with [`register_builtin_tools!`](@ref).
+  and your Preferences, and sends the results back. With tool search the model sees only the
+  tools a session has loaded and finds the rest when it needs them.
+- **Built-in tools**: tools for reading, searching and editing files, looking up Julia source
+  and docs, running Julia code and shell commands, fetching web pages and asking you questions;
+  all registered when JAIL loads (choose with the Preference `registered_tools`).
 - **REPL modes**: `|` for listing and switching providers, models, sessions and tools, `}` for
   chatting with the active session's model.
 
 Not implemented yet: images, the agentic (`&`)
-REPL mode (which will attach the built-in tools itself), and one-shot functions for text, code
+REPL mode, and one-shot functions for text, code
 generation and extraction.
 
 ## Quick start

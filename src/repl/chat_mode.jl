@@ -251,7 +251,16 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
     function on_step(x)
         x isa _ReasoningSaved && (saved[] = x; return)
         phase[] = :none
-        x isa AssistantMessage && return
+        if x isa AssistantMessage
+            lines = stream ? filter(!isnothing, [_search_line(p) for p in x.content if p isa ToolSearchPart]) : []
+            if !isempty(lines)
+                clear_status()
+                enter_alt()
+                line_start[] || (println(io); line_start[] = true)
+                foreach(l -> printstyled(io, l, "\n"; color = :cyan), lines)
+            end
+            return
+        end
         # The confirmation prompt needs the line to itself; when streaming, the preview is shown.
         x isa Union{_Confirming,_Prompting} && (clear_status(); return stream)
         if stream

@@ -74,7 +74,8 @@ function count_tokens(s::Session, prompt::Union{Nothing,AbstractString,UserMessa
         isempty(strip(string(msg))) && throw(ArgumentError("prompt must not be empty"))
         push!(messages, msg)
     end
-    return _count_tokens(m, messages, s.system, tools(s))
+    loaded, deferred, _ = _request_tools(s, m.provider)
+    return _count_tokens(m, messages, s.system, loaded, deferred)
 end
 
 count_tokens(prompt::Union{Nothing,AbstractString,UserMessage} = nothing; kwargs...) =
@@ -82,18 +83,20 @@ count_tokens(prompt::Union{Nothing,AbstractString,UserMessage} = nothing; kwargs
 
 # Cumulative counts: messages, + system, + tools. Endpoints that need a message get a placeholder
 # when there are none, and its count is subtracted.
-function _count_tokens(model::AbstractModel, messages, system, specs::Vector{ToolSpec})
+function _count_tokens(model::AbstractModel, messages, system, specs::Vector{ToolSpec},
+                       deferred::Vector{ToolSpec} = ToolSpec[])
     p = model.provider
     system = system === nothing || isempty(system) ? nothing : system
     ms = collect(AbstractMessage, _replayable(messages))
-    isempty(ms) && system === nothing && isempty(specs) && return TokenCount(model, 0, 0, 0, 0)
+    no_tools = isempty(specs) && isempty(deferred)
+    isempty(ms) && system === nothing && no_tools && return TokenCount(model, 0, 0, 0, 0)
     placeholder = isempty(ms) && _count_needs_messages(typeof(p))
     placeholder && push!(ms, UserMessage("."))
-    count(sys, ts) = _count_request(p, _Request(model, ms, sys, nothing, false, nothing, false, ts,
-                                                                nothing, nothing, false))
+    count(sys, ts, ds = ToolSpec[]) = _count_request(p, _Request(model, ms, sys, nothing, false, nothing,
+                                                                 false, ts, nothing, nothing, false, ds))
     n_messages = isempty(ms) ? 0 : count(nothing, ToolSpec[])
     n_system = system === nothing ? n_messages : count(system, ToolSpec[])
-    n_total = isempty(specs) ? n_system : count(system, specs)
+    n_total = no_tools ? n_system : count(system, specs, deferred)
     base = placeholder ? n_messages : 0
     return TokenCount(model, n_total - base, n_system - n_messages, n_total - n_system, n_messages - base)
 end

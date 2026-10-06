@@ -199,6 +199,7 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `providers.google_enterprise.location` | string | same | Region such as `"us-central1"`, or `"global"` |
 | `providers.google_enterprise.service_account_path` | string | same | Path to a service-account key file (optional) |
 | `providers.google_enterprise.api` | `"generate_content"` | same | Only written when not `:interactions` |
+| `providers.openai.tool_search`, `providers.anthropic.tool_search` | `"hosted"` / `"client"` | by hand | How the model finds tools that are registered but not loaded: the provider's own tool search (default `"hosted"`; needs `gpt-5.4` or later, or Claude 4.5 or later) or JAIL's `tool_search`/`tool_load` tools. Other providers always use JAIL's |
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
 | `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic the model's max output, others none) |
 | `thinking_effort` | string such as `"low"`, `"high"` | by hand | Reasoning effort for [`chat!`](@ref) and the `}` mode when neither the call nor the session sets one, sent as-is (unset: not sent) |
@@ -210,7 +211,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`chat!`](@ref) call before further calls are answered "not run" (default 10) |
 | `tool_approval` | `"all"` / `"auto"` / `"none"` / `"yolo"` | by hand | Which tool security levels are confirmed with `[y/N]` before running (default `"auto"`: medium and high) |
 | `tool_auto_approvals` | table of tool name (or group) → `true` / `false` | [`set_tool_auto_approval!`](@ref), `a` at a prompt, `tools approve` | `true`: never ask for that tool; `false`: always ask (default empty) |
-| `builtin_tools` | list of built-in group or tool names | by hand | Built-in tools registered when JAIL loads (default empty; see [`register_builtin_tools!`](@ref)) |
+| `registered_tools` | list of built-in group or tool names | by hand | Built-in tools registered when JAIL loads (default: every built-in; `[]` for none). The older `builtin_tools` is no longer read |
+| `loaded_tools` | list of tool or group names | by hand | Tools a new session loads, so the model sees them in full; the others are found through tool search (default empty; see [`load_tools!`](@ref)) |
 | `julia_code_module` | `"main"` / `"sandbox"` | by hand | Where the built-in `execute_julia_code` runs: `Main`, or a module per session (default `"main"`) |
 | `protected_paths` | list of paths | by hand | Paths, relative to the workspace folder, whose writes by built-in tools are always `:high`, besides `LocalPreferences.toml`, `Project.toml`, `.git` and `storage_dir` (default empty) |
 | `scrub_env_vars` | list of ENV var names | by hand | Removed from the built-in tools' child processes, besides names ending in `_KEY`, `_CREDENTIALS`, `_CREDENTIAL` (default empty) |

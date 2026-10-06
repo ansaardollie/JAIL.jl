@@ -42,3 +42,9 @@ exists to run them.
 Items 1–3 implemented as 25 built-in tools (`work_history/25_TOOLS_builtin_tools.md`, plan
 `implementation_plans/1_TOOLS_builtin_tools_catalogue.md`). Remaining: item 4, the `&` mode,
 which attaches the built-ins; and a Google mock round.
+
+## Update (2026-10-06)
+
+Built-ins are now registered at load (decision 42), so the `&` mode no longer needs to attach
+them. A Google Interactions mock tool round ran (`tool_search` → `tool_load` → `get_weather`;
+`work_history/36_TOOLS_tool_search_and_loaded_tools.md`). Remaining: item 4, the `&` mode.
