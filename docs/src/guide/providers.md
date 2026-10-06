@@ -202,14 +202,14 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `providers.openai.tool_search`, `providers.anthropic.tool_search` | `"hosted"` / `"client"` | by hand | How the model finds tools that are registered but not loaded: the provider's own tool search (default `"hosted"`; needs `gpt-5.4` or later, or Claude 4.5 or later) or JAIL's `tool_search`/`tool_load` tools. Other providers always use JAIL's |
 | `providers.anthropic.prompt_cache` | `"off"` / `"5m"` / `"1h"` | by hand | Automatic prompt caching of each Anthropic request (`cache_control` on the whole request): none (default), a 5-minute cache, or a 1-hour one (cache writes cost 2× input); see [Chat](chat.md#What-gets-sent) |
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
-| `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic the model's max output, others none) |
-| `thinking_effort` | string such as `"low"`, `"high"` | by hand | Reasoning effort for [`chat!`](@ref) and the `}` mode when neither the call nor the session sets one, sent as-is (unset: not sent) |
+| `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) and [`agent!`](@ref) on every provider (unset: Anthropic the model's max output, others none) |
+| `thinking_effort` | string such as `"low"`, `"high"` | by hand | Reasoning effort for [`chat!`](@ref), [`agent!`](@ref) and the `}`/`&` modes when neither the call nor the session sets one, sent as-is (unset: not sent) |
 | `temperature` | non-negative number | by hand | Sampling temperature, likewise (unset: not sent) |
 | `show_reasoning` | `true` / `false` | by hand | Ask for reasoning summaries, show them while streaming, save them under `storage_dir/reasoning` (default `false`) |
 | `store_requests` | `true` / `false` | by hand | OpenAI, Google, and `GoogleEnterprise` (unless `api = :generate_content`) store replies and continue from them (default `true`); `false` sends `store = false` and the full history |
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
-| `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |
-| `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`chat!`](@ref) call before further calls are answered "not run" (default 10) |
+| `stream` | `true` / `false` | by hand | Stream replies in the `}` chat and `&` agent modes (default `false`) |
+| `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`agent!`](@ref) call before further calls are answered "not run" (default 50) |
 | `parallel_tool_calls` | `true` / `false` | by hand | Let the model call several tools per reply and run them at the same time (default `true`); `false` asks OpenAI, OpenAI-compatible servers and Anthropic for one call per reply and runs calls one by one; see [Tools](tools.md#Parallel-tool-calls) |
 | `providers.<name>.parallel_tool_calls` | `true` / `false` | by hand | Overrides `parallel_tool_calls` for that provider |
 | `tool_approval` | `"all"` / `"auto"` / `"none"` / `"yolo"` | by hand | Which tool security levels are confirmed with `[y/N]` before running (default `"auto"`: medium and high) |
@@ -223,7 +223,7 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `command_allow_list` | list of command prefixes | by hand | `run_shell` commands starting with one of them (and free of `;`, `&`, `\|`, `` ` ``, `$`, `<`, `>`, line breaks) are `:low` (default empty) |
 | `url_allow_list` | list of URL prefixes | by hand | `http_request` calls to URLs starting with one of them (at a `/`, `?`, `#` or the end) are `:low` instead of `:high` (default empty) |
 | `persist_sessions` | `true` / `false` | by hand | Save sessions to disk from their first message on (default `true`) |
-| `storage_dir` | path | by hand | Folder for saved sessions and session memories (default `".jail"`, relative to the working directory) |
+| `storage_dir` | path | by hand | Folder for saved sessions, session memories, and the agents and skills made with `new_agent`/`new_skill` (`agents/`, `skills/`; default `".jail"`, relative to the working directory) |
 
 For example:
 

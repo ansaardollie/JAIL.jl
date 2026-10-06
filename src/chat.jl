@@ -92,7 +92,7 @@ end
 function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
                    system::Union{Nothing,AbstractString}; max_tokens = nothing, on_text = nothing,
                    on_reasoning = nothing, tools::Vector{ToolSpec} = ToolSpec[],
-                   deferred::Vector{ToolSpec} = ToolSpec[],
+                   deferred::Vector{ToolSpec} = ToolSpec[], tool_choice::Symbol = :auto,
                    thinking_effort = nothing, temperature = nothing, show_reasoning = nothing)
     p = model.provider
     n, store = _max_tokens(model, max_tokens), _store_requests()
@@ -102,7 +102,7 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
     on = _StreamHooks(on_text, something(on_reasoning, Returns(nothing)))
     parallel = _parallel_tool_calls(p)
     request(ms, id) = _Request(model, ms, system, n, store, id, stream, tools, effort, temp, summaries,
-                               deferred, parallel)
+                               deferred, parallel, tool_choice)
     full = request(messages, nothing)
     chain = _chain_point(p, messages, store)
     reply = if chain === nothing
@@ -125,32 +125,20 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
 end
 
 """
-    chat!(session::Session, prompt; max_tokens = nothing, stream = false, max_tool_rounds = nothing,
+    chat!(session::Session, prompt; max_tokens = nothing, stream = false,
           thinking_effort = nothing, temperature = nothing, show_reasoning = nothing) -> AssistantMessage
     chat!(prompt; kwargs...)
 
 Send `prompt` (a `String` or [`UserMessage`](@ref)) as the next turn of `session`, or of the
-[`active_session`](@ref) when no session is given, with the session's `system` instructions
-and [`tools`](@ref). The prompt and the reply are appended to `session.messages` and the reply
-is returned. If a request fails, the history is left as it was. Each message is also saved to
-disk as it is added (see [`restore_session!`](@ref)).
+[`active_session`](@ref) when no session is given, with the session's `system` instructions.
+The prompt and the reply are appended to `session.messages` and the reply is returned. If a
+request fails, the history is left as it was. Each message is also saved to disk as it is added
+(see [`restore_session!`](@ref)).
 
-When the model calls tools, JAIL runs them, sends a [`ToolResultMessage`](@ref)
-back and asks again, until a reply calls no tools; every step is added to the history and the
-last reply is returned. With the Preference `parallel_tool_calls` on (the default; a
-`providers.<name>.parallel_tool_calls` entry overrides it for one provider) the model may call
-several tools in one reply: each call is confirmed first, one by one, then calls of tools
-registered with `concurrent = false` run one after another and the rest run at the same time
-(on threads when Julia has more than one). With it `false`, OpenAI, OpenAI-compatible servers
-and Anthropic are asked for at most one call per reply (Google has no such setting) and calls
-run one by one, in order. Errors (unknown tool, bad arguments, a tool that throws) are sent to
-the model as error results rather than thrown. After `max_tool_rounds` rounds (default: the
-Preference `max_tool_rounds`, else 10) further calls are answered with "not run" results and
-the last reply (`stop_reason = :tool_use`) is returned. Whether a call is confirmed on the
-terminal first depends on the tool's `security` level, the Preference `tool_approval` and the
-tool's entry in [`tool_auto_approvals`](@ref) (see [`register_tool!`](@ref)); the built-in
-`ask_user` is never confirmed. A tool can read the calling session and call with
-[`tool_context`](@ref).
+`chat!` is text only: the model is offered no tools. For tool use and agents, use
+[`agent!`](@ref) on the same session. When the history already holds tool calls from agent
+turns, the tools they name are sent with the request only so the provider accepts them, and the
+model is told not to call any (`tool_choice` "none").
 
 OpenAI and Google store replies server-side, and the next turn continues from the last one
 (`previous_response_id` / `previous_interaction_id`) so only the new turns are sent; so does
@@ -182,14 +170,12 @@ the finished turn links to in a `Reasoning` box. On Anthropic summaries are only
 with a `thinking_effort`; without one no thinking settings are sent.
 
 `stream = true` shows the turn as the `}` REPL mode does: on a terminal the reply streams on the
-alternate screen with a line per tool call and result (parallel calls that run together share
-one line and show no results), then the normal screen gets the
-`Tool calls` box, and the returned reply (displayed by the REPL) holds the text. Inside a
+alternate screen, then the returned reply (displayed by the REPL) holds the text. Inside a
 script (`include`), where nothing displays the return value, the whole turn is printed instead,
-boxed as in the `}` mode: the `Tool calls` box and the reply, rendered as Markdown, in a
+boxed as in the `}` mode: the reply, rendered as Markdown, in a
 `Response (model; N in; M out):` box; when Julia is not interactive (`julia script.jl`), a
-`Prompt:` box comes first. When `stdout` isn't a terminal, the text and tool lines are printed as
-they arrive. All built-in providers can stream; the full reply is always returned. The `}` REPL
+`Prompt:` box comes first. When `stdout` isn't a terminal, the text is printed as it arrives.
+All built-in providers can stream; the full reply is always returned. The `}` REPL
 mode streams when the Preference `stream = true` is set.
 
 ```julia
@@ -201,12 +187,113 @@ chat!(s, "Another?"; stream = true)   # streams, then shows the reply once
 ```
 """
 function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
-               stream::Bool = false, max_tool_rounds = nothing, thinking_effort = nothing,
+               stream::Bool = false, thinking_effort = nothing,
                temperature = nothing, show_reasoning::Union{Nothing,Bool} = nothing)
-    opts = (; max_tokens, max_tool_rounds, thinking_effort, temperature, show_reasoning)
-    (stream && s.model !== nothing) || return _chat!(s, prompt; opts...)
-    return _display_turn(stdout, s, prompt; stream = _supports_streaming(s.model.provider),
+    opts = (; max_tokens, thinking_effort, temperature, show_reasoning)
+    (stream && s.model !== nothing) || return _chat!(s, prompt, _ChatMode(); opts...)
+    return _display_turn(stdout, s, prompt; mode = _ChatMode(), stream = _supports_streaming(s.model.provider),
                          output = Base.source_path(nothing) !== nothing, opts...)
+end
+
+"""
+    agent!(session::Session, prompt; max_tokens = nothing, stream = false, max_tool_rounds = nothing,
+           thinking_effort = nothing, temperature = nothing, show_reasoning = nothing) -> AssistantMessage
+    agent!(prompt; kwargs...)
+
+Send `prompt` as the next turn of `session` (or the [`active_session`](@ref)) in agent mode, the
+mode of the `&` REPL mode: the model may call tools, and the turn runs until a reply calls none.
+The prompt, every reply and every [`ToolResultMessage`](@ref) are appended to the history and the
+last reply is returned. If a request fails, the whole turn is rolled back. Options are as for
+[`chat!`](@ref), plus `max_tool_rounds`.
+
+The turn is shaped by the session's agent (see [`use_agent!`](@ref); without one, the built-in
+`julia` agent). The system prompt is the session's `system` instructions followed by a short
+agent-mode preamble, the workspace's `AGENTS.md` and `CLAUDE.md` (current directory, without
+front matter), the agent's instructions and a list of the skills the model can activate (see
+[`skills`](@ref)). The model gets the session's [`tools`](@ref) minus the agent's
+`disallowedTools`; the agent's `tools` are loaded and run without asking; skills come with the
+tools `activate_skill`, `read_skill_related_file` and a `skill_<name>` tool per skill with
+arguments. An activated skill's `allowed-tools` run without asking until the turn ends, and its
+`disallowed-tools` are refused.
+
+With the Preference `parallel_tool_calls` on (the default; a
+`providers.<name>.parallel_tool_calls` entry overrides it for one provider) the model may call
+several tools in one reply: each call is confirmed first, one by one, then calls of tools
+registered with `concurrent = false` run one after another and the rest run at the same time
+(on threads when Julia has more than one). With it `false`, OpenAI, OpenAI-compatible servers
+and Anthropic are asked for at most one call per reply (Google has no such setting) and calls
+run one by one, in order. Errors (unknown tool, bad arguments, a tool that throws) are sent to
+the model as error results rather than thrown. After `max_tool_rounds` rounds (default: the
+Preference `max_tool_rounds`, else 50) further calls are answered with "not run" results and
+the last reply (`stop_reason = :tool_use`) is returned. Whether a call is confirmed on the
+terminal first depends on the tool's `security` level, the Preference `tool_approval` and the
+tool's entry in [`tool_auto_approvals`](@ref) (see [`register_tool!`](@ref)); the built-in
+`ask_user` is never confirmed. A tool can read the calling session and call with
+[`tool_context`](@ref).
+
+`stream = true` shows the turn as the `&` REPL mode does: as for [`chat!`](@ref), plus a line
+per tool call and result while streaming (parallel calls that run together share one line and
+show no results) and a `Tool calls` box in the finished turn.
+
+```julia
+register_tool!(get_weather)
+reply = agent!(s, "Should I pack an umbrella for Paris?")
+agent!(s, "And Rome?"; stream = true, max_tool_rounds = 5)
+```
+"""
+agent!(s::Session, prompt::Union{AbstractString,UserMessage}; kwargs...) =
+    _agent!(s, prompt, (_check_model(s); _agent_turn(s)); kwargs...)
+agent!(prompt::Union{AbstractString,UserMessage}; kwargs...) = agent!(active_session(), prompt; kwargs...)
+
+function _agent!(s::Session, prompt, turn; max_tokens = nothing, stream::Bool = false,
+                 max_tool_rounds = nothing, thinking_effort = nothing, temperature = nothing,
+                 show_reasoning::Union{Nothing,Bool} = nothing)
+    opts = (; max_tokens, max_tool_rounds, thinking_effort, temperature, show_reasoning)
+    mode = _AgentMode(turn)
+    (stream && s.model !== nothing) || return _chat!(s, prompt, mode; opts...)
+    return _display_turn(stdout, s, prompt; mode, stream = _supports_streaming(s.model.provider),
+                         output = Base.source_path(nothing) !== nothing, opts...)
+end
+
+_check_model(s::Session) = s.model === nothing ? error(
+    "session \"$(s.name)\" has no model; pick one with `set_model!(session, \"provider/model\")` " *
+    "or `select_model!()`") : nothing
+
+# Chat turns offer no tools; agent turns carry the state of one `agent!` call.
+abstract type _Mode end
+struct _ChatMode <: _Mode end
+struct _AgentMode <: _Mode
+    turn::_AgentTurn
+end
+
+_turn_of(::_ChatMode) = nothing
+_turn_of(m::_AgentMode) = m.turn
+
+_turn_system(s::Session, ::_ChatMode) = s.system
+_turn_system(s::Session, m::_AgentMode) = m.turn.system
+
+# A tool named in the history but not registered: enough of a definition for a replay.
+_history_spec(name::AbstractString) = haskey(_TOOLS, name) ? _TOOLS[name] :
+    ToolSpec(name, "Not available.", ToolParameter[], Returns(nothing), _DEFAULT_GROUP, name, :high, nothing, true)
+
+# (loaded, deferred, runnable, tool_choice). Chat: only the tools named in the history's calls,
+# with tool_choice :none, so providers accept the replayed calls.
+function _turn_tools(s::Session, ::AbstractProvider, ::_ChatMode)
+    names = unique!(String[c.name for m in s.messages if m isa AssistantMessage for c in m.content if c isa ToolCall])
+    isempty(names) && return ToolSpec[], ToolSpec[], ToolSpec[], :auto
+    return ToolSpec[_history_spec(n) for n in names], ToolSpec[], ToolSpec[], :none
+end
+
+# Agent: the turn's tools; without hosted search the not-loaded ones stay out of the request and
+# the model gets JAIL's tool_search / tool_load instead.
+function _turn_tools(s::Session, p::AbstractProvider, m::_AgentMode)
+    turn = m.turn
+    pool = _turn_pool(s, turn)
+    loaded = ToolSpec[t for t in pool if _turn_loaded(s, turn, t)]
+    deferred = ToolSpec[t for t in pool if !_turn_loaded(s, turn, t)]
+    (isempty(deferred) || _tool_search_mode(p) === :hosted) && return loaded, deferred, pool, :auto
+    client = _client_search_specs()
+    return ToolSpec[loaded; client], ToolSpec[], ToolSpec[pool; client], :auto
 end
 
 # (loaded, deferred, runnable): the tools sent in full, the tools sent for the provider's own
@@ -222,7 +309,7 @@ function _request_tools(s::Session, p::AbstractProvider)
 end
 
 function _max_tool_rounds(kw)
-    n = something(kw, _load_pref("max_tool_rounds", 10))
+    n = something(kw, _load_pref("max_tool_rounds", 50))
     n isa Integer && n >= 0 || throw(ArgumentError(
         "max_tool_rounds must be a non-negative integer, got $(repr(n))"))
     return Int(n)
@@ -296,20 +383,19 @@ struct _ReasoningSaved
     paths::Vector{String}
 end
 
-# `on_text` / `on_reasoning` are the streaming hooks shared by `chat!(; stream = true)` and the
-# `}` REPL mode; `on_step` sees each AssistantMessage as it arrives, each ToolCall before it runs,
+# `on_text` / `on_reasoning` are the streaming hooks shared by `chat!`/`agent!` with
+# `stream = true` and the `}`/`&` REPL modes; `on_step` sees each AssistantMessage as it arrives, each ToolCall before it runs,
 # a `_Confirming` before a confirmation prompt, each ToolResult after, and a final
 # `_ReasoningSaved`. `thinking_effort` and `temperature` fall back to the session's, then to
 # Preferences (in `_complete`).
-function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
+function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}, mode::_Mode; max_tokens = nothing,
                 on_text = nothing, on_reasoning = nothing, on_step = nothing, max_tool_rounds = nothing,
                 thinking_effort = nothing, temperature = nothing, show_reasoning = nothing)
-    s.model === nothing && error(
-        "session \"$(s.name)\" has no model; pick one with `set_model!(session, \"provider/model\")` " *
-        "or `select_model!()`")
+    _check_model(s)
     msg = prompt isa UserMessage ? prompt : UserMessage(prompt)
     isempty(strip(string(msg))) && throw(ArgumentError("prompt must not be empty"))
-    limit, approval = _max_tool_rounds(max_tool_rounds), tool_approval()
+    limit = mode isa _ChatMode ? 0 : _max_tool_rounds(max_tool_rounds)
+    approval = tool_approval()
     tool_auto_approvals()   # a malformed table fails here, before the turn starts
     opts = (; max_tokens, show_reasoning = _show_reasoning(show_reasoning),
             thinking_effort = something(_check_effort(thinking_effort), s.thinking_effort, Some(nothing)),
@@ -318,8 +404,8 @@ function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_token
     push!(s.messages, msg)
     _sync!(s)
     reply = try
-        with(_DEBUG_SESSION => s) do
-            _tool_loop!(s, limit, approval; opts..., on_text, on_reasoning, on_step)
+        with(_DEBUG_SESSION => s, _AGENT_TURN => _turn_of(mode)) do
+            _tool_loop!(s, mode, limit, approval; opts..., on_text, on_reasoning, on_step)
         end
     catch
         resize!(s.messages, n0)
@@ -334,22 +420,25 @@ function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_token
     return reply
 end
 
-function _tool_loop!(s::Session, limit::Int, approval::String; on_step, opts...)
+function _tool_loop!(s::Session, mode::_Mode, limit::Int, approval::String; on_step, opts...)
     step(x) = on_step === nothing ? nothing : on_step(x)
     rounds = 0
     while true
         # Recomputed every round: `tool_load` changes the session's loaded tools.
-        loaded, deferred, specs = _request_tools(s, s.model.provider)
-        reply = _complete(s.model, s.messages, s.system; opts..., tools = loaded, deferred)
+        loaded, deferred, specs, choice = _turn_tools(s, s.model.provider, mode)
+        reply = _complete(s.model, s.messages, _turn_system(s, mode); opts..., tools = loaded, deferred,
+                          tool_choice = choice)
         push!(s.messages, reply)
         _sync!(s)
         step(reply)
         calls = _tool_calls(reply)
         isempty(calls) && return reply
-        if rounds >= limit
+        if mode isa _ChatMode || rounds >= limit
+            text = mode isa _ChatMode ?
+                "Not run: tools are off in chat mode; use agent! (or the & REPL mode) for tool use." :
+                "Not run: the limit of $limit tool rounds for this turn was reached."
             now = Dates.now(Dates.UTC)
-            push!(s.messages, ToolResultMessage([_record_tool!(s, c, ToolResult(c.id, c.name,
-                "Not run: the limit of $limit tool rounds for this turn was reached."; is_error = true), now)
+            push!(s.messages, ToolResultMessage([_record_tool!(s, c, ToolResult(c.id, c.name, text; is_error = true), now)
                 for c in calls]))
             _sync!(s)
             return reply

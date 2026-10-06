@@ -27,8 +27,8 @@ end
 s = Session("anthropic/claude-sonnet-4-5"; name = "ls-test", tools = [list_directory])
 tools(s)                                  # [ToolSpec(list_directory())]
 
-# Ask the model; chat! runs the tool call and sends the result back until it answers
-reply = chat!(s, "What files are in my current directory? Use the tool, then summarise.";
+# Ask the model; agent! runs the tool call and sends the result back until it answers
+reply = agent!(s, "What files are in my current directory? Use the tool, then summarise.";
               stream = true)              # prints → list_directory() and ← [...] lines
 
 # Inspect each step of the flow

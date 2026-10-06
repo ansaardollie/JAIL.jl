@@ -5,6 +5,13 @@
 
 _calling_session() = (ctx = tool_context(); ctx === nothing ? active_session() : ctx.session)
 
+# (tools the session may use, whether one is loaded): the agent turn's when one is running.
+function _search_pool(s::Session)
+    turn = _AGENT_TURN[]
+    turn === nothing && return tools(s), t -> t.name in s.loaded_tools
+    return _turn_pool(s, turn), t -> _turn_loaded(s, turn, t)
+end
+
 # Case-insensitive regex match, or a plain substring match when `k` isn't a valid regex.
 function _keyword_predicate(k::AbstractString)
     r = try
@@ -30,7 +37,8 @@ is listed. To call a tool found here, load it first with `tool_load`.
 """
 function tool_search(keywords::Vector{String} = String[])
     s = _calling_session()
-    found = ToolSpec[t for t in tools(s) if !(t.name in s.loaded_tools)]
+    pool, isloaded = _search_pool(s)
+    found = ToolSpec[t for t in pool if !isloaded(t)]
     ks = [String(strip(k)) for k in keywords if !isempty(strip(k))]
     if !isempty(ks)
         preds = map(_keyword_predicate, ks)
@@ -62,12 +70,14 @@ function tool_load(names::Vector{String})
     s = _calling_session()
     names = unique!([String(strip(n)) for n in names if !isempty(strip(n))])
     isempty(names) && throw(ArgumentError("give the names of the tools to load"))
-    available = Set(t.name for t in tools(s))
+    available = Set(t.name for t in first(_search_pool(s)))
     ok = filter(in(available), names)
     bad = setdiff(names, ok)
     isempty(ok) && throw(ArgumentError(
         "no tool named $(join(repr.(bad), ", ")); find the tools you can load with `tool_search`"))
-    load_tools!(s, ok...)
+    # Agent-turn tools (skill_<name>) aren't registered, so they are added by name.
+    append!(s.loaded_tools, setdiff(ok, s.loaded_tools))
+    _sync_meta!(s)
     msg = string("Loaded ", join(ok, ", "), ". You can now call ", length(ok) == 1 ? "it." : "them.")
     isempty(bad) || (msg *= string(" Not found (search with `tool_search`): ", join(bad, ", "), "."))
     return msg

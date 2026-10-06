@@ -10,7 +10,7 @@ default_model = "openai/gpt-6-luna"
 # false disables the REPL modes; read once when JAIL loads.
 repl_modes = true
 
-# Stream replies in the `}` chat mode.
+# Stream replies in the `}` chat and `&` agent modes.
 stream = true
 
 # When to ask [y/N] before a tool call, by the tool's security level:
@@ -23,8 +23,8 @@ tool_approval = "auto"
 # tool_auto_approvals.files = true
 # tool_auto_approvals.shell.run_shell = false
 
-# Tool rounds per chat! call before further calls are answered "not run".
-max_tool_rounds = 10
+# Tool rounds per agent! call (and `&` turn) before further calls are answered "not run".
+max_tool_rounds = 50
 
 # Let the model call several tools per reply and run them at the same time; false asks for one
 # call per reply (not settable on Google). providers.<name>.parallel_tool_calls overrides it.
@@ -85,7 +85,8 @@ store_requests = true
 # Save sessions to disk from their first message on.
 persist_sessions = true
 
-# Folder for saved sessions, relative to the working directory when first saved.
+# Folder for saved sessions (and agents/, skills/ made with new_agent/new_skill), relative to the
+# working directory when first saved.
 storage_dir = ".jail"
 
     # Built-in providers: base_url and api_key_env override the defaults shown here.

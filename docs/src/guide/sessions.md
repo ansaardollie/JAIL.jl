@@ -144,8 +144,8 @@ print(Session("openai/gpt-5"; name = "sys").system)
 The REPL modes and session-less calls act on the [`active_session`](@ref). Every function
 that changes or uses a session also works without one: `set_model!(model)`,
 `select_model!()`, `set_tools!(tools)`, `load_tools!(tools...)`, `unload_tools!(tools...)`,
-`tool_status(tool)`, `set_thinking_effort!(level)`, `set_temperature!(t)`
-and `chat!(prompt)`. The exception is
+`tool_status(tool)`, `set_thinking_effort!(level)`, `set_temperature!(t)`, `use_agent!(name)`,
+`chat!(prompt)` and `agent!(prompt)`. The exception is
 [`tools`](@ref): `tools()` lists the tool registry, so use `tools(active_session())` for the
 active session's tools.
 
@@ -180,7 +180,8 @@ resolved against the working directory when the session is first saved):
 - `sessions/<id>.json`: name, id, creation time, model (as `"provider/model-id"`), system
   instructions, tools (`null` for every registered tool), the names of the tools the session
   could use when last saved (`available_tools`), its loaded tools (`loaded_tools`), thinking
-  effort and temperature.
+  effort, temperature, and its agent (`agent`, the name, and `agent_path`, the agent file chosen
+  when it was applied; see [Agents and skills](agents.md)).
 - `messages/<id>.jsonl`: one message per line. Each new message is appended, so saving adds
   almost nothing to a chat turn. Tool calls are stored with their arguments as a JSON object;
   a tool result whose text is JSON is stored as that JSON value, other results as text.
@@ -197,7 +198,7 @@ resolved against the working directory when the session is first saved):
 
 A session with no messages is not saved, and a turn that fails is removed from the file too.
 [`set_model!`](@ref), [`set_tools!`](@ref), [`load_tools!`](@ref), [`unload_tools!`](@ref),
-[`set_thinking_effort!`](@ref), [`set_temperature!`](@ref) and `empty!` update the files. Set the Preference
+[`set_thinking_effort!`](@ref), [`set_temperature!`](@ref), [`use_agent!`](@ref) and `empty!` update the files. Set the Preference
 `persist_sessions = false` to stop saving.
 
 [`restore_session!`](@ref) brings a saved session back, in this or a later Julia process, and

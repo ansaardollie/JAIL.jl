@@ -1,14 +1,17 @@
 # Chat
 
-[`chat!`](@ref) sends the next turn of a [`Session`](@ref):
+[`chat!`](@ref) sends the next turn of a [`Session`](@ref) in chat mode, which is text only:
 
 1. The prompt is appended to `session.messages` as a [`UserMessage`](@ref).
-2. The history, the session's `system` instructions and its tools go to the session's model
-   (see [What gets sent](#What-gets-sent)).
-3. The reply is appended as an [`AssistantMessage`](@ref). If it calls tools, JAIL runs them,
-   appends a [`ToolResultMessage`](@ref) and asks again, until a reply calls no tools (see
-   [Tools](tools.md)).
-4. The last reply is returned.
+2. The history and the session's `system` instructions go to the session's model (see
+   [What gets sent](#What-gets-sent)). The model is offered no tools.
+3. The reply is appended as an [`AssistantMessage`](@ref) and returned.
+
+For tools, agents and skills use [`agent!`](@ref) on the same session (see
+[Agents and skills](agents.md)). When a session's history already holds tool calls from agent
+turns, `chat!` sends the definitions of the tools those calls name, with `tool_choice` set to
+"none", so the provider accepts the replayed calls and the model can't call any. Should a reply
+still call a tool, the call is answered with an error result telling the model tools are off.
 
 If a request fails, the history is left as it was. Each message is also saved to disk as it is
 added, and a failed turn is removed again (see
@@ -27,8 +30,8 @@ chat!("Colour of coal?")   # on the active session
 Every provider is supported: OpenAI (Responses API), Anthropic (Messages API), Google
 (Interactions API), [`GoogleEnterprise`](@ref) (the Interactions API by default, or Vertex AI
 `generateContent` with `api = :generate_content`), and OpenAI-compatible servers (Responses, or Chat
-Completions when registered with `api = :chat_completions`). The model may call the session's
-tools; see [Tools](tools.md).
+Completions when registered with `api = :chat_completions`). Tool use happens in agent mode; see
+[Agents and skills](agents.md) and [Tools](tools.md).
 
 ## Messages
 
@@ -211,17 +214,17 @@ OpenAI-compatible servers have no counting endpoint, and `count_tokens` throws f
 ## Streaming
 
 `chat!(s, prompt; stream = true)` shows the turn as the `}` REPL mode does (see
-[REPL modes](repl.md)): on a terminal the reply streams on the alternate screen, with
-`→ label` (plus the tool's `preview`, if any) and `← label: result` lines for tool calls (see
-[Tools](tools.md#Previewing-arguments); parallel calls that run together share one `→` line,
-separated by `|`, and
-show no `←` lines, see [Parallel tool calls](tools.md#Parallel-tool-calls)); then the normal screen gets the `Tool calls` box and
-the REPL's display of the returned [`AssistantMessage`](@ref) shows the text, once, rendered as
-Markdown (any `AssistantMessage` displays this way). Inside a
+[REPL modes](repl.md)): on a terminal the reply streams on the alternate screen, then the REPL's
+display of the returned [`AssistantMessage`](@ref) shows the text, once, rendered as
+Markdown (any `AssistantMessage` displays this way). `agent!(s, prompt; stream = true)` does the
+same as the `&` mode, adding `→ label` (plus the tool's `preview`, if any) and
+`← label: result` lines for tool calls (see [Tools](tools.md#Previewing-arguments); parallel
+calls that run together share one `→` line, separated by `|`, and show no `←` lines, see
+[Parallel tool calls](tools.md#Parallel-tool-calls)) and a `Tool calls` box. Inside a
 script (`include`), where nothing displays the return value, the whole turn is printed in the
-`}` mode's boxes instead (with a `Prompt:` box first when Julia is not interactive). When
+mode's boxes instead (with a `Prompt:` box first when Julia is not interactive). When
 `stdout` isn't a terminal, text and tool lines are printed as they
-arrive. All built-in providers can stream. The `}` REPL mode streams when the Preference
+arrive. All built-in providers can stream. The `}` and `&` REPL modes stream when the Preference
 `stream = true` is set.
 
 ## Options and Preferences
@@ -229,8 +232,9 @@ arrive. All built-in providers can stream. The `}` REPL mode streams when the Pr
 - `max_tokens` caps the reply length for one call: `chat!(s, "..."; max_tokens = 200)`.
   Without it, the `max_tokens` Preference applies to every provider if it's set. Otherwise
   Anthropic uses the model's maximum output (128000; Haiku 4.5: 64000; 3.5: 4096) (it requires a value) and the other providers let the model decide.
-- `max_tool_rounds` caps tool rounds for one call: `chat!(s, "..."; max_tool_rounds = 2)`.
-  Without it, the `max_tool_rounds` Preference applies (default 10).
+- `max_tool_rounds` (an [`agent!`](@ref) option) caps tool rounds for one agent turn:
+  `agent!(s, "..."; max_tool_rounds = 2)`. Without it, the `max_tool_rounds` Preference applies
+  (default 50).
 - `parallel_tool_calls` (default `true`): whether the model may call several tools per reply,
   run at the same time; see [Tools](tools.md#Parallel-tool-calls).
 - `thinking_effort`, `temperature` and `show_reasoning`: see

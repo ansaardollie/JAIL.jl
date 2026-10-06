@@ -64,6 +64,24 @@ ToolResult
 ToolResultMessage
 ```
 
+## Agent mode
+
+```@docs
+agent!
+Agent
+agents
+use_agent!
+current_agent
+new_agent
+edit_agent
+Skill
+SkillArgument
+skills
+run_skill!
+new_skill
+edit_skill
+```
+
 ## Token counting
 
 ```@docs

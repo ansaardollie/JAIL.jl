@@ -89,7 +89,7 @@ describe(t) = haskey(t, "type") && !haskey(t, "input_schema") && !haskey(t, "par
 try
     a = Session(Model(Anthropic(; base_url = local_url, api_key_env = "DEMO_DUMMY_KEY"), "claude-sonnet-4-5");
                 name = "anthropic_demo", loaded_tools = ["read_file"])
-    reply = chat!(a, "What tool lists a folder?")
+    reply = agent!(a, "What tool lists a folder?")
     tools_sent = sent[end]["tools"]
     println("\nAnthropic request: ", length(tools_sent), " tools, e.g. ", join(describe.(tools_sent[1:3]), ", "))
     @show reply.content
@@ -97,7 +97,7 @@ try
 
     g = Session(Model(Google(; base_url = local_url, api_key_env = "DEMO_DUMMY_KEY"), "gemini-3-flash");
                 name = "google_demo")
-    reply = chat!(g, "What's the weather in Cape Town?")
+    reply = agent!(g, "What's the weather in Cape Town?")
     for (i, b) in enumerate(sent[2:end])
         println("Google request $(i): tools ", [t["name"] for t in b["tools"]])
     end

@@ -17,7 +17,7 @@ end
 
 A function the model may call: the tool `name` the model sees, a `description`, the ordered
 positional `parameters`, the function `f` itself, the `group` it is filed under (default
-`"global"`), the `label` shown for its calls in the REPL and in `chat!`'s streamed output
+`"global"`), the `label` shown for its calls in the REPL and in `agent!`'s streamed output
 (default: the function name as written), its `security` level (`:low`, `:medium`, `:high`, or a
 function of the call's arguments returning one), its argument `preview` (`nothing`, one
 argument name, several, or a function of the arguments) and whether its calls may run

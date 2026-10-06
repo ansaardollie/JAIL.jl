@@ -223,7 +223,7 @@ The model never sees these:
 
 - **group**: files the tool under a group (letters, digits, `_`, `-`, `.`); `tools("shell")`
   lists a group and `set_tools!(s, tools("shell"))` gives a session just that group.
-- **label**: how the tool's calls are shown in the `}` REPL mode and `chat!(...; stream = true)`;
+- **label**: how the tool's calls are shown in the `&` REPL mode and `agent!(...; stream = true)`;
   defaults to the function name as written (`save!`).
 - **security**: `:low`, `:medium` (default) or `:high`, or a function that gets the call's
   arguments (every positional parameter of `f`, with `nothing` for optional ones the model left
@@ -671,6 +671,8 @@ function _auto_approval(t::ToolSpec, table = tool_auto_approvals())
 end
 
 function _confirmation_needed(t::ToolSpec, args, mode::AbstractString)
+    v = _turn_verdict(t)
+    v === nothing || return false   # run without asking, or refused without asking
     _never_confirm(t) && return false
     a = _auto_approval(t)
     return a === nothing ? _needs_confirmation(_security_level(t, args), mode) : !a
@@ -801,7 +803,9 @@ function _prepare_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; approval::A
         e isa ArgumentError || rethrow()
         return err("Invalid arguments for `$(t.name)`: $(e.msg)")
     end
-    auto = _never_confirm(t) ? true : _auto_approval(t)
+    verdict = _turn_verdict(t)
+    verdict isa String && return err(verdict)
+    auto = verdict === true || _never_confirm(t) ? true : _auto_approval(t)
     level = auto === true ? :low : _security_level(t, args)
     if auto === false || (auto === nothing && _needs_confirmation(level, approval))
         shown = before_confirm !== nothing && before_confirm(c) === true

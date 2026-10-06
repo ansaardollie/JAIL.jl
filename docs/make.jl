@@ -28,7 +28,9 @@ makedocs(
     repo = Remotes.GitHub("ansaardollie", "JAIL.jl"),
     format = Documenter.HTML(; 
         edit_link = "main", 
-        assets = ["assets/custom.css"]
+        assets = ["assets/custom.css"],
+        # reference.md holds every exported docstring on one page.
+        size_threshold_warn = 150 * 2^10,
     ),
     pages = [
         "Home" => "index.md",
@@ -39,6 +41,7 @@ makedocs(
             "guide/sessions.md",
             "guide/chat.md",
             "guide/tools.md",
+            "guide/agents.md",
             "guide/repl.md",
         ],
         "Reference" => "reference.md",

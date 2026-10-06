@@ -84,3 +84,14 @@ no hosted tool search (see [Tool search](guide/tools.md#Tool-search)). They neve
 tool_search
 tool_load
 ```
+
+## Skills (not registered)
+
+JAIL adds these to agent turns when any skill is visible to the model (see
+[Agents and skills](guide/agents.md#Skills)), along with a `skill_<name>` tool per skill with
+arguments. They never need approval.
+
+```@docs
+activate_skill
+read_skill_related_file
+```

@@ -48,3 +48,10 @@ which attaches the built-ins; and a Google mock round.
 Built-ins are now registered at load (decision 42), so the `&` mode no longer needs to attach
 them. A Google Interactions mock tool round ran (`tool_search` → `tool_load` → `get_weather`;
 `work_history/36_TOOLS_tool_search_and_loaded_tools.md`). Remaining: item 4, the `&` mode.
+
+## Completion
+
+Item 4 done on 2026-10-06: the `&` agent mode and `agent!` run the tool loop with the
+built-ins; `chat!`/`}` are text only. See `work_history/41_HARNESS_agent_mode_agents_and_skills.md`
+and `design_decisions/46_HARNESS_agent_mode_agents_and_skills.md`. Live per-provider checks of the
+agent mode continue in `todos/pending/12_HARNESS_live_checks_and_gates.md`.

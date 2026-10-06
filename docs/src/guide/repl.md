@@ -1,14 +1,16 @@
 # REPL modes
 
-JAIL adds two modes to the Julia REPL. Both act on the [`active_session`](@ref):
+JAIL adds three modes to the Julia REPL. All act on the [`active_session`](@ref):
 
 | Key | Mode | Prompt |
 |---|---|---|
-| `\|` | Model: providers, models, sessions, tools | `(default: openai/gpt-5) model> ` |
-| `}` | Chat: talk to the model, which may call tools | `chat> ` |
+| `\|` | Model: providers, models, sessions, tools, agents, skills | `(default: openai/gpt-5) model> ` |
+| `}` | Chat: talk to the model, text only | `chat> ` |
+| `&` | Agent: the model works with tools, the applied agent and skills | `(julia) agent> ` |
 
-The model mode's prompt shows the active session and its model; the chat prompt is kept short
-so it doesn't crowd the conversation (use `|` then `st` to check the model).
+The model mode's prompt shows the active session and its model, the agent mode's the agent
+applied to the active session; the chat prompt is kept short so it doesn't crowd the
+conversation (use `|` then `st` to check the model).
 
 Press the key at an empty `julia>` prompt to enter a mode, and backspace on an empty line to
 return to `julia>`.
@@ -16,7 +18,8 @@ return to `julia>`.
 ## The chat mode
 
 Each line is sent with [`chat!`](@ref) as the next turn of the active session, so the
-conversation carries on across lines and stays in `session.messages`. The finished turn is
+conversation carries on across lines and stays in `session.messages`. The chat mode is text
+only: the model is offered no tools (use the agent mode for that). The finished turn is
 printed in a purple box, like the box of an `@info` message, holding a green
 `Response (model; N in; M out):` box with the reply rendered as Markdown (the colors are the
 Julia logo's, in 24-bit color); the
@@ -43,19 +46,27 @@ chat> Tell me a long story
 [stop reason: max_tokens]
 ```
 
+When Julia is not interactive (a script run with `julia script.jl` calling
+`chat!(...; stream = true)`), a blue `Prompt:` box with the prompt comes first.
+
+## The agent mode
+
+Press `&` at an empty `julia>` prompt. Each line is sent with [`agent!`](@ref) as the next turn
+of the active session: the model may call tools until it answers, shaped by the agent applied to
+the session (see [Agents and skills](agents.md); without one, the built-in `julia` agent). The
+prompt shows the agent. Turns are boxed as in the chat mode, titled `Agent (<agent>): <session>`.
+
 When the model calls tools, a red `Tool calls` box comes before the response: one line per
 call with ✓ or ✗ and the tool's label (see [Groups and labels](tools.md#Groups-and-labels)),
 followed by `View`, a link to the call's saved JSON file (see
 [Saving and restoring](sessions.md#Saving-and-restoring)) in terminals that support OSC 8
-hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). When Julia is not interactive (a script run
-with `julia script.jl` calling `chat!(...; stream = true)`), a blue `Prompt:` box with the
-prompt comes first. While the turn runs
+hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). While the turn runs
 without streaming, a transient line shows `thinking…` or the tool being run. If the tool round
 limit is reached, the turn ends with `[stop reason: tool_use]`.
 
 ```text
-chat> Should I pack an umbrella for Paris?
-┏ Chat: default
+(julia) agent> Should I pack an umbrella for Paris?
+┏ Agent (julia): default
 ┃ ┏ Tool calls (1):
 ┃ ┃   ✓ get_weather  View
 ┃ ┗
@@ -74,10 +85,26 @@ with a `preview`, its label and the preview are shown instead of every argument.
 call, anything else declines it (the model is told), and `a` runs it and auto-approves the tool
 from then on.
 
+Lines starting with `/` run a skill or a command (Tab completes them):
+
+| Command | Does | Same as |
+|---|---|---|
+| `/<skill> [args...]` | Run a skill: its instructions, with `{{argument}}`s filled in, are sent as the prompt, and the skill is active for the turn. Arguments are separated by spaces (`"..."` or `'...'` keep spaces); with none given, each is asked for; with some, the missing required ones | [`run_skill!`](@ref) |
+| `/clear` | Clear the active session's history | `empty!(active_session())` |
+| `/help` | Show help and the skills you can run | |
+
+```text
+(julia) agent> /review src/chat.jl 2
+skill review runs without asking: read_file, grep_files
+┏ Agent (julia): default
+┃ …
+```
+
 ### Streaming
 
-With `stream = true` in the `[JAIL]` Preferences, a reply streams in as raw text on the
-terminal's alternate screen (like `less`), under your prompt, with a `→ label` line per tool
+With `stream = true` in the `[JAIL]` Preferences, a reply in the chat or agent mode streams in
+as raw text on the terminal's alternate screen (like `less`), under your prompt; in the agent
+mode with a `→ label` line per tool
 call (followed by the tool's `preview`, indented, if it has one) and a `← label: result` line per
 result as they happen. A confirmation prompt for a streamed call doesn't repeat the preview.
 Calls the model made in parallel that run together share one `→` line, separated by `|`
@@ -103,7 +130,7 @@ appear dimmed and in italics above the reply text. The finished turn then starts
 `Reasoning (n):` box with a numbered `View` link per reasoning trace of the turn, to its saved
 file (`<storage_dir>/reasoning/<session id>/<trace id>.md`), not the text itself. The box is left
 out when the model returned no summary or sessions aren't saved (`persist_sessions = false`).
-The Preferences `thinking_effort` and `temperature` apply to the `}` mode too, unless the active
+The Preferences `thinking_effort` and `temperature` apply to the `}` and `&` modes too, unless the active
 session sets its own.
 
 ```text
@@ -154,6 +181,8 @@ Lines starting with `/` are commands (Tab completes them):
 | `/clear` | Clear the active session's history | `empty!(active_session())` |
 | `/help` | Show help | |
 
+The multi-line keys above work in the agent mode too.
+
 To switch model or session, use the model mode (`|`). With no model on the active session:
 
 ```text
@@ -180,7 +209,7 @@ In the model mode:
 
 | Command | Does | Same as |
 |---|---|---|
-| `status`, `st` | Show the active session's details (as `show(session)` does: id, model and provider, system instructions, tools, loaded tools, thinking effort, temperature, whether reasoning is shown, message count) and the saved default if it differs | |
+| `status`, `st` | Show the active session's details (as `show(session)` does: id, model and provider, system instructions, agent, tools, loaded tools, thinking effort, temperature, whether reasoning is shown, message count) and the saved default if it differs | |
 | `providers` | List providers and whether their key ENV var is set | [`providers`](@ref) |
 | `models [provider]` | List models (default: the active model's provider) | [`list_models`](@ref) |
 | `select [provider]` | Choose the active session's model from menus | [`select_model!`](@ref) |
@@ -201,6 +230,13 @@ In the model mode:
 | `tools load <name>...`, `tools unload <name>...` | Load tools in the active session (the model sees them in full), or leave them to tool search (`group:<group>` works here too) | [`load_tools!`](@ref), [`unload_tools!`](@ref) |
 | `tools approve <name\|group:<group>>...`, `tools unapprove ...` | Run these tools' calls without asking, or remove that entry | [`set_tool_auto_approval!`](@ref) |
 | `tokens [provider/model]` | Count the active session's input tokens (system, tools, messages) for its model or the one given | [`count_tokens`](@ref) |
+| `agents` | List agents; `*` marks the one applied to the active session | [`agents`](@ref) |
+| `agent select [name\|none]` | Apply an agent to the active session (no name: a menu); prints the tools it runs without asking and leaves out; `none` removes it | [`use_agent!`](@ref) |
+| `agent new [name]` | Create `<storage_dir>/agents/<name>.agent.md` from a template (asks for a missing name and the description) and open it in your editor | [`new_agent`](@ref) |
+| `agent edit [name]` | Open an agent's file (no name: a menu) | [`edit_agent`](@ref) |
+| `skills` | List skills; `/` marks those you can run in the agent mode, `M` those the model sees | [`skills`](@ref) |
+| `skill new [name]` | Create `<storage_dir>/skills/<name>/SKILL.md` from a template and open it | [`new_skill`](@ref) |
+| `skill edit [name]` | Open a skill's `SKILL.md` (no name: a menu) | [`edit_skill`](@ref) |
 | `help`, `?` | Show the command list | |
 
 `use` and `select` change only the active session. The saved default changes only with
@@ -219,6 +255,7 @@ Session "default"
   model:       openai/gpt-5
   provider:    OpenAI("https://api.openai.com/v1", "OPENAI_API_KEY")
   system:      "You are an assistant inside an interactive Julia REPL sessi…" (970 chars)
+  agent:       none (agent mode uses "julia")
   tools:       all (add_memory, ask_user, check_julia_syntax, create_directory, …)
   loaded:      none (others found with the provider's tool search)
   thinking:    medium (Preference)

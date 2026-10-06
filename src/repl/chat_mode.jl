@@ -167,7 +167,7 @@ _prompt_box(io::IO, prompt) = _box(io, _PROMPT_COLOR, "Prompt:", _prompt_lines(i
 # `prompt` is given), Reasoning (when `reasoning` is a `_ReasoningSaved`), Tool calls and Response
 # boxes; without, just the Reasoning and Tool calls boxes.
 function _render_turn(io::IO, s::Session, turn; tty::Bool, prompt = nothing, response::Bool = true,
-                      reasoning::Union{Nothing,_ReasoningSaved} = nothing)
+                      reasoning::Union{Nothing,_ReasoningSaved} = nothing, title::AbstractString = "Chat: $(s.name)")
     results = ToolResult[r for m in turn if m isa ToolResultMessage for r in m.content]
     indent = response ? 4 : 2
     sections = Tuple{Colors.RGB,String,Vector{String}}[]
@@ -179,7 +179,7 @@ function _render_turn(io::IO, s::Session, turn; tty::Bool, prompt = nothing, res
     response && push!(sections, (_RESPONSE_COLOR, _response_title(turn),
         _captured_lines(o -> _render_texts(o, turn), io, indent)))
     draw(o) = foreach(((c, t, ls),) -> _box(o, c, t, ls), sections)
-    response ? _box(io, _CHAT_COLOR, "Chat: $(s.name)", _captured_lines(draw, io, 2)) : draw(io)
+    response ? _box(io, _CHAT_COLOR, title, _captured_lines(draw, io, 2)) : draw(io)
     return nothing
 end
 
@@ -201,13 +201,16 @@ function _chat_send(io::IO, line::AbstractString; tty::Bool = io isa Base.TTY)
     s.model === nothing && throw(ArgumentError(
         "session \"$(s.name)\" has no model; choose one in the `|` mode with `use provider/model` or `select`"))
     stream = _stream_pref() && _supports_streaming(s.model.provider)
-    reply = _display_turn(io, s, line; stream, tty, header = _CHAT_PROMPT * line)
+    reply = _display_turn(io, s, line; mode = _ChatMode(), stream, tty, header = _CHAT_PROMPT * line)
     return _render_stop(io, reply)
 end
 
-# One turn shown as in the `}` mode, also used by `chat!(...; stream = true)`. `output = false`
-# leaves out the rendered reply text (the REPL displays the returned reply instead).
-function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io isa Base.TTY,
+_turn_title(s::Session, ::_ChatMode) = "Chat: $(s.name)"
+_turn_title(s::Session, m::_AgentMode) = "Agent ($(m.turn.agent.name)): $(s.name)"
+
+# One turn shown as in the `}` and `&` modes, also used by `chat!`/`agent!` with `stream = true`.
+# `output = false` leaves out the rendered reply text (the REPL displays the returned reply instead).
+function _display_turn(io::IO, s::Session, prompt; mode::_Mode, stream::Bool, tty::Bool = io isa Base.TTY,
                        header::AbstractString = string(prompt), output::Bool = true,
                        show_reasoning = nothing, kwargs...)
     n0 = length(s.messages)
@@ -282,7 +285,7 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
     stream && !tty && show_prompt && _prompt_box(io, prompt)
     show_status("thinking…")
     reply = try
-        _chat!(s, prompt; on_text = stream ? show_delta : nothing,
+        _chat!(s, prompt, mode; on_text = stream ? show_delta : nothing,
                on_reasoning = stream && show_reasoning ? show_reasoning_delta : nothing,
                on_step, show_reasoning, kwargs...)
     finally
@@ -293,10 +296,10 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
     if stream && !tty
         # Not a terminal: the streamed raw text and tool lines stay as printed.
         line_start[] || println(io)
-        _render_turn(io, s, turn; tty, response = false, reasoning = saved[])
+        _render_turn(io, s, turn; tty, response = false, reasoning = saved[], title = _turn_title(s, mode))
     else
         _render_turn(io, s, turn; tty, response = output, prompt = show_prompt ? prompt : nothing,
-                     reasoning = saved[])
+                     reasoning = saved[], title = _turn_title(s, mode))
     end
     return reply
 end

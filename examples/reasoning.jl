@@ -70,13 +70,13 @@ if LIVE
     t = Session("anthropic/claude-sonnet-5"; name = "reasoning-demo", tools = [get_current_temperature])
     # Streams the summaries dimmed, then the boxed turn with a `Reasoning` box linking to the
     # saved summaries.
-    reply = chat!(t, "What is the temperature in London?"; stream = true, show_reasoning = true,
+    reply = agent!(t, "What is the temperature in London?"; stream = true, show_reasoning = true,
                   thinking_effort = :medium)
     for m in t.messages
         m isa AssistantMessage || continue
         @show m.content     # e.g. [ReasoningPart(:anthropic, "The user wants…"), ToolCall(get_current_temperature(...))]
     end
-    # Set ENV["JULIA_DEBUG"] = "JAIL" before chat! to see the `thinking` block sent back with
+    # Set ENV["JULIA_DEBUG"] = "JAIL" before agent! to see the `thinking` block sent back with
     # the tool result. After `set_model!(t, "openai/gpt-5-mini")` it is left out.
     delete_session!(t)
 end

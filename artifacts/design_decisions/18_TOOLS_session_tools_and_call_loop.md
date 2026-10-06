@@ -1,4 +1,5 @@
 > **Superseded in part by:** `29_TOOLS_security_approval_preview.md` (`confirm_tools` → `tool_approval` + security levels)
+> **Superseded in part by:** `46_HARNESS_agent_mode_agents_and_skills.md` (`}`/`chat!` are text-only; the tool loop and `max_tool_rounds` move to `agent!`/`&`)
 
 # Decision: Session tools, tool-call types and the tool loop
 

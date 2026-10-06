@@ -56,7 +56,11 @@ function _request_body(::_ChatCompletionsAPI, p, req::_Request)
     isempty(req.tools) || (body["tools"] = [Dict("type" => "function", "function" => _function_json(t))
                                             for t in req.tools])
     # ParallelToolCalls #L42638, #L54920-L54925 (default true)
-    isempty(req.tools) || req.parallel_tool_calls || (body["parallel_tool_calls"] = false)
+    if req.tool_choice === :none
+        isempty(req.tools) || (body["tool_choice"] = "none")   # ChatCompletionToolChoiceOption #L41184-L41210
+    else
+        isempty(req.tools) || req.parallel_tool_calls || (body["parallel_tool_calls"] = false)
+    end
     # reasoning_effort #L42365-L42366; temperature via ModelResponseProperties #L54160-L54172.
     # Chat Completions has no summary request field.
     req.thinking_effort === nothing || (body["reasoning_effort"] = string(req.thinking_effort))

@@ -1,3 +1,5 @@
+> **Superseded in part by:** `46_HARNESS_agent_mode_agents_and_skills.md` (only agent mode offers tools; `}`/`chat!` send none; the tool-search instruction line moves to the agent boilerplate)
+
 # Decision: Tool search — registered vs loaded tools, hosted vs client search
 
 | Field | Value |

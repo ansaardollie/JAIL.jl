@@ -22,6 +22,15 @@ function _install_repl_modes(repl)
                         startup_text = false)
         _add_newline_keys!(chat)
     end
+    agent = initrepl(_agent_mode_parser;
+                     repl,
+                     prompt_text = _agent_prompt,
+                     prompt_color = :green,
+                     start_key = '&',
+                     mode_name = "jail_agent",
+                     completion_provider = FunctionCompletionProvider(_complete_agent_mode),
+                     startup_text = false)
+    _add_newline_keys!(agent)
     _REPL_INSTALLED[] = true
     return nothing
 end

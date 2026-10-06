@@ -89,7 +89,8 @@ function _free_text_answer()
 end
 
 # Tools that never need approval, whatever the security level, mode or auto-approvals.
-_never_confirm(t::ToolSpec) = t.f === ask_user || t.f === tool_search || t.f === tool_load
+_never_confirm(t::ToolSpec) = t.f === ask_user || t.f === tool_search || t.f === tool_load ||
+    t.f === activate_skill || t.f === read_skill_related_file || t.f isa _SkillTool
 
 _builtin!(repl_history; group = "inspect", label = "REPL history", security = :medium)
 _builtin!(last_result; group = "inspect", label = "Last REPL result", security = :medium)

@@ -17,7 +17,7 @@
 # provider would.
 #
 # Open / tentative:
-# - No public setter for `parallel_tool_calls` (nor a `chat!` keyword); this script uses
+# - No public setter for `parallel_tool_calls` (nor an `agent!` keyword); this script uses
 #   Preferences.jl directly and restores the previous value.
 # - The ToolSpec field and keyword are named `concurrent`.
 # - Calls that run alone go before the concurrent batch, not in the model's order.
@@ -101,7 +101,7 @@ try
         load_tools!(s, "weather", "append_log")
         println("\nparallel_tool_calls = $parallel")
         T0[] = time()
-        reply = chat!(s, "Weather in Paris and Rome? Log it.")
+        reply = agent!(s, "Weather in Paris and Rome? Log it.")
         println("    took ", round(time() - T0[]; digits = 1), " s, ",
                 count(m -> m isa AssistantMessage, s.messages), " model replies: ", string(reply))
     end
@@ -114,7 +114,7 @@ try
     println("\nstream = true")
     local st = Session(Model(scripted, "demo"); name = "parallel-demo-stream", tools = tools("trip"))
     load_tools!(st, "weather", "append_log")
-    chat!(st, "Weather in Paris and Rome? Log it."; stream = true)
+    agent!(st, "Weather in Paris and Rome? Log it."; stream = true)
 finally
     QUIET[] = false
     previous === nothing ? Preferences.delete_preferences!(JAIL, "parallel_tool_calls"; force = true) :
@@ -131,7 +131,7 @@ catch e
 end
 Preferences.set_preferences!(JAIL, "parallel_tool_calls" => "yes"; force = true)
 try
-    chat!(Session(Model(scripted, "demo"); tools = tools("trip")), "Weather?")
+    agent!(Session(Model(scripted, "demo"); tools = tools("trip")), "Weather?")
 catch e
     println(sprint(showerror, e))
 finally

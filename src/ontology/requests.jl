@@ -17,6 +17,8 @@ struct _Request
     deferred::Vector{ToolSpec}
     # false: ask for at most one tool call per reply (only sent when false, the providers' default is true)
     parallel_tool_calls::Bool
+    # :auto (field not sent) or :none (tools are sent only so replayed calls are valid; none may be called)
+    tool_choice::Symbol
 end
 
 # What a stream reports as it arrives: `text(delta)` for reply text, `reasoning(delta)` for

@@ -10,6 +10,7 @@ using REPL: REPL
 using REPL.TerminalMenus: TerminalMenus, RadioMenu, request
 using ReplMaker: initrepl, FunctionCompletionProvider
 using UUIDs: UUID, uuid7, uuid_version
+using YAML: YAML
 using Base.ScopedValues: ScopedValue, with
 
 export AbstractProvider, AbstractOpenAIProvider, OpenAI, OpenAICompatible, Anthropic, Google, GoogleEnterprise
@@ -26,6 +27,8 @@ export tool_auto_approvals, set_tool_auto_approval!
 export ToolCall, ToolResult, ToolResultMessage
 export ToolContext, tool_context, builtin_tools, register_builtin_tools!
 export TokenCount, count_tokens
+export agent!, Agent, Skill, SkillArgument, agents, skills, use_agent!, current_agent, run_skill!
+export new_agent, edit_agent, new_skill, edit_skill
 
 include("preferences.jl")
 include("ontology/providers.jl")
@@ -45,11 +48,17 @@ include("tools.jl")
 include("session.jl")
 include("persistence.jl")
 include("builtin_tools/common.jl")
+include("harness/frontmatter.jl")
+include("harness/discovery.jl")
+include("harness/agent.jl")
+include("harness/skills.jl")
+include("harness/authoring.jl")
 include("chat.jl")
 include("tokens.jl")
 include("select.jl")
 include("repl/model_mode.jl")
 include("repl/chat_mode.jl")
+include("repl/agent_mode.jl")
 include("repl/install.jl")
 include("builtin_tools/glob.jl")
 include("builtin_tools/files.jl")

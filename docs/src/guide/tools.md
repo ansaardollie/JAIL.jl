@@ -2,8 +2,10 @@
 
 A tool is an ordinary Julia function that a model may ask JAIL to call. Registering a function
 reflects on it and stores a [`ToolSpec`](@ref) in JAIL's tool registry. Every session offers
-the registered tools to its model (in full when the session has loaded them, otherwise through
-[tool search](#Tool-search)), and [`chat!`](@ref) runs the calls the model makes. Tools
+the registered tools to its model in agent mode (in full when the session has loaded them,
+otherwise through [tool search](#Tool-search)), and [`agent!`](@ref) (or the `&` REPL mode) runs
+the calls the model makes. [`chat!`](@ref) and the `}` mode are text only and offer no tools;
+agents and skills shape which tools a turn gets (see [Agents and skills](agents.md)). Tools
 can be filed under groups and given a label for display (see [Groups and labels](#Groups-and-labels)).
 
 ## Defining a tool
@@ -82,7 +84,7 @@ session; see [Tool search](#Tool-search).
 ## Groups and labels
 
 Every tool belongs to a group, `"global"` unless another is given, and has a label: the text
-shown for its calls in the `}` REPL mode and in `chat!(...; stream = true)`. The label defaults
+shown for its calls in the `&` REPL mode and in `agent!(...; stream = true)`. The label defaults
 to the function name as written (`add_todo!`). Neither is sent to the model.
 
 ```@example tools
@@ -191,7 +193,7 @@ relevant tool before starting a task. In the `|` REPL mode, `tools load <name>..
 
 ## The tool loop
 
-When a reply contains [`ToolCall`](@ref)s (`stop_reason = :tool_use`), `chat!`:
+When a reply contains [`ToolCall`](@ref)s (`stop_reason = :tool_use`), `agent!`:
 
 1. runs each call in order, converting the JSON arguments to the parameter types (omitted
    optional arguments use the function's defaults), after asking on the terminal when the call
@@ -213,9 +215,9 @@ vectors, dictionaries, structs without a custom `show`) as JSON, anything else a
 
 ```julia
 s = Session("anthropic/claude-sonnet-4-5"; tools = [get_weather])
-reply = chat!(s, "Should I pack an umbrella for Paris?")
+reply = agent!(s, "Should I pack an umbrella for Paris?")
 s.messages   # UserMessage, AssistantMessage (get_weather call), ToolResultMessage, AssistantMessage
-chat!(s, "And Rome?"; stream = true)   # also prints → label and ← label: result lines
+agent!(s, "And Rome?"; stream = true)   # also prints → label and ← label: result lines
 ```
 
 ## Parallel tool calls
@@ -566,9 +568,9 @@ register_tool!(session_name; security = :low)
 
 ## Preferences
 
-- `max_tool_rounds` (default 10): tool rounds per `chat!` call. When it is reached, further
+- `max_tool_rounds` (default 50): tool rounds per `agent!` call. When it is reached, further
   calls are answered with "not run" error results and the last reply is returned with
-  `stop_reason = :tool_use`. `chat!(...; max_tool_rounds = n)` overrides it for one call.
+  `stop_reason = :tool_use`. `agent!(...; max_tool_rounds = n)` overrides it for one call.
 - `parallel_tool_calls` (default `true`), and `providers.<name>.parallel_tool_calls` to
   override it for one provider: whether the model may call several tools per reply and JAIL
   runs them at the same time; see [Parallel tool calls](#Parallel-tool-calls).

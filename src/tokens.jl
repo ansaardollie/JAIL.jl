@@ -93,7 +93,7 @@ function _count_tokens(model::AbstractModel, messages, system, specs::Vector{Too
     placeholder = isempty(ms) && _count_needs_messages(typeof(p))
     placeholder && push!(ms, UserMessage("."))
     count(sys, ts, ds = ToolSpec[]) = _count_request(p, _Request(model, ms, sys, nothing, false, nothing,
-                                                                 false, ts, nothing, nothing, false, ds, true))
+                                                                 false, ts, nothing, nothing, false, ds, true, :auto))
     n_messages = isempty(ms) ? 0 : count(nothing, ToolSpec[])
     n_system = system === nothing ? n_messages : count(system, ToolSpec[])
     n_total = no_tools ? n_system : count(system, specs, deferred)

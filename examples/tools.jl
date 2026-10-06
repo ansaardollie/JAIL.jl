@@ -3,15 +3,16 @@
 # What: turn ordinary Julia functions into tools a model may call. `register_tool!(f)` reflects
 # on `f` (name, positional argument types, docstring) and stores a `ToolSpec` in JAIL's tool
 # registry; `@tool f g h` does the same for several functions at once. Every session offers all
-# registered tools unless restricted with `set_tools!`. When the model calls a tool, `chat!`
-# runs it, sends the result back and asks again, until the model answers.
+# registered tools unless restricted with `set_tools!`. Tools are used in agent mode only: when
+# the model calls a tool, `agent!` runs it, sends the result back and asks again, until the model
+# answers. `chat!` is text only (see examples/agents.jl for agents and skills).
 #
 # Providers: all. OpenAI (Responses `function_call` / `function_call_output`), Anthropic
 # (`tool_use` / `tool_result`), Google (Interactions `function_call` / `function_result`),
 # OpenAI-compatible (Responses, or Chat Completions `tool_calls` / `role: tool`). Streaming too.
 #
 # Preferences (in [JAIL] of LocalPreferences.toml):
-#   max_tool_rounds = 10     # tool rounds per chat! call before calls are answered "not run"
+#   max_tool_rounds = 50     # tool rounds per agent! call before calls are answered "not run"
 #   tool_approval = "auto"   # which security levels are confirmed [y/N] before running:
 #                            #   "all" every call, "auto" medium + high (default), "none" high
 #                            #   only, "yolo" never. Replaces `confirm_tools` (no longer read).
@@ -24,14 +25,14 @@
 #
 # REPL: in the `|` mode, `tools` lists tools by group (* = used by the active session), `tools
 # show <name>`, `tools use/add/drop <name>...` (`group:<group>` = every tool in it), `tools all`,
-# `tools none`. The `}` mode streams `→ label` / `← label: result` lines as calls happen; the
+# `tools none`. The `&` mode streams `→ label` / `← label: result` lines as calls happen; the
 # finished turn is boxed: a `Tool calls` box (✓/✗, label, `View` link to the call's JSON via
 # OSC 8), then a `Response (model; N in; M out):` box with the reply text.
 #
 # Groups and labels: every tool is in a group ("global" unless `group=` is given) and has a
 # label for display (default: the function name as written). The model sees neither.
 #
-# Saved calls: each ToolResult gets an `id` (UUID v7) when chat! runs the call, and the call +
+# Saved calls: each ToolResult gets an `id` (UUID v7) when agent! runs the call, and the call +
 # result pair is written to <storage_dir>/tools/<session id>/<id>.json (unless
 # `persist_sessions = false`).
 #
@@ -148,12 +149,12 @@ reply = AssistantMessage([call]; stop_reason = :tool_use)
 results = ToolResultMessage([ToolResult("call_1", "get_weather", "Sunny for 3 days in Paris")])
 show(stdout, MIME"text/plain"(), reply); println()
 show(stdout, MIME"text/plain"(), results); println()
-@show results.content[1].id                           # nothing: chat! sets it when it runs a call
+@show results.content[1].id                           # nothing: agent! sets it when it runs a call
 
 # --- 5. Letting the model call tools (live) ------------------------------------------------
 
 if LIVE
-    reply = chat!(r, "Should I pack an umbrella for Paris this weekend?")
+    reply = agent!(r, "Should I pack an umbrella for Paris this weekend?")
     show(stdout, MIME"text/plain"(), reply); println()
     foreach(m -> (show(stdout, MIME"text/plain"(), m); println()), r.messages)   # prompt, calls, results, answer
 
@@ -163,10 +164,10 @@ if LIVE
     println(read(joinpath(".jail", "tools", string(r.id), string(result.id, ".json")), String))
 
     # Streaming prints → get_weather / ← get_weather: … lines between the text:
-    chat!(r, "And Rome for five days?"; stream = true)
+    agent!(r, "And Rome for five days?"; stream = true)
 
     # Cap the rounds for one call; extra calls are answered "not run" and the reply is returned:
-    reply = chat!(r, "Compare the weather in ten European capitals."; max_tool_rounds = 1)
+    reply = agent!(r, "Compare the weather in ten European capitals."; max_tool_rounds = 1)
     @show reply.stop_reason
 end
 

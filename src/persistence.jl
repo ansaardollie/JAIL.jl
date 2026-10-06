@@ -74,7 +74,7 @@ _session_json(s::Session) = (version = _FORMAT_VERSION, id = string(s.id), name 
     created = _iso(s.created), model = _model_string(s), system = s.system, tools = s.tools,
     available_tools = sort!([t.name for t in tools(s)]), loaded_tools = s.loaded_tools,
     thinking_effort = s.thinking_effort === nothing ? nothing : string(s.thinking_effort),
-    temperature = s.temperature)
+    temperature = s.temperature, agent = s.agent, agent_path = s.agent_path)
 
 # ---- writing ----
 
@@ -311,6 +311,7 @@ function _load_session(dir::AbstractString, id::UUID)
                 meta["system"], tools === nothing ? nothing : String[t for t in tools];
                 id, messages, store, thinking_effort = get(meta, "thinking_effort", nothing),
                 temperature = get(meta, "temperature", nothing),
+                agent = get(meta, "agent", nothing), agent_path = get(meta, "agent_path", nothing),
                 # Sessions saved before loaded tools existed get the Preference's.
                 loaded_tools = loaded === nothing ? _default_loaded(; warn = true) : String[n for n in loaded])
     # Record what is on disk so an unchanged session isn't rewritten; skipped lines are dropped

@@ -166,6 +166,8 @@ function _request_body(::_InteractionsAPI, p, req::_Request)
     req.thinking_effort === nothing || (config["thinking_level"] = string(req.thinking_effort))
     req.show_reasoning && (config["thinking_summaries"] = "auto")
     req.temperature === nothing || (config["temperature"] = req.temperature)
+    # GenerationConfig.tool_choice #L5362-L5390
+    req.tool_choice === :none && !isempty(req.tools) && (config["tool_choice"] = "none")
     isempty(config) || (body["generation_config"] = config)
     req.stream && (body["stream"] = true)   # CreateModelInteractionParams.stream #L3983
     # tools #L3992, Function #L5093-L5115; parameter-schema subset UNVERIFIED
@@ -456,6 +458,9 @@ function _request_body(::_GenerateContentAPI, p, req::_Request)
     # plain JSON Schema (`parameters` is the narrower OpenAPI subset, no ["t", "null"] types)
     isempty(req.tools) || (body["tools"] = [Dict("functionDeclarations" =>
         [_function_json(t; schema_key = "parametersJsonSchema") for t in req.tools])])
+    # Vertex ToolConfig.functionCallingConfig.mode (ai-platform-spec.json#L69685-L69699, #L38424-L38455)
+    req.tool_choice === :none && !isempty(req.tools) &&
+        (body["toolConfig"] = Dict("functionCallingConfig" => Dict("mode" => "NONE")))
     return body
 end
 

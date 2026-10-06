@@ -59,15 +59,19 @@ mutable struct Session
     loaded_tools::Vector{String}
     thinking_effort::Union{Nothing,Symbol}
     temperature::Union{Nothing,Float64}
+    agent::Union{Nothing,String}
+    agent_path::Union{Nothing,String}
     const messages::Vector{AbstractMessage}
     const _store::_SessionStore
     function Session(::_Register, name::AbstractString, model, system, tools = nothing;
                      id::UUID = uuid7(), messages = AbstractMessage[],
                      store::_SessionStore = _SessionStore(), thinking_effort = nothing,
-                     temperature = nothing, loaded_tools = _default_loaded())
+                     temperature = nothing, loaded_tools = _default_loaded(),
+                     agent = nothing, agent_path = nothing)
         s = new(id, _uuid7_time(id), String(name), model,
                 system === nothing ? nothing : String(system), tools, loaded_tools,
-                _check_effort(thinking_effort), _check_temperature(temperature), messages, store)
+                _check_effort(thinking_effort), _check_temperature(temperature), agent, agent_path,
+                messages, store)
         push!(_SESSIONS, s)
         return s
     end
@@ -466,6 +470,7 @@ function _show_details(io::IO, s::Session; status::Bool = false)
         default == _model_string(s) || row("default", something(default, "none"))
     end
     row("system", s.system === nothing ? "none" : _system_preview(s.system))
+    row("agent", something(s.agent, "none (agent mode uses \"julia\")"))
     row("tools", _tools_label(s))
     row("loaded", _loaded_label(s))
     row("thinking", _setting_label(s.thinking_effort, "thinking_effort", x -> _check_effort(x)))

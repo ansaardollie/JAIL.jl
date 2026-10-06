@@ -73,7 +73,7 @@ if LIVE
         @show count_tokens(s; model = m)
     end
 
-    chat!(s, "What's the weather in Paris?")
+    agent!(s, "What's the weather in Paris?")
     @show count_tokens(s)       # now with the prompt, tool call, tool result and reply
 
     delete_session!(s; files = true)

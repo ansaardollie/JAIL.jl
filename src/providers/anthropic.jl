@@ -86,8 +86,14 @@ function _request_body(p::Anthropic, req::_Request)
     isempty(tools) || (body["tools"] = tools)
     # ToolChoiceAuto.disable_parallel_tool_use #L5125-L5140: at most one tool call per reply
     # (claude-docs/claude-docs-27-parallel-tool-use.md#L849-L855)
-    isempty(tools) || req.parallel_tool_calls ||
-        (body["tool_choice"] = Dict{String,Any}("type" => "auto", "disable_parallel_tool_use" => true))
+    # tool_choice {"type": "none"}: docs only (claude-docs/claude-docs-25-define-tools.md#L557);
+    # the spec's ToolChoice #L5468-L5480 lacks it
+    if req.tool_choice === :none
+        isempty(tools) || (body["tool_choice"] = Dict{String,Any}("type" => "none"))
+    else
+        isempty(tools) || req.parallel_tool_calls ||
+            (body["tool_choice"] = Dict{String,Any}("type" => "auto", "disable_parallel_tool_use" => true))
+    end
     req.temperature === nothing || (body["temperature"] = req.temperature)   # #L3569-L3577
     _anthropic_thinking!(body, req)
     return body

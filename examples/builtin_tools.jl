@@ -129,7 +129,7 @@ set_tool_approval!(MODE)
 try
     for (prompt, _) in SCRIPT
         printstyled("\nYou: ", prompt, "\n"; bold = true)
-        chat!(s, prompt; stream = true)   # → label, preview, [y/N/a] prompts, ← result, reply text
+        agent!(s, prompt; stream = true)   # → label, preview, [y/N/a] prompts, ← result, reply text
     end
 finally
     set_tool_approval!(previous == "auto" ? nothing : previous)
