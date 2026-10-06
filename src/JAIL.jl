@@ -10,6 +10,7 @@ using REPL: REPL
 using REPL.TerminalMenus: TerminalMenus, RadioMenu, request
 using ReplMaker: initrepl, FunctionCompletionProvider
 using UUIDs: UUID, uuid7, uuid_version
+using Base.ScopedValues: ScopedValue, with
 
 export AbstractProvider, AbstractOpenAIProvider, OpenAI, OpenAICompatible, Anthropic, Google, GoogleEnterprise
 export AbstractModel, Model

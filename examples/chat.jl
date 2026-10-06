@@ -23,7 +23,8 @@
 #   when it was edited, the provider changed, or the stored reply expired. Anthropic and
 #   OpenAI-compatible servers always get the full history.
 # - Seeding a history (few-shot) is done by pushing onto `session.messages` directly.
-# - Troubleshooting: `ENV["JULIA_DEBUG"] = "JAIL"` logs each request and response body.
+# - Troubleshooting: `ENV["JULIA_DEBUG"] = "JAIL"` logs each request and response body and saves
+#   them per session under <storage_dir>/debug.
 
 using JAIL
 
@@ -67,7 +68,8 @@ if LIVE
     use_session!(s)
     @show chat!("Colour of coal?")
 
-    # See the raw request/response bodies:
+    # See the raw request/response bodies (logged, and saved under
+    # <storage_dir>/debug/<session id>/<request id>/{request,response}.json, credentials removed):
     #   ENV["JULIA_DEBUG"] = "JAIL"; chat!(s, "hi"); ENV["JULIA_DEBUG"] = ""
 end
 

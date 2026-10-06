@@ -284,7 +284,9 @@ function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_token
     push!(s.messages, msg)
     _sync!(s)
     reply = try
-        _tool_loop!(s, limit, approval; opts..., on_text, on_reasoning, on_step)
+        with(_DEBUG_SESSION => s) do
+            _tool_loop!(s, limit, approval; opts..., on_text, on_reasoning, on_step)
+        end
     catch
         resize!(s.messages, n0)
         # A first turn that failed leaves nothing worth restoring.

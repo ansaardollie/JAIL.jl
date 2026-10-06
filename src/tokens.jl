@@ -75,7 +75,7 @@ function count_tokens(s::Session, prompt::Union{Nothing,AbstractString,UserMessa
         push!(messages, msg)
     end
     loaded, deferred, _ = _request_tools(s, m.provider)
-    return _count_tokens(m, messages, s.system, loaded, deferred)
+    return with(() -> _count_tokens(m, messages, s.system, loaded, deferred), _DEBUG_SESSION => s)
 end
 
 count_tokens(prompt::Union{Nothing,AbstractString,UserMessage} = nothing; kwargs...) =

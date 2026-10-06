@@ -201,6 +201,7 @@ function _delete_files!(s::Session)
     rm(_tools_dir(dir, s.id); force = true, recursive = true)
     rm(_reasoning_dir(dir, s.id); force = true, recursive = true)
     rm(_memory_path(dir, s.id); force = true)
+    rm(joinpath(dir, "debug", string(s.id)); force = true, recursive = true)
     s._store.dir = nothing
     s._store.nsaved = 0
     s._store.meta = UInt(0)

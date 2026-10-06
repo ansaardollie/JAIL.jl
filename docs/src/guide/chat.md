@@ -246,8 +246,20 @@ show_reasoning = true
 
 ## Troubleshooting
 
-Set `ENV["JULIA_DEBUG"] = "JAIL"` to log each request and response body. Headers, and so API
-keys, are never logged.
+Set `ENV["JULIA_DEBUG"] = "JAIL"` (or `"all"`) to log each request and response body.
+Headers, and so API keys, are never logged.
+
+While it is set, each request a session sends (every model call of a [`chat!`](@ref) turn, and
+[`count_tokens`](@ref)) is also saved, one folder per request named by a version 7 UUID:
+
+- `<storage_dir>/debug/<session id>/<request id>/request.json`: `url`, `headers`, `body`;
+- `<storage_dir>/debug/<session id>/<request id>/response.json`: `status`, `headers`, `body`
+  (the parsed JSON, or for a stream the list of events as `{event, data}`).
+
+Headers that carry credentials (`Authorization`, `x-api-key`, `x-goog-api-key`) are left out.
+The files are written whatever `persist_sessions` says, and removed with the session's other
+files by `delete_session!(s; files = true)`. Requests outside a session (listing models) are
+only logged.
 
 ```@example chat
 try
