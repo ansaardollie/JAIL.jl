@@ -213,7 +213,8 @@ OpenAI-compatible servers have no counting endpoint, and `count_tokens` throws f
 `chat!(s, prompt; stream = true)` shows the turn as the `}` REPL mode does (see
 [REPL modes](repl.md)): on a terminal the reply streams on the alternate screen, with
 `→ label` (plus the tool's `preview`, if any) and `← label: result` lines for tool calls (see
-[Tools](tools.md#Previewing-arguments)); then the normal screen gets the `Tool calls` box and
+[Tools](tools.md#Previewing-arguments); parallel calls that run together share one `→` line and
+show no `←` lines, see [Parallel tool calls](tools.md#Parallel-tool-calls)); then the normal screen gets the `Tool calls` box and
 the REPL's display of the returned [`AssistantMessage`](@ref) shows the text, once, rendered as
 Markdown (any `AssistantMessage` displays this way). Inside a
 script (`include`), where nothing displays the return value, the whole turn is printed in the
@@ -229,6 +230,8 @@ arrive. All built-in providers can stream. The `}` REPL mode streams when the Pr
   Anthropic uses the model's maximum output (128000; Haiku 4.5: 64000; 3.5: 4096) (it requires a value) and the other providers let the model decide.
 - `max_tool_rounds` caps tool rounds for one call: `chat!(s, "..."; max_tool_rounds = 2)`.
   Without it, the `max_tool_rounds` Preference applies (default 10).
+- `parallel_tool_calls` (default `true`): whether the model may call several tools per reply,
+  run at the same time; see [Tools](tools.md#Parallel-tool-calls).
 - `thinking_effort`, `temperature` and `show_reasoning`: see
   [above](#Thinking-effort,-temperature-and-reasoning).
 - `store_requests` (default `true`): see above.

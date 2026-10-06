@@ -84,6 +84,10 @@ function _request_body(p::Anthropic, req::_Request)
         append!(tools, (_deferred(_function_json(t; schema_key = "input_schema")) for t in req.deferred))
     end
     isempty(tools) || (body["tools"] = tools)
+    # ToolChoiceAuto.disable_parallel_tool_use #L5125-L5140: at most one tool call per reply
+    # (claude-docs/claude-docs-27-parallel-tool-use.md#L849-L855)
+    isempty(tools) || req.parallel_tool_calls ||
+        (body["tool_choice"] = Dict{String,Any}("type" => "auto", "disable_parallel_tool_use" => true))
     req.temperature === nothing || (body["temperature"] = req.temperature)   # #L3569-L3577
     _anthropic_thinking!(body, req)
     return body

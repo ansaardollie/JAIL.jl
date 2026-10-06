@@ -15,6 +15,8 @@ struct _Request
     # Registered but not loaded: sent with `defer_loading` plus the provider's tool search tool.
     # Only non-empty for providers whose _tool_search_mode is :hosted.
     deferred::Vector{ToolSpec}
+    # false: ask for at most one tool call per reply (only sent when false, the providers' default is true)
+    parallel_tool_calls::Bool
 end
 
 # What a stream reports as it arrives: `text(delta)` for reply text, `reasoning(delta)` for

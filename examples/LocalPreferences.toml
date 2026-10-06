@@ -26,6 +26,10 @@ tool_approval = "auto"
 # Tool rounds per chat! call before further calls are answered "not run".
 max_tool_rounds = 10
 
+# Let the model call several tools per reply and run them at the same time; false asks for one
+# call per reply (not settable on Google). providers.<name>.parallel_tool_calls overrides it.
+parallel_tool_calls = true
+
 # Built-in tool groups or tool names registered when JAIL loads ("read", "inspect", "edit",
 # "execute", "web", "interact", "memory", or names like "read_file"). Default: every built-in;
 # [] registers none. (Replaces the old `builtin_tools`, which is no longer read.)
@@ -125,5 +129,7 @@ storage_dir = ".jail"
     # "responses" or "chat_completions".
     api = "responses"
     default_model = "llama-3.1-8b"
+    # Overrides the top-level parallel_tool_calls for this provider. Default: unset.
+    # parallel_tool_calls = false
     # ENV var holding the key; omit for servers without auth.
     # api_key_env = "LMSTUDIO_API_KEY"

@@ -210,6 +210,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
 | `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |
 | `max_tool_rounds` | non-negative integer | by hand | Tool rounds per [`chat!`](@ref) call before further calls are answered "not run" (default 10) |
+| `parallel_tool_calls` | `true` / `false` | by hand | Let the model call several tools per reply and run them at the same time (default `true`); `false` asks OpenAI, OpenAI-compatible servers and Anthropic for one call per reply and runs calls one by one; see [Tools](tools.md#Parallel-tool-calls) |
+| `providers.<name>.parallel_tool_calls` | `true` / `false` | by hand | Overrides `parallel_tool_calls` for that provider |
 | `tool_approval` | `"all"` / `"auto"` / `"none"` / `"yolo"` | by hand | Which tool security levels are confirmed with `[y/N]` before running (default `"auto"`: medium and high) |
 | `tool_auto_approvals` | table of tool name (or group) → `true` / `false` | [`set_tool_auto_approval!`](@ref), `a` at a prompt, `tools approve` | `true`: never ask for that tool; `false`: always ask (default empty) |
 | `registered_tools` | list of built-in group or tool names | by hand | Built-in tools registered when JAIL loads (default: every built-in; `[]` for none). The older `builtin_tools` is no longer read |

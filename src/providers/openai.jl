@@ -78,6 +78,9 @@ function _request_body(::_ResponsesAPI, p, req::_Request)
         push!(tools, Dict{String,Any}("type" => "tool_search"))
     end
     isempty(tools) || (body["tools"] = tools)
+    # parallel_tool_calls #L45522-L45528, default true
+    # (tool-guides/openai-tool-guides-02-function-calling-20260926.md#L1022-L1029)
+    isempty(tools) || req.parallel_tool_calls || (body["parallel_tool_calls"] = false)
     req.temperature === nothing || (body["temperature"] = req.temperature)   # #L54160-L54172
     # reasoning #L45481-L45484: Reasoning.effort #L66705, ReasoningEffort #L66769; summary #L66706-L66722
     reasoning = Dict{String,Any}()

@@ -119,6 +119,7 @@ end
 
 _builtin!(run_shell; group = "execute", label = "Shell command", security = _shell_level, preview = "command")
 _builtin!(run_tests; group = "execute", label = "Run tests", security = :high)
-_builtin!(pkg_add; group = "execute", label = "Add packages", security = :high, preview = "packages")
+_builtin!(pkg_add; group = "execute", label = "Add packages", security = :high, preview = "packages",
+          concurrent = false)
 _builtin!(git_changes; group = "read", label = "Git changes", security = :low)
 _builtin!(pkg_status; group = "inspect", label = "Package status", security = :low)

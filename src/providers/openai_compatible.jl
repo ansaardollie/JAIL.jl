@@ -55,6 +55,8 @@ function _request_body(::_ChatCompletionsAPI, p, req::_Request)
     # ChatCompletionTool #L41167-L41183 wrapping FunctionObject #L49838-L49870
     isempty(req.tools) || (body["tools"] = [Dict("type" => "function", "function" => _function_json(t))
                                             for t in req.tools])
+    # ParallelToolCalls #L42638, #L54920-L54925 (default true)
+    isempty(req.tools) || req.parallel_tool_calls || (body["parallel_tool_calls"] = false)
     # reasoning_effort #L42365-L42366; temperature via ModelResponseProperties #L54160-L54172.
     # Chat Completions has no summary request field.
     req.thinking_effort === nothing || (body["reasoning_effort"] = string(req.thinking_effort))

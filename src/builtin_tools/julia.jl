@@ -192,7 +192,9 @@ function check_julia_syntax(path::String)
     return String(take!(io))
 end
 
-_builtin!(execute_julia_code; group = "execute", label = "Julia code", security = :high, preview = "code")
+# Runs alone: it redirects the process-wide stdout and stderr.
+_builtin!(execute_julia_code; group = "execute", label = "Julia code", security = :high, preview = "code",
+          concurrent = false)
 _builtin!(julia_docs; group = "inspect", label = "Julia docs", security = :low, preview = "name")
 _builtin!(find_julia_symbols; group = "inspect", label = "Find Julia names", security = :low, preview = "query")
 _builtin!(check_julia_syntax; group = "read", label = "Check syntax", security = _read_level, preview = "path")

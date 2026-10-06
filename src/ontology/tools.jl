@@ -19,8 +19,9 @@ A function the model may call: the tool `name` the model sees, a `description`, 
 positional `parameters`, the function `f` itself, the `group` it is filed under (default
 `"global"`), the `label` shown for its calls in the REPL and in `chat!`'s streamed output
 (default: the function name as written), its `security` level (`:low`, `:medium`, `:high`, or a
-function of the call's arguments returning one) and its argument `preview` (`nothing`, one
-argument name, several, or a function of the arguments). Build one with [`register_tool!`](@ref)
+function of the call's arguments returning one), its argument `preview` (`nothing`, one
+argument name, several, or a function of the arguments) and whether its calls may run
+`concurrent`ly with the other calls of a reply. Build one with [`register_tool!`](@ref)
 or [`@tool`](@ref).
 """
 struct ToolSpec
@@ -32,6 +33,7 @@ struct ToolSpec
     label::String
     security::Union{Symbol,Function}
     preview::Union{Nothing,String,Vector{String},Function}
+    concurrent::Bool
 end
 
 function _signature(io::IO, t::ToolSpec)
@@ -53,6 +55,7 @@ function Base.show(io::IO, ::MIME"text/plain", t::ToolSpec)
           t.security isa Symbol ? t.security : "by arguments")
     t.preview === nothing ||
         print(io, ", preview: ", t.preview isa Function ? "custom" : join(t.preview isa String ? [t.preview] : t.preview, ", "))
+    t.concurrent || print(io, ", runs alone")
     isempty(t.description) || print(io, "\n  ", replace(t.description, "\n" => "\n  "))
     for p in t.parameters
         print(io, "\n  • ", p.name, "::", p.type, p.required ? "" : " (optional)")

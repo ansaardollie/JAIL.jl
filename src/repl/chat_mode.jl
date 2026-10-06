@@ -263,6 +263,7 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
         end
         # The confirmation prompt needs the line to itself; when streaming, the preview is shown.
         x isa Union{_Confirming,_Prompting} && (clear_status(); return stream)
+        x isa _ToolsFinished && (stream || show_status("thinking…"); return)
         if stream
             clear_status()
             enter_alt()
@@ -270,6 +271,8 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
             _print_tool(io, x)
         elseif x isa ToolCall
             show_status("→ $(_tool_label(x.name))…", :cyan)
+        elseif x isa _RunningTogether
+            show_status("→ $(join((_tool_label(c.name) for c in x.calls), ", "))…", :cyan)
         else
             show_status("thinking…")
         end

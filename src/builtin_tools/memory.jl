@@ -72,5 +72,7 @@ function remove_memory(number::Int)
 end
 
 _builtin!(read_memory; group = "memory", label = "Read memory", security = :low)
-_builtin!(add_memory; group = "memory", label = "Add memory", security = :low, preview = "input")
-_builtin!(remove_memory; group = "memory", label = "Remove memory", security = :low, preview = "number")
+_builtin!(add_memory; group = "memory", label = "Add memory", security = :low, preview = "input",
+          concurrent = false)
+_builtin!(remove_memory; group = "memory", label = "Remove memory", security = :low, preview = "number",
+          concurrent = false)

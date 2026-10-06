@@ -26,6 +26,16 @@ function _check_temperature(x, what = "temperature")
     return Float64(x)
 end
 
+# Preference `providers.<name>.parallel_tool_calls`, else the top-level one, else true.
+function _parallel_tool_calls(p::AbstractProvider)
+    name = provider_name(p)
+    v = get(_provider_prefs(name), "parallel_tool_calls", nothing)
+    key = v === nothing ? "parallel_tool_calls" : "providers.$name.parallel_tool_calls"
+    v === nothing && (v = _load_pref("parallel_tool_calls", true))
+    v isa Bool || throw(ArgumentError("Preference `$key` must be true or false, got $(repr(v))"))
+    return v
+end
+
 _thinking_effort(kw) =
     something(_check_effort(kw), _check_effort(_load_pref("thinking_effort"), "Preference `thinking_effort`"), Some(nothing))
 _temperature(kw) =
@@ -90,7 +100,9 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
                               _show_reasoning(show_reasoning)
     stream = on_text !== nothing && _supports_streaming(p)
     on = _StreamHooks(on_text, something(on_reasoning, Returns(nothing)))
-    request(ms, id) = _Request(model, ms, system, n, store, id, stream, tools, effort, temp, summaries, deferred)
+    parallel = _parallel_tool_calls(p)
+    request(ms, id) = _Request(model, ms, system, n, store, id, stream, tools, effort, temp, summaries,
+                               deferred, parallel)
     full = request(messages, nothing)
     chain = _chain_point(p, messages, store)
     reply = if chain === nothing
@@ -123,9 +135,15 @@ and [`tools`](@ref). The prompt and the reply are appended to `session.messages`
 is returned. If a request fails, the history is left as it was. Each message is also saved to
 disk as it is added (see [`restore_session!`](@ref)).
 
-When the model calls tools, JAIL runs them (in order), sends a [`ToolResultMessage`](@ref)
+When the model calls tools, JAIL runs them, sends a [`ToolResultMessage`](@ref)
 back and asks again, until a reply calls no tools; every step is added to the history and the
-last reply is returned. Errors (unknown tool, bad arguments, a tool that throws) are sent to
+last reply is returned. With the Preference `parallel_tool_calls` on (the default; a
+`providers.<name>.parallel_tool_calls` entry overrides it for one provider) the model may call
+several tools in one reply: each call is confirmed first, one by one, then calls of tools
+registered with `concurrent = false` run one after another and the rest run at the same time
+(on threads when Julia has more than one). With it `false`, OpenAI, OpenAI-compatible servers
+and Anthropic are asked for at most one call per reply (Google has no such setting) and calls
+run one by one, in order. Errors (unknown tool, bad arguments, a tool that throws) are sent to
 the model as error results rather than thrown. After `max_tool_rounds` rounds (default: the
 Preference `max_tool_rounds`, else 10) further calls are answered with "not run" results and
 the last reply (`stop_reason = :tool_use`) is returned. Whether a call is confirmed on the
@@ -164,7 +182,8 @@ the finished turn links to in a `Reasoning` box. On Anthropic summaries are only
 with a `thinking_effort`; without one no thinking settings are sent.
 
 `stream = true` shows the turn as the `}` REPL mode does: on a terminal the reply streams on the
-alternate screen with a line per tool call and result, then the normal screen gets the
+alternate screen with a line per tool call and result (parallel calls that run together share
+one line and show no results), then the normal screen gets the
 `Tool calls` box, and the returned reply (displayed by the REPL) holds the text. Inside a
 script (`include`), where nothing displays the return value, the whole turn is printed instead,
 boxed as in the `}` mode: the `Tool calls` box and the reply, rendered as Markdown, in a
@@ -257,6 +276,21 @@ struct _Prompting
     call::ToolCall
 end
 
+# Passed to `on_step` before parallel calls that weren't confirmed start running together.
+struct _RunningTogether
+    calls::Vector{ToolCall}
+end
+
+# Passed to `on_step` once a round of parallel calls has finished.
+struct _ToolsFinished end
+
+# One line for calls that run together: `→ label (preview)  → label …`.
+function _print_tool(io::IO, x::_RunningTogether)
+    item(c) = (p = _call_preview(c);
+               string("→ ", _tool_label(c.name), p === nothing ? "" : string(" (", _short(first(split(p, '\n')), 40), ")")))
+    printstyled(io, join(map(item, x.calls), "  "), "\n"; color = :cyan)
+end
+
 # Passed to `on_step` after a successful turn whose reasoning summaries were saved to `paths`.
 struct _ReasoningSaved
     paths::Vector{String}
@@ -321,20 +355,78 @@ function _tool_loop!(s::Session, limit::Int, approval::String; on_step, opts...)
             return reply
         end
         rounds += 1
-        results = ToolResult[]
-        for c in calls
-            step(c)
-            started = Dates.now(Dates.UTC)
-            r = with(_TOOL_CONTEXT => ToolContext(s, c), _PROMPT_HOOK => () -> step(_Prompting(c))) do
-                _run_tool(c, specs; approval, before_confirm = x -> step(_Confirming(x)))
-            end
-            r = _record_tool!(s, c, r, started)
-            step(r)
-            push!(results, r)
-        end
-        push!(s.messages, ToolResultMessage(results))
+        run = _parallel_tool_calls(s.model.provider) && length(calls) > 1 ? _run_calls_concurrently : _run_calls
+        push!(s.messages, ToolResultMessage(run(s, calls, specs, approval, step)))
         _sync!(s)
     end
+end
+
+_tool_scope(f, s::Session, c::ToolCall, step) =
+    with(f, _TOOL_CONTEXT => ToolContext(s, c), _PROMPT_HOOK => () -> step(_Prompting(c)))
+
+function _run_calls(s::Session, calls, specs, approval, step)
+    results = ToolResult[]
+    for c in calls
+        step(c)
+        started = Dates.now(Dates.UTC)
+        r = _tool_scope(s, c, step) do
+            _run_tool(c, specs; approval, before_confirm = x -> step(_Confirming(x)))
+        end
+        r = _record_tool!(s, c, r, started)
+        step(r)
+        push!(results, r)
+    end
+    return results
+end
+
+# Every call is confirmed first, one by one. Then the calls of tools with `concurrent = false` run
+# one after another, and the rest run together: on threads when there are several, else as tasks.
+# `step` sees a call only when it is confirmed or runs alone, the other calls of the batch as one
+# `_RunningTogether`, no results, and `_ToolsFinished` at the end. It is only called from this
+# task; results keep the order of `calls`.
+function _run_calls_concurrently(s::Session, calls, specs, approval, step)
+    n = length(calls)
+    results = Vector{ToolResult}(undef, n)
+    ready = Vector{Any}(nothing, n)
+    shown = falses(n)
+    finish!(i, r, started) = (results[i] = _record_tool!(s, calls[i], r, started))
+    for (i, c) in enumerate(calls)
+        confirm = y -> (step(y); shown[i] = true; step(_Confirming(y)))
+        x = _tool_scope(s, c, step) do
+            _prepare_tool(c, specs; approval, before_confirm = confirm)
+        end
+        x isa ToolResult ? finish!(i, x, Dates.now(Dates.UTC)) : (ready[i] = x)
+    end
+    function work(i)
+        started = Dates.now(Dates.UTC)
+        r = _tool_scope(() -> _invoke_tool(calls[i], ready[i]...), s, calls[i], step)
+        return r, started
+    end
+    alone = [i for i in 1:n if ready[i] !== nothing && !first(ready[i]).concurrent]
+    together = [i for i in 1:n if ready[i] !== nothing && first(ready[i]).concurrent]
+    for i in alone
+        shown[i] || step(calls[i])
+        finish!(i, work(i)...)
+    end
+    quiet = ToolCall[calls[i] for i in together if !shown[i]]
+    isempty(quiet) || step(_RunningTogether(quiet))
+    ch = Channel{Tuple{Int,Any,Dates.DateTime}}(length(together))
+    threaded = Threads.nthreads() > 1
+    for i in together
+        f = () -> put!(ch, try
+            (i, work(i)...)
+        catch e
+            (i, e, Dates.now(Dates.UTC))
+        end)
+        threaded ? Threads.@spawn(f()) : @async(f())
+    end
+    for _ in together
+        i, r, started = take!(ch)
+        r isa ToolResult || throw(r)
+        finish!(i, r, started)
+    end
+    step(_ToolsFinished())
+    return results
 end
 
 chat!(prompt::Union{AbstractString,UserMessage}; kwargs...) = chat!(active_session(), prompt; kwargs...)

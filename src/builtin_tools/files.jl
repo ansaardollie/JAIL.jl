@@ -360,17 +360,18 @@ _builtin!(read_file; group = "read", label = "Read file", security = _read_level
 _builtin!(list_dir; group = "read", label = "List folder", security = _read_level, preview = "path")
 _builtin!(find_files; group = "read", label = "Find files", security = :low, preview = "pattern")
 _builtin!(grep_files; group = "read", label = "Search files", security = :low, preview = ["query", "include"])
-_builtin!(create_file; group = "edit", label = "Create file",
+# Edits run alone: two calls may change the same file.
+_builtin!(create_file; group = "edit", label = "Create file", concurrent = false,
           security = (path, _...) -> _write_level(path),
           preview = (path, content) -> string(path, '\n', content))
 _builtin!(create_directory; group = "edit", label = "Create folder",
           security = path -> _write_level(path, :low), preview = "path")
-_builtin!(replace_in_file; group = "edit", label = "Edit file",
+_builtin!(replace_in_file; group = "edit", label = "Edit file", concurrent = false,
           security = (path, _...) -> _write_level(path), preview = _diff_preview)
-_builtin!(replace_in_files; group = "edit", label = "Edit files",
+_builtin!(replace_in_files; group = "edit", label = "Edit files", concurrent = false,
           security = edits -> _max_level([_write_level(e.path) for e in edits]),
           preview = edits -> join((_diff_preview(e.path, e.old, e.new) for e in edits), "\n\n"))
-_builtin!(edit_file; group = "edit", label = "Edit lines",
+_builtin!(edit_file; group = "edit", label = "Edit lines", concurrent = false,
           security = (path, _...) -> _write_level(path), preview = _line_edits_preview)
-_builtin!(remove_file; group = "edit", label = "Delete file",
+_builtin!(remove_file; group = "edit", label = "Delete file", concurrent = false,
           security = path -> _write_level(path, :high), preview = "path")

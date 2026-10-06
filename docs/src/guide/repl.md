@@ -80,6 +80,8 @@ With `stream = true` in the `[JAIL]` Preferences, a reply streams in as raw text
 terminal's alternate screen (like `less`), under your prompt, with a `→ label` line per tool
 call (followed by the tool's `preview`, indented, if it has one) and a `← label: result` line per
 result as they happen. A confirmation prompt for a streamed call doesn't repeat the preview.
+Calls the model made in parallel that run together share one `→` line and print no `←` lines
+(see [Parallel tool calls](tools.md#Parallel-tool-calls)).
 When it's complete the normal
 screen comes back and only the finished turn (the boxes described above) is printed, so the
 streamed text and tool lines never end

@@ -218,6 +218,41 @@ s.messages   # UserMessage, AssistantMessage (get_weather call), ToolResultMessa
 chat!(s, "And Rome?"; stream = true)   # also prints → label and ← label: result lines
 ```
 
+## Parallel tool calls
+
+A model may call several tools in one reply ("What's the weather in Paris and Rome?"). With the
+Preference `parallel_tool_calls` on (the default), JAIL:
+
+1. confirms the calls that need it, one by one, in the order the model gave them;
+2. runs the calls of tools registered with `concurrent = false`, one after another;
+3. runs the other calls at the same time: on threads when Julia has more than one
+   (`julia -t auto`), otherwise as tasks on one thread, which still overlaps waiting on the
+   network, processes or `sleep`.
+
+The results go back in the order of the calls. When streaming, a confirmed call or a call that
+runs alone gets its own `→ label` line, the other calls that run together share one line
+(`→ weather (Paris)  → weather (Rome)`), and no `←` result lines are shown; the `Tool calls`
+box lists every result. A tool that runs concurrently may run on another
+thread at the same time as other tools, so it must be safe to do so. Register tools that read
+the terminal, redirect `stdout`, or change shared state with `concurrent = false`
+(`@tool concurrent=false f`). Of the built-in tools, `ask_user`, `execute_julia_code`,
+`pkg_add`, `add_memory`, `remove_memory`, `tool_load` and the `edit` tools other than
+`create_directory` run alone.
+
+`parallel_tool_calls = false` asks OpenAI, OpenAI-compatible servers and Anthropic for at most
+one tool call per reply (`parallel_tool_calls: false`; Anthropic
+`tool_choice.disable_parallel_tool_use`), and runs calls one by one. Google has no such setting,
+so Gemini may still call several tools; JAIL then runs them one by one. A
+`providers.<name>.parallel_tool_calls` entry overrides the top-level one for that provider:
+
+```toml
+[JAIL]
+parallel_tool_calls = true
+
+[JAIL.providers.lmstudio]
+parallel_tool_calls = false   # a local model that mixes up several calls
+```
+
 ## Security levels and approval
 
 Every tool has a security level: `:low`, `:medium` (the default) or `:high`. The Preference
@@ -363,7 +398,7 @@ files outside the workspace without asking.
 | `inspect` | `julia_source_method(signature)` | source of the method a call runs, e.g. `"Base.sum(::Vector{Int})"` | low |
 | | `julia_source_methods(name)` | source of every method of a function | low |
 | | `julia_source_struct(name)` | source of a `struct` / `abstract type` / `primitive type` | low |
-| | `julia_source_module(name)` | source of a `module … end` block | low |
+| | `julia_source_module(name)` | source of a `module … end` block; finds an installed package (or its submodule) even when it isn't loaded | low |
 | | `julia_docs(name)` | a docstring as Markdown | low |
 | | `find_julia_symbols(query, max_results)` | public names of loaded modules containing `query` | low |
 | | `pkg_status()` | `Pkg.status()` of the active project | low |
@@ -532,6 +567,9 @@ register_tool!(session_name; security = :low)
 - `max_tool_rounds` (default 10): tool rounds per `chat!` call. When it is reached, further
   calls are answered with "not run" error results and the last reply is returned with
   `stop_reason = :tool_use`. `chat!(...; max_tool_rounds = n)` overrides it for one call.
+- `parallel_tool_calls` (default `true`), and `providers.<name>.parallel_tool_calls` to
+  override it for one provider: whether the model may call several tools per reply and JAIL
+  runs them at the same time; see [Parallel tool calls](#Parallel-tool-calls).
 - `tool_approval` (default `"auto"`): `"all"`, `"auto"`, `"none"` or `"yolo"`; see
   [Security levels and approval](#Security-levels-and-approval). The older `confirm_tools`
   Preference is no longer read (JAIL warns once if it is set).

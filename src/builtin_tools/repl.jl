@@ -94,4 +94,4 @@ _never_confirm(t::ToolSpec) = t.f === ask_user || t.f === tool_search || t.f ===
 _builtin!(repl_history; group = "inspect", label = "REPL history", security = :medium)
 _builtin!(last_result; group = "inspect", label = "Last REPL result", security = :medium)
 # No preview: the tool prints the question itself.
-_builtin!(ask_user; group = "interact", label = "Ask user", security = :low)
+_builtin!(ask_user; group = "interact", label = "Ask user", security = :low, concurrent = false)

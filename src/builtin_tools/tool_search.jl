@@ -79,6 +79,7 @@ const _CLIENT_SEARCH = ToolSpec[]
 function _client_search_specs()
     isempty(_CLIENT_SEARCH) && append!(_CLIENT_SEARCH, [
         _tool_spec(tool_search; group = "tool_search", label = "Tool search", security = :low, preview = :keywords),
-        _tool_spec(tool_load; group = "tool_search", label = "Load tools", security = :low, preview = :names)])
+        _tool_spec(tool_load; group = "tool_search", label = "Load tools", security = :low, preview = :names,
+                   concurrent = false)])
     return _CLIENT_SEARCH
 end

@@ -129,15 +129,32 @@ function _module_files(M::Module)
         Base.moduleroot(M) in (Base, Core) || return String[]
         dir = joinpath(Sys.BINDIR, Base.DATAROOTDIR, "julia", "base")
     end
+    return _dir_files(dir, pathof(M))
+end
+
+function _dir_files(dir, entry)
     files = String[]
-    p = pathof(M)
-    p === nothing || push!(files, p)
+    entry === nothing || push!(files, entry)
     isdir(dir) || return files
     for (d, _, fs) in walkdir(dir), f in fs
         endswith(f, ".jl") && push!(files, joinpath(d, f))
     end
     return unique!(files)
 end
+
+# Files of the package `name` without loading it: a copy loaded elsewhere (e.g. as a dependency),
+# else the package the active environments resolve the name to. `nothing` if there is neither.
+function _package_files(name::Symbol)
+    for (id, m) in Base.loaded_modules
+        id.name == string(name) && return _module_files(m)
+    end
+    id = Base.identify_package(string(name))
+    entry = id === nothing ? nothing : Base.locate_package(id)
+    entry === nothing && return nothing
+    return _dir_files(dirname(dirname(entry)), entry)   # <pkg>/src/Name.jl
+end
+
+_root_name(ex) = ex isa Symbol ? ex : Meta.isexpr(ex, :., 2) ? _root_name(ex.args[1]) : nothing
 
 # The first node matching `pred` in the files, skipping files that don't contain `needle`.
 function _search_files(files, needle::AbstractString, pred)
@@ -238,17 +255,32 @@ end
     julia_source_module(name)
 
 Show the source code of a module definition, from `module Name` to its `end` (files it
-`include`s are not expanded). The result starts with `# file:line`.
+`include`s are not expanded). The result starts with `# file:line`. A package (or a submodule
+of one) is found even when it isn't loaded, if it is installed in the active environments.
 
 # Arguments
 - `name`: the module, e.g. `MyPkg` or `MyPkg.Submodule`
 """
 function julia_source_module(name::String)
-    M = _resolve_kind(name, Module, "module")
-    M === Main && throw(ArgumentError("`Main` has no source file"))
-    mname = string(nameof(M))
+    ex = _parse_name(name)
+    root = _root_name(ex)
+    M = try
+        _resolve_kind(name, Module, "module")
+    catch e
+        (e isa ArgumentError && root !== nothing && !any(m -> isdefined(m, root), _lookup_modules())) || rethrow()
+        nothing
+    end
+    if M === nothing
+        files = _package_files(root)
+        files === nothing && throw(ArgumentError(
+            "`$root` is not defined in Main and is not a package in the active environments"))
+        mname = string(ex isa Symbol ? ex : ex.args[2].value)
+    else
+        M === Main && throw(ArgumentError("`Main` has no source file"))
+        files, mname = _module_files(M), string(nameof(M))
+    end
     pred(n) = kind(n) == K"module" && (c = _first_child(n); c !== nothing && sourcetext(c) == mname)
-    found = _search_files(_module_files(M), "module " * mname, pred)
+    found = _search_files(files, "module " * mname, pred)
     found === nothing && throw(ArgumentError(
         "could not find the source of `$name` (modules created in the REPL have no source file)"))
     return found

@@ -121,7 +121,7 @@ function _json_schema(T::Type, seen)
 end
 
 function _tool_spec(f::Function; group = _DEFAULT_GROUP, label = nothing, security = :medium,
-                    preview = nothing)
+                    preview = nothing, concurrent::Bool = true)
     name = _tool_name(f)
     group, label, security = _group_name(group), _label(f, label), _security_spec(security)
     m, nrequired = _tool_method(f)
@@ -142,7 +142,8 @@ function _tool_spec(f::Function; group = _DEFAULT_GROUP, label = nothing, securi
     end
     isempty(kws) || @warn "Keyword arguments of `$f` are not exposed to the model: $(join(kws, ", "))"
     isempty(description) && @warn "`$f` has no docstring; the model only sees its name and arguments"
-    return ToolSpec(name, description, params, f, group, label, security, _preview_spec(preview, params))
+    return ToolSpec(name, description, params, f, group, label, security, _preview_spec(preview, params),
+                    concurrent)
 end
 
 const _SECURITY_LEVELS = (:low, :medium, :high)
@@ -200,7 +201,7 @@ end
 
 """
     register_tool!(f::Function; group = "global", label = nothing, security = :medium,
-                   preview = nothing, load = false) -> ToolSpec
+                   preview = nothing, concurrent = true, load = false) -> ToolSpec
 
 Make `f` available to models as a tool and return its [`ToolSpec`](@ref). Registering a name
 again replaces the earlier tool. A registered tool is found by the model through tool search;
@@ -235,6 +236,10 @@ The model never sees these:
   a shell command), a vector of names shows those as `name = value`, and a function (given the
   same arguments as a security function) returns the text to show. By default nothing is shown on the streamed line and the
   prompt shows every argument.
+- **concurrent**: when the Preference `parallel_tool_calls` is on (the default) and a reply calls
+  several tools, the approved calls run at the same time (on threads when Julia has more than
+  one, else as tasks). `concurrent = false` makes this tool's calls run alone, one after
+  another; use it for tools that read the terminal, redirect `stdout`, or change shared state.
 
 ```julia
 \"\"\"
@@ -255,6 +260,10 @@ register_tool!(get_weather; group = "web", label = "Weather forecast", security 
 run_shell(cmd::String) = read(`sh -c \$cmd`, String)
 register_tool!(run_shell; security = :high, preview = :cmd)
 
+"Append a line to the shared log."
+log_line(text::String) = open(io -> println(io, text), "log.txt", "a")
+register_tool!(log_line; concurrent = false)
+
 "Read a text file."
 read_text(path::String) = read(path, String)
 register_tool!(read_text; security = path -> startswith(abspath(path), pwd() * "/") ? :low : :high)
@@ -266,8 +275,8 @@ function register_tool!(f::Function; group::Union{AbstractString,Symbol} = _DEFA
                         label::Union{Nothing,AbstractString} = nothing,
                         security::Union{Symbol,AbstractString,Function} = :medium,
                         preview::Union{Nothing,Symbol,AbstractString,AbstractVector,Function} = nothing,
-                        load::Bool = false)
-    spec = _register!(_tool_spec(f; group, label, security, preview))
+                        concurrent::Bool = true, load::Bool = false)
+    spec = _register!(_tool_spec(f; group, label, security, preview, concurrent))
     load && isassigned(_ACTIVE) && load_tools!(active_session(), spec)
     return spec
 end
@@ -281,11 +290,11 @@ function _register!(spec::ToolSpec)
 end
 
 """
-    @tool [group=name] [label="text"] [security=level] [preview=arg] [load=true] f1 f2 ...
+    @tool [group=name] [label="text"] [security=level] [preview=arg] [concurrent=false] [load=true] f1 f2 ...
 
 Register each named function as a tool with [`register_tool!`](@ref); returns their
 [`ToolSpec`](@ref)s. Names may be qualified (`@tool MyPkg.search`). `group=` (a name or a
-string), `security=`, `preview=` and `load=` apply to every function named; `label=` sets the
+string), `security=`, `preview=`, `concurrent=` and `load=` apply to every function named; `label=` sets the
 label of a single tool. `load=true` also loads them in the active session.
 
 - `security=` takes `low`, `medium` or `high`; any other name or expression is used as the
@@ -305,8 +314,8 @@ macro tool(args...)
     for a in args
         if Meta.isexpr(a, :(=), 2)
             k, v = a.args
-            k in (:group, :label, :security, :preview, :load) || throw(ArgumentError(
-                "unknown @tool option `$k`; the options are `group=`, `label=`, `security=`, `preview=` and `load=`"))
+            k in (:group, :label, :security, :preview, :concurrent, :load) || throw(ArgumentError(
+                "unknown @tool option `$k`; the options are `group=`, `label=`, `security=`, `preview=`, `concurrent=` and `load=`"))
             haskey(opts, k) && throw(ArgumentError("@tool option `$k=` given twice"))
             opts[k] = _tool_option(Val(k), v)
         elseif a isa Symbol || Meta.isexpr(a, :.)
@@ -341,6 +350,11 @@ end
 
 function _tool_option(::Val{:load}, v)
     v isa Bool || throw(ArgumentError("@tool `load=` takes `true` or `false`, got `$v`"))
+    return v
+end
+
+function _tool_option(::Val{:concurrent}, v)
+    v isa Bool || throw(ArgumentError("@tool `concurrent=` takes `true` or `false`, got `$v`"))
     return v
 end
 
@@ -767,6 +781,13 @@ end
 # shown the call's preview.
 function _run_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; approval::AbstractString,
                    before_confirm = nothing)
+    x = _prepare_tool(c, specs; approval, before_confirm)
+    return x isa ToolResult ? x : _invoke_tool(c, x...)
+end
+
+# Checks and confirms a call: (spec, args) to run, or the error result to send instead.
+function _prepare_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; approval::AbstractString,
+                       before_confirm = nothing)
     err(msg) = ToolResult(c.id, c.name, msg; is_error = true)
     i = findfirst(t -> t.name == c.name, specs)
     i === nothing && return err("Unknown tool `$(c.name)`. Available tools: " *
@@ -795,11 +816,15 @@ function _run_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; approval::Abstr
             end
         end
     end
+    return t, args
+end
+
+function _invoke_tool(c::ToolCall, t::ToolSpec, args)
     value = try
         t.f(args...)
     catch e
         e isa InterruptException && rethrow()
-        return err("`$(t.name)` threw an error: " * sprint(showerror, e))
+        return ToolResult(c.id, c.name, "`$(t.name)` threw an error: " * sprint(showerror, e); is_error = true)
     end
     return ToolResult(c.id, c.name, _result_text(value))
 end
