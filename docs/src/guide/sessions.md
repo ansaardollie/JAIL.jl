@@ -173,7 +173,8 @@ session is saved under the Preference `storage_dir` (default `.jail`; a relative
 resolved against the working directory when the session is first saved):
 
 - `sessions/<id>.json`: name, id, creation time, model (as `"provider/model-id"`), system
-  instructions, tools, thinking effort and temperature.
+  instructions, tools (`null` for every registered tool), the names of the tools the session
+  could use when last saved (`available_tools`), thinking effort and temperature.
 - `messages/<id>.jsonl`: one message per line. Each new message is appended, so saving adds
   almost nothing to a chat turn. Tool calls are stored with their arguments as a JSON object;
   a tool result whose text is JSON is stored as that JSON value, other results as text.
@@ -206,6 +207,10 @@ restore_session!(id)     # a UUID, or its string form
 - The model is looked up by name in the current Preferences. If it can't be (for example the
   provider was removed), the session comes back without a model and a warning is shown; pick
   one with [`set_model!`](@ref).
+- Built-in tools the session could use (or chose with [`set_tools!`](@ref)) are registered
+  again if they aren't (see [`register_builtin_tools!`](@ref)). Your own tools can't be
+  restored from disk: a warning names those that are not registered, so you can
+  [`register_tool!`](@ref) them again.
 - Restoring a session that is already loaded just makes it active.
 - After a restore in a new Julia process, the first turn sends the full history (see
   [What gets sent](chat.md#What-gets-sent)).

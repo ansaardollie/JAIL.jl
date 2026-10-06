@@ -70,6 +70,7 @@ end
 
 _session_json(s::Session) = (version = _FORMAT_VERSION, id = string(s.id), name = s.name,
     created = _iso(s.created), model = _model_string(s), system = s.system, tools = s.tools,
+    available_tools = sort!([t.name for t in tools(s)]),
     thinking_effort = s.thinking_effort === nothing ? nothing : string(s.thinking_effort),
     temperature = s.temperature)
 
@@ -197,6 +198,7 @@ function _delete_files!(s::Session)
     rm(_messages_path(dir, s.id); force = true)
     rm(_tools_dir(dir, s.id); force = true, recursive = true)
     rm(_reasoning_dir(dir, s.id); force = true, recursive = true)
+    rm(_memory_path(dir, s.id); force = true)
     s._store.dir = nothing
     s._store.nsaved = 0
     s._store.meta = UInt(0)
@@ -278,6 +280,18 @@ function _parse_id(id::AbstractString)
     return u
 end
 
+# Registers the built-in tools among `names` that aren't registered; warns about other missing ones,
+# whose functions only the user can register again.
+function _restore_tools!(names, session_name)
+    missing_names = filter(n -> !haskey(_TOOLS, n), unique(names))
+    builtin = filter(n -> haskey(_builtins(), n), missing_names)
+    isempty(builtin) || register_builtin_tools!(builtin...)
+    other = setdiff(missing_names, builtin)
+    isempty(other) || @warn "JAIL: session \"$session_name\" could use tools that are not registered; " *
+        "register them again with `register_tool!`: $(join(other, ", "))"
+    return nothing
+end
+
 function _load_session(dir::AbstractString, id::UUID)
     path = _session_path(dir, id)
     isfile(path) || throw(ArgumentError("no saved session $id in $dir"))
@@ -285,6 +299,7 @@ function _load_session(dir::AbstractString, id::UUID)
     meta = JSON.parse(read(path, String))
     messages, bad = _read_messages(_messages_path(dir, id))
     tools = meta["tools"]
+    _restore_tools!(String[something(tools, String[]); get(meta, "available_tools", String[])], meta["name"])
     store = _SessionStore(dir, bad ? typemax(Int) : length(messages), UInt(0))
     s = Session(_Register(), meta["name"], _restore_model(meta["model"], "the session's"),
                 meta["system"], tools === nothing ? nothing : String[t for t in tools];
@@ -358,7 +373,9 @@ is the Preference `storage_dir` (default `".jail"`, relative to the working dire
 session is first saved). Set the Preference `persist_sessions = false` to stop saving.
 
 Model names are resolved through the current Preferences; one that no longer resolves leaves the
-session without a model (pick one with [`set_model!`](@ref)).
+session without a model (pick one with [`set_model!`](@ref)). The tools the session could use
+when last saved are registered again if they are built-in (see [`register_builtin_tools!`](@ref));
+JAIL warns about others that are not registered, since only you can register their functions.
 """
 function restore_session!(id::Union{UUID,AbstractString})
     u = _parse_id(id)

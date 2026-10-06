@@ -278,8 +278,8 @@ one to the Preferences (`nothing` removes it).
 ## Built-in tools
 
 JAIL ships tools for working in a Julia project: reading, searching and editing files, looking
-up Julia source and documentation, running Julia code and shell commands, fetching web pages
-and asking the user. [`builtin_tools`](@ref) lists them. None is registered when JAIL loads, so
+up Julia source and documentation, running Julia code and shell commands, fetching web pages,
+sending HTTP requests, asking the user and keeping per-session memories. [`builtin_tools`](@ref) lists them. None is registered when JAIL loads, so
 sessions don't offer them until you opt in, by group or by name:
 
 ```julia
@@ -328,7 +328,11 @@ files outside the workspace without asking.
 | | `run_tests()` | `Pkg.test()` of the workspace project, in a new process | high |
 | | `pkg_add(packages)` | `Pkg.add` into the active project | high |
 | `web` | `fetch_url(url)` | a page's content as served (HTML as HTML) | medium for `https` to a public host; high otherwise |
+| | `http_request(url, method, query_params, body, headers)` | sends any GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS request; returns status, headers and body | high; low if allow-listed |
 | `interact` | `ask_user(question, options, allow_free_text)` | asks you in the terminal (a menu for `options`, with an "Other" choice for your own answer unless `allow_free_text = false`) and returns the answer | never asks for approval |
+| `memory` | `read_memory()` | the session's memories, a numbered list | low |
+| | `add_memory(input)` | adds a memory as the next number | low |
+| | `remove_memory(number)` | removes the memory with that number | low |
 
 The model sees each tool's docstring; read it with `@doc JAIL.read_file`. Calls are confirmed
 following [Security levels and approval](#Security-levels-and-approval) like any tool, except
@@ -426,6 +430,39 @@ formats as they are (binary content is refused). It is `:medium` for `https` to 
 addresses, other ports, and host names that resolve to private addresses. Redirects are
 followed one by one and refused if they lead somewhere riskier than the URL that was approved.
 
+### HTTP requests
+
+`http_request` sends a request with any of GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS to an
+`http` or `https` URL, with optional query parameters (escaped and added to the URL), body and
+headers, and returns the status line, the response headers and the body (binary bodies are
+described, not returned). It does not follow redirects, retry, or keep cookies; a 3xx response
+is returned with its `Location` header. Its confirmation prompt shows the method, the full URL,
+the headers and the body.
+
+It can send data anywhere and reach your machine and network, so it is `:high` unless the URL
+starts with an entry of the Preference `url_allow_list`, which makes it `:low`. An entry
+matches only at a boundary: it ends in `/`, or the URL goes on with `/`, `?`, `#` or ends. So
+`"https://api.example.com"` covers `https://api.example.com/v1?x=1` but not
+`https://api.example.com.evil.org` or `https://api.example.com@evil.org`. URLs with user info
+(`user@`), backslashes, or `.` or `..` path segments (also percent-encoded) are never
+allow-listed. The comparison is on the URL text, case-sensitive.
+
+```toml
+[JAIL]
+url_allow_list = ["https://api.github.com/repos/", "http://localhost:8080/api"]
+```
+
+### Memory
+
+The `memory` tools keep notes for a session in a Markdown numbered list at
+`<storage_dir>/memory/sessions/<session id>.md`. `read_memory()` returns the whole list,
+`add_memory(input)` adds a line with the next number (line breaks in `input` become spaces),
+and `remove_memory(number)` removes that line. Numbers are not reused or shifted: after
+removing 2 from `1. 2. 3.`, the list is `1. 3.` and the next memory is 4.
+`delete_session!(s; files = true)` deletes the memory file with the session's other files. The tools are `:low`: they only
+touch the calling session's file (the session of the [`ToolContext`](@ref), or the active
+session when called directly).
+
 ### Tool context
 
 A tool can find out which session and call it is running for with [`tool_context`](@ref),
@@ -459,6 +496,8 @@ register_tool!(session_name; security = :low)
   `:low`; see [Allow-listed paths and commands](#Allow-listed-paths-and-commands).
 - `command_allow_list` (default empty): command prefixes for which `run_shell` is `:low`; see
   [Allow-listed paths and commands](#Allow-listed-paths-and-commands).
+- `url_allow_list` (default empty): URL prefixes for which `http_request` is `:low`; see
+  [HTTP requests](#HTTP-requests).
 - `scrub_env_vars` (default empty): extra environment variable names removed from child
   processes; see [Child processes and secrets](#Child-processes-and-secrets).
 

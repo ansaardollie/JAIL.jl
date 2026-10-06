@@ -216,8 +216,9 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `scrub_env_vars` | list of ENV var names | by hand | Removed from the built-in tools' child processes, besides names ending in `_KEY`, `_CREDENTIALS`, `_CREDENTIAL` (default empty) |
 | `path_allow_list` | list of paths | by hand | Files and folders, relative to the workspace folder or absolute, whose writes by the built-in `edit` tools are `:low` unless protected (default empty) |
 | `command_allow_list` | list of command prefixes | by hand | `run_shell` commands starting with one of them (and free of `;`, `&`, `\|`, `` ` ``, `$`, `<`, `>`, line breaks) are `:low` (default empty) |
+| `url_allow_list` | list of URL prefixes | by hand | `http_request` calls to URLs starting with one of them (at a `/`, `?`, `#` or the end) are `:low` instead of `:high` (default empty) |
 | `persist_sessions` | `true` / `false` | by hand | Save sessions to disk from their first message on (default `true`) |
-| `storage_dir` | path | by hand | Folder for saved sessions (default `".jail"`, relative to the working directory) |
+| `storage_dir` | path | by hand | Folder for saved sessions and session memories (default `".jail"`, relative to the working directory) |
 
 For example:
 

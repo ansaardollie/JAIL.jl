@@ -5,7 +5,7 @@ using Documenter
 const DOCS_PREFS = joinpath(@__DIR__, "LocalPreferences.toml")
 write(DOCS_PREFS, """
     [JAIL]
-    __clear__ = ["default_model", "providers", "repl_modes", "max_tokens", "store_requests", "system_prompt", "stream", "max_tool_rounds", "confirm_tools", "tool_approval", "tool_auto_approvals", "persist_sessions", "storage_dir", "builtin_tools", "julia_code_module", "protected_paths", "scrub_env_vars", "path_allow_list", "command_allow_list", "thinking_effort", "temperature", "show_reasoning"]
+    __clear__ = ["default_model", "providers", "repl_modes", "max_tokens", "store_requests", "system_prompt", "stream", "max_tool_rounds", "confirm_tools", "tool_approval", "tool_auto_approvals", "persist_sessions", "storage_dir", "builtin_tools", "julia_code_module", "protected_paths", "scrub_env_vars", "path_allow_list", "command_allow_list", "url_allow_list", "thinking_effort", "temperature", "show_reasoning"]
     """)
 
 using JAIL

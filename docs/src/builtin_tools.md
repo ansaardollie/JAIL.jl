@@ -58,10 +58,19 @@ pkg_add
 
 ```@docs
 fetch_url
+http_request
 ```
 
 ## interact
 
 ```@docs
 ask_user
+```
+
+## memory
+
+```@docs
+read_memory
+add_memory
+remove_memory
 ```

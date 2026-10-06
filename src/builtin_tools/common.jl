@@ -168,7 +168,7 @@ end
 
 # --- Opting in -------------------------------------------------------------------------------
 
-const _BUILTIN_GROUPS = ("read", "inspect", "edit", "execute", "web", "interact")
+const _BUILTIN_GROUPS = ("read", "inspect", "edit", "execute", "web", "interact", "memory")
 
 # name => (function, register_tool! keywords); filled by the files that define the tools.
 const _BUILTIN_DEFS = Dict{String,Tuple{Function,NamedTuple}}()
@@ -202,8 +202,9 @@ they do:
 | `"inspect"` | `julia_source_module`, `julia_source_struct`, `julia_source_method`, `julia_source_methods`, `julia_docs`, `find_julia_symbols`, `pkg_status`, `repl_history`, `last_result` |
 | `"edit"` | `create_file`, `create_directory`, `replace_in_file`, `replace_in_files`, `edit_file`, `remove_file` |
 | `"execute"` | `execute_julia_code`, `run_shell`, `run_tests`, `pkg_add` |
-| `"web"` | `fetch_url` |
+| `"web"` | `fetch_url`, `http_request` |
 | `"interact"` | `ask_user` |
+| `"memory"` | `read_memory`, `add_memory`, `remove_memory` |
 
 None is registered when JAIL loads: opt in with [`register_builtin_tools!`](@ref) or the
 Preference `builtin_tools`. See the Tools guide for their security levels.
@@ -214,7 +215,7 @@ builtin_tools() = sort!(collect(values(_builtins())); by = t -> t.name)
     register_builtin_tools!(names...) -> Vector{ToolSpec}
 
 Register built-in tools (see [`builtin_tools`](@ref)) so sessions can use them. Each name is a
-group (`"read"`, `"inspect"`, `"edit"`, `"execute"`, `"web"`, `"interact"`) or a tool name,
+group (`"read"`, `"inspect"`, `"edit"`, `"execute"`, `"web"`, `"interact"`, `"memory"`) or a tool name,
 as a `String` or `Symbol`. Returns the tools registered. A registered tool of the same name is
 replaced, as with [`register_tool!`](@ref); remove one again with [`unregister_tool!`](@ref).
 

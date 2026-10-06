@@ -49,6 +49,10 @@ julia_code_module = "main"
 # always :high). Default: none.
 # command_allow_list = ["git status", "git diff"]
 
+# URL prefixes for which http_request is :low (otherwise :high). An entry matches at a boundary:
+# it ends in /, or the URL goes on with / ? # or ends. Default: none.
+# url_allow_list = ["https://api.github.com/repos/"]
+
 # Reply cap for chat! on every provider. Unset: Anthropic uses the model's max output, others none.
 # max_tokens = 128000
 

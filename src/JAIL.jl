@@ -56,6 +56,7 @@ include("builtin_tools/source.jl")
 include("builtin_tools/process.jl")
 include("builtin_tools/web.jl")
 include("builtin_tools/repl.jl")
+include("builtin_tools/memory.jl")
 
 function __init__()
     _register_builtin_prefs!()
