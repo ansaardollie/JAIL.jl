@@ -2,6 +2,8 @@
 
 A [`Session`](@ref) holds one conversation: a `name`, the active `model`, optional `system`
 instructions, the `tools` its model may call, and the typed message history in `messages`.
+It can also set a `thinking_effort` and `temperature` for its requests (see
+[Thinking effort and temperature](#Thinking-effort-and-temperature)).
 [`chat!`](@ref) sends turns on a session (see [Chat](chat.md)). A new session offers every
 registered tool; see [Tools on a session](tools.md#Tools-on-a-session) to restrict it.
 
@@ -33,7 +35,9 @@ active_session()
 s = Session("anthropic/claude-sonnet-4-5"; name = "review", system = "Be terse.")
 ```
 
-The detailed display:
+The detailed display (also the `|` mode's `status`). `thinking` and `temperature` show what
+the session's requests will send: its own value, the Preference marked `(Preference)`, or
+`model default` when neither is set. `reasoning` reflects the Preference `show_reasoning`:
 
 ```@example sessions
 show(stdout, MIME"text/plain"(), s)
@@ -82,6 +86,37 @@ default_model()
 `empty!(s)` clears the history and keeps the model and system instructions. To pick a model
 from menus, use `select_model!(s)` (see [Models](models.md)).
 
+## Thinking effort and temperature
+
+A session's `thinking_effort` and `temperature` apply to every [`chat!`](@ref) on it, unless a
+call passes its own; `nothing` (the default) leaves them to the Preferences of the same name.
+Set them when creating the session or with [`set_thinking_effort!`](@ref) and
+[`set_temperature!`](@ref). They are saved with the session. How each provider takes them is
+in [Chat](chat.md#Thinking-effort,-temperature-and-reasoning).
+
+```@example sessions
+set_thinking_effort!(s, :low)
+set_temperature!(s, 0.2)
+show(stdout, MIME"text/plain"(), s)
+```
+
+```@example sessions
+set_thinking_effort!(s, nothing)
+set_temperature!(s, nothing)
+s.thinking_effort, s.temperature
+```
+
+Values are checked when set: the effort must be a `Symbol` (or a string), the temperature a
+non-negative number. Levels are not checked against the model.
+
+```@example sessions
+try
+    set_temperature!(s, -1)
+catch e
+    showerror(stdout, e)
+end
+```
+
 ## System instructions
 
 A session created without `system` (including `"default"` and REPL `session new`) gets JAIL's
@@ -104,7 +139,8 @@ print(Session("openai/gpt-5"; name = "sys").system)
 
 The REPL modes and session-less calls act on the [`active_session`](@ref). Every function
 that changes or uses a session also works without one: `set_model!(model)`,
-`select_model!()`, `set_tools!(tools)` and `chat!(prompt)`. The exception is
+`select_model!()`, `set_tools!(tools)`, `set_thinking_effort!(level)`, `set_temperature!(t)`
+and `chat!(prompt)`. The exception is
 [`tools`](@ref): `tools()` lists the tool registry, so use `tools(active_session())` for the
 active session's tools.
 
@@ -137,7 +173,7 @@ session is saved under the Preference `storage_dir` (default `.jail`; a relative
 resolved against the working directory when the session is first saved):
 
 - `sessions/<id>.json`: name, id, creation time, model (as `"provider/model-id"`), system
-  instructions and tools.
+  instructions, tools, thinking effort and temperature.
 - `messages/<id>.jsonl`: one message per line. Each new message is appended, so saving adds
   almost nothing to a chat turn. Tool calls are stored with their arguments as a JSON object;
   a tool result whose text is JSON is stored as that JSON value, other results as text.
@@ -147,9 +183,14 @@ resolved against the working directory when the session is first saved):
   [`ToolResult`](@ref)'s `id` (a version 7 UUID, also stored with the result in the messages
   file). It holds the session id, model, start and finish times, the tool (name, label, group),
   the call (provider call id, name, arguments) and the result (content, `is_error`).
+- `reasoning/<id>/<trace id>.md`: with `show_reasoning` on, one Markdown file per reasoning
+  summary: YAML front matter (`version`, `id`, `session_id`, `reply_id`, `model`, `format`,
+  `created`), then the summary as the model wrote it.
+  The `}` mode links to them (see [Chat](chat.md#Thinking-effort,-temperature-and-reasoning)).
 
 A session with no messages is not saved, and a turn that fails is removed from the file too.
-[`set_model!`](@ref), [`set_tools!`](@ref) and `empty!` update the files. Set the Preference
+[`set_model!`](@ref), [`set_tools!`](@ref), [`set_thinking_effort!`](@ref),
+[`set_temperature!`](@ref) and `empty!` update the files. Set the Preference
 `persist_sessions = false` to stop saving.
 
 [`restore_session!`](@ref) brings a saved session back, in this or a later Julia process, and

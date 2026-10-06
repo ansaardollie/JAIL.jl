@@ -52,6 +52,16 @@ julia_code_module = "main"
 # Reply cap for chat! on every provider. Unset: Anthropic uses the model's max output, others none.
 # max_tokens = 128000
 
+# Reasoning effort when neither chat! nor the session sets one, sent as-is ("none", "minimal",
+# "low", "medium", "high", "xhigh", "max"; providers take different subsets). Unset: not sent.
+# thinking_effort = "medium"
+
+# Sampling temperature when neither chat! nor the session sets one. Unset: not sent.
+# temperature = 0.7
+
+# Ask for reasoning summaries, show them while streaming, and save them under storage_dir/reasoning.
+show_reasoning = false
+
 # OpenAI, Google, and GoogleEnterprise (unless api = "generate_content") store replies and continue
 # from them; false sends store = false and the full history every turn.
 store_requests = true

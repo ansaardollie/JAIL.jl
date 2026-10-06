@@ -66,6 +66,12 @@ function _request_body(::_ResponsesAPI, p, req::_Request)
     # FunctionTool #L79526-L79575; `strict` omitted so the server normalises when it can
     # (tool-guides/openai-tool-guides-02-function-calling-20260926.md#L1045-L1053)
     isempty(req.tools) || (body["tools"] = [_function_json(t; type = "function") for t in req.tools])
+    req.temperature === nothing || (body["temperature"] = req.temperature)   # #L54160-L54172
+    # reasoning #L45481-L45484: Reasoning.effort #L66705, ReasoningEffort #L66769; summary #L66706-L66722
+    reasoning = Dict{String,Any}()
+    req.thinking_effort === nothing || (reasoning["effort"] = string(req.thinking_effort))
+    req.show_reasoning && (reasoning["summary"] = "auto")
+    isempty(reasoning) || (body["reasoning"] = reasoning)
     return body
 end
 
@@ -122,7 +128,10 @@ function _parse_reply(::_ResponsesAPI, req::_Request, json)
             continue
         elseif t == "reasoning"
             data = Dict{String,Any}(k => v for (k, v) in item if k != "status")
-            push!(parts, ReasoningPart(_summary_text(get(item, "summary", nothing)), :openai_responses, data))
+            # Raw reasoning `content` (#L66853-L66858) stands in when there is no summary.
+            text = _summary_text(get(item, "summary", nothing))
+            isempty(text) && (text = _summary_text(get(item, "content", nothing)))
+            push!(parts, ReasoningPart(text, :openai_responses, data))
             continue
         end
         t == "message" || continue
@@ -163,17 +172,26 @@ end
 # Stream events: response.output_text.delta #L70512, response.refusal.delta #L69679; the terminal
 # response.completed #L67455 / .incomplete #L68572 / .failed #L67945 carry the full Response;
 # error #L67898. core-concepts/openai-core-concepts-04-streaming-20260926.md#L142-L228
+# Reasoning: response.reasoning_summary_text.delta #L69475-L69530 (one summary part per
+# summary_index, each started by response.reasoning_summary_part.added #L69333), and
+# response.reasoning_text.delta #L69577 (raw reasoning, e.g. from open-weight models).
 mutable struct _ResponsesStream
     final::Any
     error::Union{Nothing,String}
+    reasoned::Bool
 end
-_stream_state(::_ResponsesAPI, req::_Request) = _ResponsesStream(nothing, nothing)
+_stream_state(::_ResponsesAPI, req::_Request) = _ResponsesStream(nothing, nothing, false)
 
-function _stream_event!(st::_ResponsesStream, data::AbstractString, on_text)
+function _stream_event!(st::_ResponsesStream, data::AbstractString, on::_StreamHooks)
     ev = JSON.parse(data)
     t = get(ev, "type", nothing)
     if t in ("response.output_text.delta", "response.refusal.delta")
-        on_text(ev["delta"])
+        on.text(ev["delta"])
+    elseif t == "response.reasoning_summary_part.added"
+        st.reasoned && on.reasoning("\n\n")
+    elseif t in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta")
+        d = ev["delta"]
+        isempty(d) || (on.reasoning(d); st.reasoned = true)
     elseif t in ("response.completed", "response.incomplete", "response.failed")
         st.final = ev["response"]
     elseif t == "error"

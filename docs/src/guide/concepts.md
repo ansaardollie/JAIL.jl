@@ -30,7 +30,8 @@ through a common parent type, [`AbstractOpenAIProvider`](@ref), rather than a fl
 ## Sessions
 
 A [`Session`](@ref) holds one conversation: a name, the active model, optional system
-instructions, the tools its model may call, and the message history. Any number can exist,
+instructions, the tools its model may call, and the message history. It may also carry a
+thinking effort and a temperature for its own requests; left unset, the Preferences decide. Any number can exist,
 and names may repeat: each session also has a unique `id`. When JAIL loads it starts a session
 called `"default"`, which is the **active session**: the one the REPL modes and session-less
 calls like `select_model!()` act on. Sessions are saved to disk as they chat and can be
@@ -65,6 +66,10 @@ restarting Julia.
 API keys are the exception. They stay in environment variables; JAIL stores only the *name*
 of the variable to read (for example `api_key_env = "MY_ANTHROPIC_KEY"`). A value that doesn't
 look like an ENV var name is rejected, which catches most attempts to paste a key itself.
+
+Some request options can be set at three levels: a [`chat!`](@ref) keyword wins over the
+session's value, which wins over the Preference (`thinking_effort` and `temperature`; see
+[Chat](chat.md#Thinking-effort,-temperature-and-reasoning)).
 
 The full list of keys is in [Preferences keys](providers.md#Preferences-keys).
 

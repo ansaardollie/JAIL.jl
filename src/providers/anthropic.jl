@@ -71,6 +71,27 @@ function _request_body(p::Anthropic, req::_Request)
     req.stream && (body["stream"] = true)   # #L3287
     # Tool #L5059-L5103; claude-docs/claude-docs-25-define-tools.md#L16-L53
     isempty(req.tools) || (body["tools"] = [_function_json(t; schema_key = "input_schema") for t in req.tools])
+    req.temperature === nothing || (body["temperature"] = req.temperature)   # #L3569-L3577
+    _anthropic_thinking!(body, req)
+    return body
+end
+
+# Neither field is in the local spec. output_config.effort: claude-docs/claude-docs-10-effort.md#L40-L58,
+# levels #L237. Effort drives thinking depth only with adaptive thinking (#L346-L352); `:none` turns
+# thinking off (claude-docs-21-thinking.md#L301-L314, rejected by some models #L441-L443).
+# display "summarized" returns readable thinking (#L49-L51, #L449-L455); invalid when disabled (#L481).
+# Without an effort no `thinking` is sent, so show_reasoning alone keeps the model's default (on
+# models that default to "omitted" display, no summaries).
+function _anthropic_thinking!(body, req::_Request)
+    e = req.thinking_effort
+    e === nothing && return body
+    if e === :none
+        body["thinking"] = Dict{String,Any}("type" => "disabled")
+        return body
+    end
+    body["output_config"] = Dict{String,Any}("effort" => string(e))
+    t = body["thinking"] = Dict{String,Any}("type" => "adaptive")
+    req.show_reasoning && (t["display"] = "summarized")
     return body
 end
 
@@ -149,10 +170,11 @@ mutable struct _AnthropicStream
     input_tokens::Int
     output_tokens::Int
     error::Union{Nothing,String}
+    reasoned::Bool                    # some reasoning text was reported
 end
-_stream_state(::Anthropic, req::_Request) = _AnthropicStream(nothing, Dict(), Dict(), Dict(), nothing, 0, 0, nothing)
+_stream_state(::Anthropic, req::_Request) = _AnthropicStream(nothing, Dict(), Dict(), Dict(), nothing, 0, 0, nothing, false)
 
-function _stream_event!(st::_AnthropicStream, data::AbstractString, on_text)
+function _stream_event!(st::_AnthropicStream, data::AbstractString, on::_StreamHooks)
     ev = JSON.parse(data)
     t = get(ev, "type", nothing)
     if t == "message_start"
@@ -171,12 +193,19 @@ function _stream_event!(st::_AnthropicStream, data::AbstractString, on_text)
         d = ev["delta"]
         if get(d, "type", nothing) == "text_delta"
             write(get!(IOBuffer, st.text, ev["index"]), d["text"])
-            on_text(d["text"])
+            on.text(d["text"])
         elseif get(d, "type", nothing) == "input_json_delta" && haskey(st.calls, ev["index"])
             write(st.calls[ev["index"]][3], d["partial_json"])
         elseif get(d, "type", nothing) == "thinking_delta" && haskey(st.thinking, ev["index"])
             b = st.thinking[ev["index"]]
-            b["thinking"] = string(get(b, "thinking", ""), d["thinking"])
+            prev = get(b, "thinking", "")
+            b["thinking"] = string(prev, d["thinking"])
+            # Blocks are separated by a blank line; an omitted block streams one empty delta.
+            if !isempty(d["thinking"])
+                isempty(prev) && st.reasoned && on.reasoning("\n\n")
+                on.reasoning(d["thinking"])
+                st.reasoned = true
+            end
         elseif get(d, "type", nothing) == "signature_delta" && haskey(st.thinking, ev["index"])
             st.thinking[ev["index"]]["signature"] = d["signature"]
         end

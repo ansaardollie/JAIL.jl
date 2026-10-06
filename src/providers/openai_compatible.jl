@@ -55,7 +55,23 @@ function _request_body(::_ChatCompletionsAPI, p, req::_Request)
     # ChatCompletionTool #L41167-L41183 wrapping FunctionObject #L49838-L49870
     isempty(req.tools) || (body["tools"] = [Dict("type" => "function", "function" => _function_json(t))
                                             for t in req.tools])
+    # reasoning_effort #L42365-L42366; temperature via ModelResponseProperties #L54160-L54172.
+    # Chat Completions has no summary request field.
+    req.thinking_effort === nothing || (body["reasoning_effort"] = string(req.thinking_effort))
+    req.temperature === nothing || (body["temperature"] = req.temperature)
     return body
+end
+
+# Not in the OpenAI spec: servers such as vLLM, LM Studio, DeepSeek and OpenRouter put reasoning in
+# `reasoning_content` or `reasoning` on the message / delta. UNVERIFIED per server. Kept as a
+# :chat_completions ReasoningPart for display only; Chat Completions replays never include it.
+const _CHAT_REASONING_KEYS = ("reasoning_content", "reasoning")
+function _chat_reasoning(d)
+    for k in _CHAT_REASONING_KEYS
+        v = get(d, k, nothing)
+        v isa AbstractString && !isempty(v) && return v
+    end
+    return nothing
 end
 
 _chat_messages!(ms, m::UserMessage) = push!(ms, Dict{String,Any}("role" => "user", "content" => string(m)))
@@ -80,6 +96,8 @@ function _parse_reply(::_ChatCompletionsAPI, req::_Request, json)
     choice = first(json["choices"])
     msg = choice["message"]
     parts = AbstractContentPart[]
+    reasoning = _chat_reasoning(msg)
+    reasoning === nothing || push!(parts, ReasoningPart(reasoning, :chat_completions))
     content = get(msg, "content", nothing)
     content === nothing || isempty(content) || push!(parts, TextPart(content))
     refusal = get(msg, "refusal", nothing)
@@ -107,14 +125,15 @@ mutable struct _ChatStream
     id::Any
     content::IOBuffer
     refusal::IOBuffer
+    reasoning::IOBuffer
     calls::Dict{Int,Vector{Any}}   # index => [id, name, arguments buffer]
     finish_reason::Any
     usage::Any
 end
 _stream_state(::_ChatCompletionsAPI, req::_Request) =
-    _ChatStream(nothing, IOBuffer(), IOBuffer(), Dict(), nothing, nothing)
+    _ChatStream(nothing, IOBuffer(), IOBuffer(), IOBuffer(), Dict(), nothing, nothing)
 
-function _stream_event!(st::_ChatStream, data::AbstractString, on_text)
+function _stream_event!(st::_ChatStream, data::AbstractString, on::_StreamHooks)
     strip(data) == "[DONE]" && return nothing
     ev = JSON.parse(data)
     st.id = something(get(ev, "id", nothing), Some(st.id))
@@ -122,9 +141,11 @@ function _stream_event!(st::_ChatStream, data::AbstractString, on_text)
     u === nothing || (st.usage = u)
     for c in something(get(ev, "choices", nothing), ())
         d = something(get(c, "delta", nothing), Dict())
+        r = _chat_reasoning(d)
+        r === nothing || (write(st.reasoning, r); on.reasoning(r))
         for (key, buf) in (("content", st.content), ("refusal", st.refusal))
             t = get(d, key, nothing)
-            t isa AbstractString && !isempty(t) && (write(buf, t); on_text(t))
+            t isa AbstractString && !isempty(t) && (write(buf, t); on.text(t))
         end
         for tc in something(get(d, "tool_calls", nothing), ())
             call = get!(() -> Any[nothing, nothing, IOBuffer()], st.calls, something(get(tc, "index", 0), 0))
@@ -145,6 +166,7 @@ end
 function _stream_finish(st::_ChatStream, req::_Request)
     refusal = String(take!(st.refusal))
     msg = Dict{String,Any}("content" => String(take!(st.content)),
+                           "reasoning_content" => String(take!(st.reasoning)),
                            "refusal" => isempty(refusal) ? nothing : refusal,
                            "tool_calls" => [Dict("id" => string(something(c[1], "call_$i")),
                                                  "function" => Dict("name" => string(c[2]),

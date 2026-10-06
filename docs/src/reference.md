@@ -36,6 +36,8 @@ default_model
 Session
 set_model!
 use_provider!
+set_thinking_effort!
+set_temperature!
 Base.empty!(::Session)
 sessions
 active_session

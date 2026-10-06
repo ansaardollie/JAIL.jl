@@ -1,5 +1,5 @@
 const _MODEL_HELP = """
-    status, st                            show the active session and its model
+    status, st                            show the active session's details
     providers                             list providers and whether their API key is set
     models [provider]                     list models (default: the active model's provider)
     select [provider]                     choose the active session's model from menus
@@ -53,17 +53,8 @@ end
 
 function _cmd_status(args)
     _nargs("status", args, 0:0)
-    s = active_session()
-    println("Session:  ", s.name)
-    if s.model === nothing
-        println("Model:    none (choose one with `use provider/model` or `select`)")
-    else
-        println("Model:    ", s.model.id)
-        println("Provider: ", s.model.provider)
-    end
-    default = _load_pref("default_model")
-    default == _model_string(s) || println("Default:  ", something(default, "none"))
-    println("Tools:    ", _tools_label(s))
+    _show_details(stdout, active_session(); status = true)
+    println()
 end
 
 function _cmd_providers(args)

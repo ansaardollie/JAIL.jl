@@ -87,7 +87,8 @@ with `tool_call.thought_signature` are read as a `:google_generate_content` part
 - Replays now preserve per-part order (text, reasoning, calls) instead of "all text, then calls".
 - Any new provider must map its reasoning to a format symbol and replay it in `_request_body`.
 - JAIL still does not request summaries (Anthropic `display`, OpenAI `reasoning.summary`, Google
-  `thinking_summaries`), so `text` is usually empty.
+  `thinking_summaries`), so `text` is usually empty. (Since `40_STREAMING_show_reasoning.md`, it
+  does when `show_reasoning` is on, and adds a `:chat_completions` format that is never replayed.)
 
 ## Revisit Trigger
 

@@ -55,10 +55,11 @@ end
     ReasoningPart(text, format::Symbol, data = Dict())
 
 The model's reasoning inside an [`AssistantMessage`](@ref): `text` is the readable summary
-(often empty: JAIL doesn't request summaries, and most providers hide the reasoning itself), and
+(often empty unless `show_reasoning` is on, see [`chat!`](@ref)), and
 `data` is the provider's opaque record of it (signatures, encrypted content), in the wire
-`format` it came from: `:anthropic`, `:openai_responses`, `:google_interactions` or
-`:google_generate_content`. Don't read or edit `data`; providers require it back unchanged.
+`format` it came from: `:anthropic`, `:openai_responses`, `:google_interactions`,
+`:google_generate_content`, or `:chat_completions` (reasoning text some OpenAI-compatible servers
+return; never sent back). Don't read or edit `data`; providers require it back unchanged.
 
 It is not part of `string(msg)`. When the history is sent again in full, it goes back unchanged,
 but only to the provider type and wire format that produced it; others never see it.

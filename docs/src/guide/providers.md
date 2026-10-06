@@ -201,6 +201,9 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `providers.google_enterprise.api` | `"generate_content"` | same | Only written when not `:interactions` |
 | `repl_modes` | `false` | by hand | Disables JAIL's REPL modes; read when JAIL loads |
 | `max_tokens` | positive integer | by hand | Default reply cap for [`chat!`](@ref) on every provider (unset: Anthropic the model's max output, others none) |
+| `thinking_effort` | string such as `"low"`, `"high"` | by hand | Reasoning effort for [`chat!`](@ref) and the `}` mode when neither the call nor the session sets one, sent as-is (unset: not sent) |
+| `temperature` | non-negative number | by hand | Sampling temperature, likewise (unset: not sent) |
+| `show_reasoning` | `true` / `false` | by hand | Ask for reasoning summaries, show them while streaming, save them under `storage_dir/reasoning` (default `false`) |
 | `store_requests` | `true` / `false` | by hand | OpenAI, Google, and `GoogleEnterprise` (unless `api = :generate_content`) store replies and continue from them (default `true`); `false` sends `store = false` and the full history |
 | `system_prompt` | string | by hand | Replaces the built-in instructions for sessions created without `system`; `""` gives them none |
 | `stream` | `true` / `false` | by hand | Stream replies in the `}` chat mode (default `false`) |

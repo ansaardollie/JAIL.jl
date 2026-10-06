@@ -111,6 +111,18 @@ const _CHAT_COLOR = Colors.JULIA_LOGO_COLORS.purple
 const _PROMPT_COLOR = Colors.JULIA_LOGO_COLORS.blue
 const _TOOLS_COLOR = Colors.JULIA_LOGO_COLORS.red
 const _RESPONSE_COLOR = Colors.JULIA_LOGO_COLORS.green
+const _REASONING_COLOR = Colors.RGB(0.95, 0.77, 0.06)   # yellow; the logo colors have none
+
+# The traces themselves are not shown, only a numbered link to each saved one.
+function _render_reasoning_rows(io::IO, r::_ReasoningSaved; tty::Bool)
+    width = ndigits(length(r.paths))
+    for (i, path) in enumerate(r.paths)
+        print(io, "  ", lpad(i, width), ". ")
+        printstyled(io, tty ? _hyperlink("View", path) : Base.contractuser(path);
+                    color = :light_black, underline = tty)
+        println(io)
+    end
+end
 
 # Bold 24-bit color text, plain when `io` has no color.
 function _print_rgb(io::IO, c::Colors.RGB, text...)
@@ -152,12 +164,16 @@ _prompt_lines(io::IO, prompt, indent::Int) =
 _prompt_box(io::IO, prompt) = _box(io, _PROMPT_COLOR, "Prompt:", _prompt_lines(io, prompt, 2))
 
 # The finished turn: with `response`, one box in the chat color around the Prompt (when
-# `prompt` is given), Tool calls and Response boxes; without, just the Tool calls box.
-function _render_turn(io::IO, s::Session, turn; tty::Bool, prompt = nothing, response::Bool = true)
+# `prompt` is given), Reasoning (when `reasoning` is a `_ReasoningSaved`), Tool calls and Response
+# boxes; without, just the Reasoning and Tool calls boxes.
+function _render_turn(io::IO, s::Session, turn; tty::Bool, prompt = nothing, response::Bool = true,
+                      reasoning::Union{Nothing,_ReasoningSaved} = nothing)
     results = ToolResult[r for m in turn if m isa ToolResultMessage for r in m.content]
     indent = response ? 4 : 2
     sections = Tuple{Colors.RGB,String,Vector{String}}[]
     prompt === nothing || push!(sections, (_PROMPT_COLOR, "Prompt:", _prompt_lines(io, prompt, indent)))
+    reasoning === nothing || push!(sections, (_REASONING_COLOR, "Reasoning ($(length(reasoning.paths))):",
+        _captured_lines(o -> _render_reasoning_rows(o, reasoning; tty), io, indent)))
     isempty(results) || push!(sections, (_TOOLS_COLOR, "Tool calls ($(length(results))):",
         _captured_lines(o -> _render_tool_rows(o, s, results; tty), io, indent)))
     response && push!(sections, (_RESPONSE_COLOR, _response_title(turn),
@@ -192,9 +208,13 @@ end
 # One turn shown as in the `}` mode, also used by `chat!(...; stream = true)`. `output = false`
 # leaves out the rendered reply text (the REPL displays the returned reply instead).
 function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io isa Base.TTY,
-                       header::AbstractString = string(prompt), output::Bool = true, kwargs...)
+                       header::AbstractString = string(prompt), output::Bool = true,
+                       show_reasoning = nothing, kwargs...)
     n0 = length(s.messages)
+    show_reasoning = _show_reasoning(show_reasoning)
     status, alt, line_start = Ref(false), Ref(false), Ref(true)
+    phase = Ref(:none)   # what the last streamed chunk was: :reasoning, :text or :none
+    saved = Ref{Union{Nothing,_ReasoningSaved}}(nothing)
     clear_status() = status[] && (print(io, "\r\e[2K"); status[] = false)
     function show_status(text, color = :light_black)
         tty || return
@@ -212,10 +232,25 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
     function show_delta(t)
         clear_status()
         enter_alt()
+        if phase[] === :reasoning
+            print(io, line_start[] ? "\n" : "\n\n")
+            line_start[] = true
+        end
+        phase[] = :text
         print(io, t)
         isempty(t) || (line_start[] = endswith(t, '\n'))
     end
+    function show_reasoning_delta(t)
+        clear_status()
+        enter_alt()
+        phase[] === :reasoning || line_start[] || (println(io); line_start[] = true)
+        phase[] = :reasoning
+        printstyled(io, t; color = :light_black, italic = true)
+        isempty(t) || (line_start[] = endswith(t, '\n'))
+    end
     function on_step(x)
+        x isa _ReasoningSaved && (saved[] = x; return)
+        phase[] = :none
         x isa AssistantMessage && return
         # The confirmation prompt needs the line to itself; when streaming, the preview is shown.
         x isa Union{_Confirming,_Prompting} && (clear_status(); return stream)
@@ -235,7 +270,9 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
     stream && !tty && show_prompt && _prompt_box(io, prompt)
     show_status("thinking…")
     reply = try
-        _chat!(s, prompt; on_text = stream ? show_delta : nothing, on_step, kwargs...)
+        _chat!(s, prompt; on_text = stream ? show_delta : nothing,
+               on_reasoning = stream && show_reasoning ? show_reasoning_delta : nothing,
+               on_step, show_reasoning, kwargs...)
     finally
         clear_status()
         alt[] && print(io, _ALT_SCREEN_OFF)
@@ -244,9 +281,10 @@ function _display_turn(io::IO, s::Session, prompt; stream::Bool, tty::Bool = io 
     if stream && !tty
         # Not a terminal: the streamed raw text and tool lines stay as printed.
         line_start[] || println(io)
-        _render_turn(io, s, turn; tty, response = false)
+        _render_turn(io, s, turn; tty, response = false, reasoning = saved[])
     else
-        _render_turn(io, s, turn; tty, response = output, prompt = show_prompt ? prompt : nothing)
+        _render_turn(io, s, turn; tty, response = output, prompt = show_prompt ? prompt : nothing,
+                     reasoning = saved[])
     end
     return reply
 end

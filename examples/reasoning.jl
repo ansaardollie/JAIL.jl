@@ -13,17 +13,35 @@
 #   :openai_responses         OpenAI (and compatible) Responses `reasoning` items
 #   :google_interactions      Google / GoogleEnterprise Interactions `thought` steps
 #   :google_generate_content  GoogleEnterprise generateContent `thoughtSignature` (on any part)
+#   :chat_completions         reasoning text from compatible Chat Completions servers (never sent back)
+#
+# Controls (all providers): `thinking_effort` (a Symbol, sent as-is), `temperature` (a number),
+# `show_reasoning` (ask for summaries; stream them dimmed; save each trace as a Markdown file with
+# YAML front matter under `<storage_dir>/reasoning/<session id>/`). Effort and temperature come from the chat! keyword,
+# then the session (`set_thinking_effort!` / `set_temperature!`), then Preferences.
 #
 # Open / tentative:
-# - JAIL doesn't ask for reasoning summaries (Anthropic `display`, OpenAI `reasoning.summary`,
-#   Google `thinking_summaries`), so `text` is usually empty, and the REPL doesn't show it.
+# - Levels are not checked or mapped: `:max` on Google or `:minimal` on Anthropic is the API's error.
+# - On Anthropic, any effort but `:none` sends adaptive thinking, which extended-thinking-only
+#   models (e.g. Haiku 4.5) reject; without an effort no thinking settings are sent, so
+#   `show_reasoning` alone gets no summaries there.
 # - `format` and `data` are provider details exposed on a public type; treat them as read-only.
 
 using JAIL
 
 LIVE = false    # set to true to make real API calls (needs ANTHROPIC_API_KEY in ENV)
 
-# --- 1. A ReasoningPart -------------------------------------------------------------------
+# --- 1. Effort and temperature on a session -----------------------------------------------
+
+s = Session("anthropic/claude-opus-4-8"; name = "effort-demo", thinking_effort = :low)
+@show s.thinking_effort s.temperature
+set_temperature!(s, 0.3)
+set_thinking_effort!(s, :high)
+show(stdout, MIME"text/plain"(), s); println()
+set_thinking_effort!(s, nothing)   # back to the Preference `thinking_effort`, if set
+@show s.thinking_effort
+
+# --- 2. A ReasoningPart -------------------------------------------------------------------
 
 r = ReasoningPart("Check the tool first.", :anthropic,
                   Dict("type" => "thinking", "thinking" => "Check the tool first.", "signature" => "EosnCkYI..."))
@@ -36,7 +54,7 @@ reply = AssistantMessage([r, TextPart("It's 22°C.")])
 # A hand-written reply has no model, so its reasoning is never sent anywhere:
 @show reply.model
 
-# --- 2. From a live tool round ------------------------------------------------------------
+# --- 3. From a live tool round, with summaries shown -------------------------------------
 
 """
     get_current_temperature(location)
@@ -49,18 +67,42 @@ Gets the current temperature for a given location.
 get_current_temperature(location::String) = "22°C in $location"
 
 if LIVE
-    s = Session("anthropic/claude-sonnet-5"; name = "reasoning-demo", tools = [get_current_temperature])
-    chat!(s, "What is the temperature in London?")
-    for m in s.messages
+    t = Session("anthropic/claude-sonnet-5"; name = "reasoning-demo", tools = [get_current_temperature])
+    # Streams the summaries dimmed, then the boxed turn with a `Reasoning` box linking to the
+    # saved summaries.
+    reply = chat!(t, "What is the temperature in London?"; stream = true, show_reasoning = true,
+                  thinking_effort = :medium)
+    for m in t.messages
         m isa AssistantMessage || continue
-        @show m.content     # e.g. [ReasoningPart(:anthropic, ""), ToolCall(get_current_temperature(...))]
+        @show m.content     # e.g. [ReasoningPart(:anthropic, "The user wants…"), ToolCall(get_current_temperature(...))]
     end
     # Set ENV["JULIA_DEBUG"] = "JAIL" before chat! to see the `thinking` block sent back with
-    # the tool result. After `set_model!(s, "openai/gpt-5-mini")` it is left out.
-    delete_session!(s)
+    # the tool result. After `set_model!(t, "openai/gpt-5-mini")` it is left out.
+    delete_session!(t)
 end
 
-# --- 3. Misuse ----------------------------------------------------------------------------
+# --- 4. Misuse ----------------------------------------------------------------------------
+
+# `format` is a Symbol naming the wire format, not a provider name string:
+try
+    ReasoningPart("", "anthropic", Dict())
+catch e
+    println(sprint(showerror, e; context = :limit => true)[1:min(end, 120)], "…")
+end
+
+# Effort is a Symbol and temperature a non-negative number; both are checked before any request:
+try
+    chat!(s, "Hi"; thinking_effort = 3)
+catch e
+    showerror(stdout, e); println()
+end
+try
+    set_temperature!(s, -0.5)
+catch e
+    showerror(stdout, e); println()
+end
+@show length(s.messages)   # the failed turn left no trace
+delete_session!(s)
 
 # `format` is a Symbol naming the wire format, not a provider name string:
 try

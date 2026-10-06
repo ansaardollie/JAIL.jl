@@ -10,8 +10,8 @@ end
 _SessionStore() = _SessionStore(nothing, 0, UInt(0))
 
 """
-    Session(model; name = nothing, system = nothing, tools = nothing)
-    Session(; name = nothing, system = nothing, tools = nothing)
+    Session(model; name = nothing, system = nothing, tools = nothing, thinking_effort = nothing, temperature = nothing)
+    Session(; name = nothing, system = nothing, tools = nothing, thinking_effort = nothing, temperature = nothing)
 
 One conversation: a `name`, the active `model`, optional `system` instructions, the tools the
 model may call, and the typed message history in `messages`. `model` may be a [`Model`](@ref)
@@ -21,6 +21,10 @@ error is thrown if none is set.
 `tools = nothing` gives the session every registered tool (see [`register_tool!`](@ref)),
 including ones registered later; a vector of tool names or functions restricts it (see
 [`set_tools!`](@ref)).
+
+`thinking_effort` and `temperature` apply to every [`chat!`](@ref) on the session unless the
+call passes its own; `nothing` leaves them to the Preferences of the same name (see
+[`set_thinking_effort!`](@ref), [`set_temperature!`](@ref)).
 
 Every session is registered (see [`sessions`](@ref)) so the REPL can switch to it, and stays
 registered until [`delete_session!`](@ref). Without a `name` it is called `"session"`. Names
@@ -47,13 +51,17 @@ mutable struct Session
     model::Union{Nothing,AbstractModel}
     system::Union{Nothing,String}
     tools::Union{Nothing,Vector{String}}
+    thinking_effort::Union{Nothing,Symbol}
+    temperature::Union{Nothing,Float64}
     const messages::Vector{AbstractMessage}
     const _store::_SessionStore
     function Session(::_Register, name::AbstractString, model, system, tools = nothing;
                      id::UUID = uuid7(), messages = AbstractMessage[],
-                     store::_SessionStore = _SessionStore())
+                     store::_SessionStore = _SessionStore(), thinking_effort = nothing,
+                     temperature = nothing)
         s = new(id, _uuid7_time(id), String(name), model,
-                system === nothing ? nothing : String(system), tools, messages, store)
+                system === nothing ? nothing : String(system), tools,
+                _check_effort(thinking_effort), _check_temperature(temperature), messages, store)
         push!(_SESSIONS, s)
         return s
     end
@@ -63,11 +71,13 @@ const _SESSIONS = Session[]
 const _ACTIVE = Ref{Session}()
 
 function Session(model::AbstractModel; name::Union{Nothing,AbstractString} = nothing,
-                 system::Union{Nothing,AbstractString} = nothing, tools = nothing)
+                 system::Union{Nothing,AbstractString} = nothing, tools = nothing,
+                 thinking_effort = nothing, temperature = nothing)
     name === nothing || _check_session_name(name)
     names = _tool_names(tools)
     system = system === nothing ? _default_system() : isempty(system) ? nothing : system
-    return Session(_Register(), something(name, "session"), model, system, names)
+    return Session(_Register(), something(name, "session"), model, system, names;
+                   thinking_effort, temperature)
 end
 Session(model::AbstractString; kwargs...) = Session(Model(model); kwargs...)
 
@@ -145,13 +155,15 @@ function use_session!(x::Union{AbstractString,UUID,Session})
 end
 
 """
-    new_session!(name = nothing; model = nothing, system = nothing, tools = nothing) -> Session
+    new_session!(name = nothing; model = nothing, system = nothing, tools = nothing,
+                 thinking_effort = nothing, temperature = nothing) -> Session
 
 Create a session and make it the active one. `model` defaults to the saved default model.
 """
 function new_session!(name::Union{Nothing,AbstractString} = nothing; model = nothing, system = nothing,
-                      tools = nothing)
-    s = model === nothing ? Session(; name, system, tools) : Session(model; name, system, tools)
+                      tools = nothing, thinking_effort = nothing, temperature = nothing)
+    kw = (; name, system, tools, thinking_effort, temperature)
+    s = model === nothing ? Session(; kw...) : Session(model; kw...)
     return _ACTIVE[] = s
 end
 
@@ -220,6 +232,39 @@ use_provider!(s::Session, p::AbstractProvider) = set_model!(s, default_model(p))
 use_provider!(p::AbstractProvider) = use_provider!(active_session(), p)
 
 """
+    set_thinking_effort!(session::Session, level) -> Union{Symbol,Nothing}
+    set_thinking_effort!(level)
+
+Set how much the session's model reasons on every [`chat!`](@ref), or the
+[`active_session`](@ref)'s when no session is given: a `Symbol` such as `:low` or `:high`, sent
+as-is (see [`chat!`](@ref) for the levels and how each provider takes them). `nothing` clears
+it, leaving the Preference `thinking_effort` (if set) in charge. A `thinking_effort` passed to
+`chat!` wins over it.
+
+```julia
+set_thinking_effort!(s, :low)
+set_thinking_effort!(s, nothing)
+```
+"""
+set_thinking_effort!(s::Session, x::Union{Nothing,Symbol,AbstractString}) =
+    (s.thinking_effort = _check_effort(x); _sync_meta!(s); s.thinking_effort)
+set_thinking_effort!(x::Union{Nothing,Symbol,AbstractString}) = set_thinking_effort!(active_session(), x)
+
+"""
+    set_temperature!(session::Session, t) -> Union{Float64,Nothing}
+    set_temperature!(t)
+
+Set the sampling temperature (a non-negative number) for every [`chat!`](@ref) on the session,
+or the [`active_session`](@ref) when no session is given. It is sent as-is: ranges differ by
+provider (OpenAI 0 to 2, Anthropic 0 to 1) and some models reject any non-default value.
+`nothing` clears it, leaving the Preference `temperature` (if set) in charge. A `temperature`
+passed to `chat!` wins over it.
+"""
+set_temperature!(s::Session, t::Union{Nothing,Real}) =
+    (s.temperature = _check_temperature(t); _sync_meta!(s); s.temperature)
+set_temperature!(t::Union{Nothing,Real}) = set_temperature!(active_session(), t)
+
+"""
     empty!(session::Session)
 
 Clear the message history, keeping the model and system instructions. A saved session's
@@ -266,14 +311,49 @@ set_tools!(xs::Union{Nothing,AbstractVector}) = set_tools!(active_session(), xs)
 Base.show(io::IO, s::Session) = print(io, "Session(", repr(s.name), ", ",
     something(_model_string(s), "no model"), ", ", length(s.messages), " messages)")
 
-function Base.show(io::IO, ::MIME"text/plain", s::Session)
+Base.show(io::IO, ::MIME"text/plain", s::Session) = _show_details(io, s)
+
+# A session setting as it will be sent: the session's own value, else the Preference, else none.
+function _setting_label(v, key::AbstractString, check)
+    v === nothing || return string(v)
+    p = _load_pref(key)
+    p === nothing && return "model default"
+    ok = try
+        check(p)
+    catch
+        return string(repr(p), " (Preference, invalid)")
+    end
+    return string(ok, " (Preference)")
+end
+
+function _reasoning_label()
+    v = _load_pref("show_reasoning", false)
+    return v === true ? "shown" : v === false ? "hidden" : string(repr(v), " (Preference, invalid)")
+end
+
+# The detailed display, shared by `show` and the `|` mode's `status`; `status` adds the hint for a
+# missing model and the saved default when it differs.
+function _show_details(io::IO, s::Session; status::Bool = false)
+    row(label, value) = println(io, "  ", rpad(label * ":", 13), value)
     println(io, "Session ", repr(s.name))
-    println(io, "  id:       ", s.id)
-    println(io, "  created:  ", _local_time(s.created), " (local time)")
-    println(io, "  model:    ", something(_model_string(s), "none"))
-    println(io, "  system:   ", s.system === nothing ? "none" : _system_preview(s.system))
-    println(io, "  tools:    ", _tools_label(s))
-    print(io, "  messages: ", length(s.messages))
+    row("id", s.id)
+    row("created", _local_time(s.created) * " (local time)")
+    if s.model === nothing
+        row("model", status ? "none (choose one with `use provider/model` or `select`)" : "none")
+    else
+        row("model", _model_string(s))
+        row("provider", repr(s.model.provider))
+    end
+    if status
+        default = _load_pref("default_model")
+        default == _model_string(s) || row("default", something(default, "none"))
+    end
+    row("system", s.system === nothing ? "none" : _system_preview(s.system))
+    row("tools", _tools_label(s))
+    row("thinking", _setting_label(s.thinking_effort, "thinking_effort", x -> _check_effort(x)))
+    row("temperature", _setting_label(s.temperature, "temperature", x -> _check_temperature(x)))
+    row("reasoning", _reasoning_label())
+    print(io, "  ", rpad("messages:", 13), length(s.messages))
 end
 
 function _tools_label(s::Session)

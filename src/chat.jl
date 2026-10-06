@@ -12,6 +12,32 @@ function _store_requests()
     return v
 end
 
+_check_effort(::Nothing, what = "thinking_effort") = nothing
+_check_effort(x::Symbol, what = "thinking_effort") = x
+function _check_effort(x, what = "thinking_effort")
+    x isa AbstractString && !isempty(strip(x)) && return Symbol(strip(x))
+    throw(ArgumentError("$what must be a Symbol such as :high, got $(repr(x))"))
+end
+
+_check_temperature(::Nothing, what = "temperature") = nothing
+function _check_temperature(x, what = "temperature")
+    x isa Real && !(x isa Bool) && isfinite(x) && x >= 0 || throw(ArgumentError(
+        "$what must be a non-negative number, got $(repr(x))"))
+    return Float64(x)
+end
+
+_thinking_effort(kw) =
+    something(_check_effort(kw), _check_effort(_load_pref("thinking_effort"), "Preference `thinking_effort`"), Some(nothing))
+_temperature(kw) =
+    something(_check_temperature(kw), _check_temperature(_load_pref("temperature"), "Preference `temperature`"), Some(nothing))
+
+_show_reasoning(kw::Bool) = kw
+function _show_reasoning(::Nothing)
+    v = _load_pref("show_reasoning", false)
+    v isa Bool || throw(ArgumentError("Preference `show_reasoning` must be true or false, got $(repr(v))"))
+    return v
+end
+
 # Stored reply id => fingerprint of the history the server holds for it (up to that reply), so a
 # history edited since then is replayed in full instead of chained.
 const _CHAIN_STATE = Dict{String,UInt}()
@@ -38,10 +64,10 @@ function _chain_point(p::AbstractProvider, messages, store::Bool)
     return (reply.id, k)
 end
 
-function _send(p::AbstractProvider, req::_Request, on_text)
+function _send(p::AbstractProvider, req::_Request, on::_StreamHooks)
     if req.stream
         st = _stream_state(p, req)
-        _post_sse(data -> _stream_event!(st, data, on_text), p, _request_url(p, req), _request_body(p, req))
+        _post_sse(data -> _stream_event!(st, data, on), p, _request_url(p, req), _request_body(p, req))
         return _stream_finish(st, req)
     end
     json = _post_json(p, _request_url(p, req), _request_body(p, req))
@@ -50,26 +76,32 @@ end
 
 # The core every surface calls: one request for the given history, no session involved.
 # Continues from a stored reply (previous_response_id / previous_interaction_id) when possible.
-# With `on_text`, streams (if the provider can) and calls `on_text(delta)` per text chunk.
+# With `on_text`, streams (if the provider can) and calls `on_text(delta)` per text chunk, and
+# `on_reasoning(delta)` per chunk of reasoning summary. Unset options fall back to Preferences.
 function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
                    system::Union{Nothing,AbstractString}; max_tokens = nothing, on_text = nothing,
-                   tools::Vector{ToolSpec} = ToolSpec[])
+                   on_reasoning = nothing, tools::Vector{ToolSpec} = ToolSpec[],
+                   thinking_effort = nothing, temperature = nothing, show_reasoning = nothing)
     p = model.provider
     n, store = _max_tokens(model, max_tokens), _store_requests()
+    effort, temp, summaries = _thinking_effort(thinking_effort), _temperature(temperature),
+                              _show_reasoning(show_reasoning)
     stream = on_text !== nothing && _supports_streaming(p)
-    full = _Request(model, messages, system, n, store, nothing, stream, tools)
+    on = _StreamHooks(on_text, something(on_reasoning, Returns(nothing)))
+    request(ms, id) = _Request(model, ms, system, n, store, id, stream, tools, effort, temp, summaries)
+    full = request(messages, nothing)
     chain = _chain_point(p, messages, store)
     reply = if chain === nothing
-        _send(p, full, on_text)
+        _send(p, full, on)
     else
         id, k = chain
         try
-            _send(p, _Request(model, messages[k+1:end], system, n, store, id, stream, tools), on_text)
+            _send(p, request(messages[k+1:end], id), on)
         catch e
             # The stored reply expired or was deleted: fall back to replaying everything.
             (e isa _APIError && e.status in (400, 404)) || rethrow()
             @debug "JAIL: previous id $id rejected, replaying full history" exception = e
-            _send(p, full, on_text)
+            _send(p, full, on)
         end
     end
     if store && _supports_chaining(p) && reply.id !== nothing
@@ -79,8 +111,9 @@ function _complete(model::Model, messages::AbstractVector{<:AbstractMessage},
 end
 
 """
-    chat!(session::Session, prompt; max_tokens = nothing, stream = false, max_tool_rounds = nothing) -> AssistantMessage
-    chat!(prompt; max_tokens = nothing, stream = false, max_tool_rounds = nothing)
+    chat!(session::Session, prompt; max_tokens = nothing, stream = false, max_tool_rounds = nothing,
+          thinking_effort = nothing, temperature = nothing, show_reasoning = nothing) -> AssistantMessage
+    chat!(prompt; kwargs...)
 
 Send `prompt` (a `String` or [`UserMessage`](@ref)) as the next turn of `session`, or of the
 [`active_session`](@ref) when no session is given, with the session's `system` instructions
@@ -109,7 +142,24 @@ A full history includes the replies' [`ReasoningPart`](@ref)s, but only for the 
 format that produced them.
 
 `max_tokens` caps the reply length. Without it the `max_tokens` Preference is used if set,
-else the provider's default (Anthropic requires one and uses 8192; others let the model decide).
+else the provider's default (Anthropic requires one and uses the model's maximum output; others
+let the model decide).
+
+`thinking_effort` sets how much the model reasons: a `Symbol` such as `:none`, `:minimal`,
+`:low`, `:medium`, `:high`, `:xhigh` or `:max`, sent as-is (OpenAI `reasoning.effort`;
+Anthropic `output_config.effort` with adaptive thinking, or thinking disabled for `:none`; Google
+`thinking_level`). Providers and models accept different levels and reject the others.
+`temperature` (a non-negative number) sets the sampling temperature; some models reject it.
+Each falls back to the session's value (see [`set_thinking_effort!`](@ref),
+[`set_temperature!`](@ref)), then the Preference of the same name; when all are unset the field
+is not sent and the model's default applies.
+
+`show_reasoning = true` (default: the Preference `show_reasoning`, else `false`) asks the model
+for readable reasoning summaries, which fill the reply's [`ReasoningPart`](@ref) `text`. When
+streaming they are shown as they arrive, dimmed, above the reply text, and each summary is saved
+to `<storage_dir>/reasoning/<session id>/<trace id>.md` (Markdown with YAML front matter), which
+the finished turn links to in a `Reasoning` box. On Anthropic summaries are only requested along
+with a `thinking_effort`; without one no thinking settings are sent.
 
 `stream = true` shows the turn as the `}` REPL mode does: on a terminal the reply streams on the
 alternate screen with a line per tool call and result, then the normal screen gets the
@@ -130,10 +180,12 @@ chat!(s, "Another?"; stream = true)   # streams, then shows the reply once
 ```
 """
 function chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
-               stream::Bool = false, max_tool_rounds = nothing)
-    (stream && s.model !== nothing) || return _chat!(s, prompt; max_tokens, max_tool_rounds)
+               stream::Bool = false, max_tool_rounds = nothing, thinking_effort = nothing,
+               temperature = nothing, show_reasoning::Union{Nothing,Bool} = nothing)
+    opts = (; max_tokens, max_tool_rounds, thinking_effort, temperature, show_reasoning)
+    (stream && s.model !== nothing) || return _chat!(s, prompt; opts...)
     return _display_turn(stdout, s, prompt; stream = _supports_streaming(s.model.provider),
-                         output = Base.source_path(nothing) !== nothing, max_tokens, max_tool_rounds)
+                         output = Base.source_path(nothing) !== nothing, opts...)
 end
 
 function _max_tool_rounds(kw)
@@ -165,11 +217,19 @@ struct _Prompting
     call::ToolCall
 end
 
-# `on_text` is the streaming hook shared by `chat!(; stream = true)` and the `}` REPL mode;
-# `on_step` sees each AssistantMessage as it arrives, each ToolCall before it runs, a
-# `_Confirming` before a confirmation prompt, and each ToolResult after.
+# Passed to `on_step` after a successful turn whose reasoning summaries were saved to `paths`.
+struct _ReasoningSaved
+    paths::Vector{String}
+end
+
+# `on_text` / `on_reasoning` are the streaming hooks shared by `chat!(; stream = true)` and the
+# `}` REPL mode; `on_step` sees each AssistantMessage as it arrives, each ToolCall before it runs,
+# a `_Confirming` before a confirmation prompt, each ToolResult after, and a final
+# `_ReasoningSaved`. `thinking_effort` and `temperature` fall back to the session's, then to
+# Preferences (in `_complete`).
 function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_tokens = nothing,
-                on_text = nothing, on_step = nothing, max_tool_rounds = nothing)
+                on_text = nothing, on_reasoning = nothing, on_step = nothing, max_tool_rounds = nothing,
+                thinking_effort = nothing, temperature = nothing, show_reasoning = nothing)
     s.model === nothing && error(
         "session \"$(s.name)\" has no model; pick one with `set_model!(session, \"provider/model\")` " *
         "or `select_model!()`")
@@ -177,25 +237,33 @@ function _chat!(s::Session, prompt::Union{AbstractString,UserMessage}; max_token
     isempty(strip(string(msg))) && throw(ArgumentError("prompt must not be empty"))
     limit, approval = _max_tool_rounds(max_tool_rounds), tool_approval()
     tool_auto_approvals()   # a malformed table fails here, before the turn starts
+    opts = (; max_tokens, show_reasoning = _show_reasoning(show_reasoning),
+            thinking_effort = something(_check_effort(thinking_effort), s.thinking_effort, Some(nothing)),
+            temperature = something(_check_temperature(temperature), s.temperature, Some(nothing)))
     n0 = length(s.messages)
     push!(s.messages, msg)
     _sync!(s)
-    try
-        return _tool_loop!(s, limit, approval; max_tokens, on_text, on_step)
+    reply = try
+        _tool_loop!(s, limit, approval; opts..., on_text, on_reasoning, on_step)
     catch
         resize!(s.messages, n0)
         # A first turn that failed leaves nothing worth restoring.
         n0 == 0 ? _guard(() -> _delete_files!(s), s) : _sync!(s)
         rethrow()
     end
+    if opts.show_reasoning
+        saved = _record_reasoning!(s, view(s.messages, n0+2:length(s.messages)))
+        saved === nothing || on_step === nothing || on_step(_ReasoningSaved(saved))
+    end
+    return reply
 end
 
-function _tool_loop!(s::Session, limit::Int, approval::String; max_tokens, on_text, on_step)
+function _tool_loop!(s::Session, limit::Int, approval::String; on_step, opts...)
     step(x) = on_step === nothing ? nothing : on_step(x)
     rounds = 0
     while true
         specs = tools(s)
-        reply = _complete(s.model, s.messages, s.system; max_tokens, on_text, tools = specs)
+        reply = _complete(s.model, s.messages, s.system; opts..., tools = specs)
         push!(s.messages, reply)
         _sync!(s)
         step(reply)

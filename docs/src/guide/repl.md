@@ -92,6 +92,29 @@ is ready.
 stream = true
 ```
 
+### Reasoning
+
+With `show_reasoning = true` in the `[JAIL]` Preferences, the model is asked for reasoning
+summaries (see [Chat](chat.md#Thinking-effort,-temperature-and-reasoning)). When streaming, they
+appear dimmed and in italics above the reply text. The finished turn then starts with a yellow
+`Reasoning (n):` box with a numbered `View` link per reasoning trace of the turn, to its saved
+file (`<storage_dir>/reasoning/<session id>/<trace id>.md`), not the text itself. The box is left
+out when the model returned no summary or sessions aren't saved (`persist_sessions = false`).
+The Preferences `thinking_effort` and `temperature` apply to the `}` mode too, unless the active
+session sets its own.
+
+```text
+chat> What is the GCD of 1071 and 462?
+┏ Chat: default
+┃ ┏ Reasoning (1):
+┃ ┃   1. View
+┃ ┗
+┃ ┏ Response (anthropic/claude-opus-4-8; 30 in; 210 out):
+┃ ┃   The GCD is 21.
+┃ ┗
+┗
+```
+
 ### Multi-line prompts
 
 Enter sends the prompt. To start a new line instead:
@@ -154,7 +177,7 @@ In the model mode:
 
 | Command | Does | Same as |
 |---|---|---|
-| `status`, `st` | Show the active session, its model and provider, and the saved default if it differs | |
+| `status`, `st` | Show the active session's details (as `show(session)` does: id, model and provider, system instructions, tools, thinking effort, temperature, whether reasoning is shown, message count) and the saved default if it differs | |
 | `providers` | List providers and whether their key ENV var is set | [`providers`](@ref) |
 | `models [provider]` | List models (default: the active model's provider) | [`list_models`](@ref) |
 | `select [provider]` | Choose the active session's model from menus | [`select_model!`](@ref) |
@@ -186,9 +209,17 @@ This transcript was produced against a local OpenAI-compatible server registered
 
 ```text
 (default: openai/gpt-5) model> st
-Session:  default
-Model:    gpt-5
-Provider: OpenAI("https://api.openai.com/v1", "OPENAI_API_KEY")
+Session "default"
+  id:          01a10ec8-5304-78bf-a3a9-4279fdb93855
+  created:     2026-10-06 03:16 (local time)
+  model:       openai/gpt-5
+  provider:    OpenAI("https://api.openai.com/v1", "OPENAI_API_KEY")
+  system:      "You are an assistant inside an interactive Julia REPL sessi…" (970 chars)
+  tools:       all (none)
+  thinking:    medium (Preference)
+  temperature: model default
+  reasoning:   hidden
+  messages:    0
 (default: openai/gpt-5) model> providers
   openai     https://api.openai.com/v1
   anthropic  https://api.anthropic.com

@@ -157,9 +157,16 @@ function _request_body(::_InteractionsAPI, p, req::_Request)
     body = Dict{String,Any}("model" => req.model.id, "input" => input, "store" => req.store)
     req.system === nothing || (body["system_instruction"] = req.system)
     req.previous_id === nothing || (body["previous_interaction_id"] = req.previous_id)
-    # GenerationConfig.max_output_tokens #L5314
-    req.max_tokens === nothing ||
-        (body["generation_config"] = Dict("max_output_tokens" => req.max_tokens))
+    # GenerationConfig #L5314: max_output_tokens, thinking_level (ThinkingLevel #L8654),
+    # thinking_summaries (ThinkingSummaries #L8676). `temperature` is not in the spec's
+    # GenerationConfig but is documented there (gemini-docs/gemini-docs-027-text-generation.md#L343-L355;
+    # deprecated on the latest models, gemini-docs-087-changelog.md#L167-L170).
+    config = Dict{String,Any}()
+    req.max_tokens === nothing || (config["max_output_tokens"] = req.max_tokens)
+    req.thinking_effort === nothing || (config["thinking_level"] = string(req.thinking_effort))
+    req.show_reasoning && (config["thinking_summaries"] = "auto")
+    req.temperature === nothing || (config["temperature"] = req.temperature)
+    isempty(config) || (body["generation_config"] = config)
     req.stream && (body["stream"] = true)   # CreateModelInteractionParams.stream #L3983
     # tools #L3992, Function #L5093-L5115; parameter-schema subset UNVERIFIED
     # (provider_reviews/4_TOOLS_function_calling.md)
@@ -232,11 +239,12 @@ mutable struct _GoogleStream
     interaction::Any             # partial Interaction from interaction.created / .completed
     status::Any
     error::Union{Nothing,String}
+    reasoned::Int                # index of the last thought step whose summary was reported, or -1
 end
 _stream_state(::Google, req::_Request) = _stream_state(_InteractionsAPI(), req)
-_stream_state(::_InteractionsAPI, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), Dict(), nothing, nothing, nothing)
+_stream_state(::_InteractionsAPI, req::_Request) = _GoogleStream(Dict(), Dict(), Dict(), Dict(), nothing, nothing, nothing, -1)
 
-function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
+function _stream_event!(st::_GoogleStream, data::AbstractString, on::_StreamHooks)
     strip(data) == "[DONE]" && return nothing
     ev = JSON.parse(data)
     t = get(ev, "event_type", nothing)
@@ -251,14 +259,14 @@ function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
             for c in something(get(step, "content", nothing), ())
                 get(c, "type", nothing) == "text" || continue
                 write(get!(IOBuffer, st.text, ev["index"]), c["text"])
-                on_text(c["text"])
+                on.text(c["text"])
             end
         end
     elseif t == "step.delta"
         d = ev["delta"]
         if get(d, "type", nothing) == "text" && get(st.steps, ev["index"], "model_output") == "model_output"
             write(get!(IOBuffer, st.text, ev["index"]), d["text"])
-            on_text(d["text"])
+            on.text(d["text"])
         elseif get(d, "type", nothing) == "arguments_delta" && haskey(st.calls, ev["index"])
             write(st.calls[ev["index"]][4], string(get(d, "arguments", "")))
         elseif get(d, "type", nothing) == "thought_summary" && haskey(st.thoughts, ev["index"])
@@ -269,6 +277,13 @@ function _stream_event!(st::_GoogleStream, data::AbstractString, on_text)
                 summary[end] = Dict{String,Any}("type" => "text", "text" => summary[end]["text"] * c["text"])
             else
                 push!(summary, c)
+            end
+            text = get(c, "text", nothing)
+            if get(c, "type", nothing) == "text" && text isa AbstractString && !isempty(text)
+                # A new thought step is separated from the previous one by a blank line.
+                st.reasoned >= 0 && st.reasoned != ev["index"] && on.reasoning("\n\n")
+                on.reasoning(text)
+                st.reasoned = ev["index"]
             end
         elseif get(d, "type", nothing) == "thought_signature" && haskey(st.thoughts, ev["index"])
             st.thoughts[ev["index"]]["signature"] = d["signature"]
@@ -427,8 +442,16 @@ function _request_body(::_GenerateContentAPI, p, req::_Request)
     foreach(m -> _gc_contents!(contents, m, p), _replayable(req.messages))
     body = Dict{String,Any}("contents" => contents)
     req.system === nothing || (body["systemInstruction"] = Dict("parts" => [_gc_text(req.system)]))
-    # GenerationConfig.maxOutputTokens #L44118
-    req.max_tokens === nothing || (body["generationConfig"] = Dict("maxOutputTokens" => req.max_tokens))
+    # GenerationConfig #L44067: maxOutputTokens #L44118, temperature #L44175, thinkingConfig #L44193
+    # (ThinkingConfig #L57798: includeThoughts #L57800, thinkingLevel enum in upper case #L57809)
+    config = Dict{String,Any}()
+    req.max_tokens === nothing || (config["maxOutputTokens"] = req.max_tokens)
+    req.temperature === nothing || (config["temperature"] = req.temperature)
+    thinking = Dict{String,Any}()
+    req.thinking_effort === nothing || (thinking["thinkingLevel"] = uppercase(string(req.thinking_effort)))
+    req.show_reasoning && (thinking["includeThoughts"] = true)
+    isempty(thinking) || (config["thinkingConfig"] = thinking)
+    isempty(config) || (body["generationConfig"] = config)
     # Tool.functionDeclarations #L43019; FunctionDeclaration.parametersJsonSchema #L68049 takes
     # plain JSON Schema (`parameters` is the narrower OpenAPI subset, no ["t", "null"] types)
     isempty(req.tools) || (body["tools"] = [Dict("functionDeclarations" =>
@@ -491,7 +514,7 @@ mutable struct _GenerateContentStream
 end
 _stream_state(::_GenerateContentAPI, req::_Request) = _GenerateContentStream(Dict{String,Any}[], nothing, nothing, nothing, nothing)
 
-function _stream_event!(st::_GenerateContentStream, data::AbstractString, on_text)
+function _stream_event!(st::_GenerateContentStream, data::AbstractString, on::_StreamHooks)
     isempty(strip(data)) && return nothing
     ev = JSON.parse(data)
     if haskey(ev, "error")
@@ -509,16 +532,25 @@ function _stream_event!(st::_GenerateContentStream, data::AbstractString, on_tex
         for part in something(get(content, "parts", nothing), ())
             text = get(part, "text", nothing)
             sig = get(part, "thoughtSignature", nothing)
-            if get(part, "thought", false) === true || haskey(part, "functionCall")
+            prev = isempty(st.parts) ? nothing : st.parts[end]
+            if get(part, "thought", false) === true
+                # A thought summary arrives in pieces too: one part per run of thought chunks.
+                if prev !== nothing && get(prev, "thought", false) === true && text isa AbstractString
+                    prev["text"] = string(get(prev, "text", ""), text)
+                    sig === nothing || (prev["thoughtSignature"] = sig)
+                else
+                    push!(st.parts, Dict{String,Any}(part))
+                end
+                text isa AbstractString && !isempty(text) && on.reasoning(text)
+            elseif haskey(part, "functionCall")
                 push!(st.parts, Dict{String,Any}(part))
             elseif text isa AbstractString
-                prev = isempty(st.parts) ? nothing : st.parts[end]
                 if sig === nothing && prev !== nothing && haskey(prev, "text") && get(prev, "thought", false) !== true
                     prev["text"] *= text
                 elseif sig !== nothing || !isempty(text)
                     push!(st.parts, Dict{String,Any}(part))
                 end
-                isempty(text) || on_text(text)
+                isempty(text) || on.text(text)
             end
         end
     end

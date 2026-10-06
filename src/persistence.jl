@@ -27,6 +27,7 @@ _session_path(dir, id) = joinpath(dir, "sessions", string(id, ".json"))
 _messages_path(dir, id) = joinpath(dir, "messages", string(id, ".jsonl"))
 _tools_dir(dir, id) = joinpath(dir, "tools", string(id))
 _tool_record_path(dir, session_id, pair_id) = joinpath(_tools_dir(dir, session_id), string(pair_id, ".json"))
+_reasoning_dir(dir, id) = joinpath(dir, "reasoning", string(id))
 
 # ---- encoding ----
 
@@ -68,7 +69,9 @@ function _message_json(m::AssistantMessage)
 end
 
 _session_json(s::Session) = (version = _FORMAT_VERSION, id = string(s.id), name = s.name,
-    created = _iso(s.created), model = _model_string(s), system = s.system, tools = s.tools)
+    created = _iso(s.created), model = _model_string(s), system = s.system, tools = s.tools,
+    thinking_effort = s.thinking_effort === nothing ? nothing : string(s.thinking_effort),
+    temperature = s.temperature)
 
 # ---- writing ----
 
@@ -153,11 +156,47 @@ function _record_tool!(s::Session, c::ToolCall, r::ToolResult, started::DateTime
     return r
 end
 
+# JSON strings are valid YAML double-quoted scalars, so ids and model names need no YAML escaping.
+_yaml_value(::Nothing) = "null"
+_yaml_value(x) = JSON.json(string(x))
+
+function _trace_markdown(fields, text::AbstractString)
+    io = IOBuffer()
+    println(io, "---")
+    foreach(((k, v),) -> println(io, k, ": ", k === :version ? v : _yaml_value(v)), pairs(fields))
+    println(io, "---\n")
+    print(io, rstrip(text), "\n")
+    return String(take!(io))
+end
+
+# Saves each non-empty reasoning summary of the turn to <dir>/reasoning/<session id>/<trace id>.md
+# (YAML front matter, then the summary as written); returns the paths, or nothing when there were
+# none or saving is off.
+function _record_reasoning!(s::Session, turn)
+    traces = [(m, p) for m in turn if m isa AssistantMessage for p in m.content
+              if p isa ReasoningPart && !isempty(strip(p.text))]
+    isempty(traces) && return nothing
+    paths = String[]
+    _guard(s) do
+        dir = something(s._store.dir, _storage_dir())
+        for (m, p) in traces
+            id = uuid7()
+            meta = (version = _FORMAT_VERSION, id, session_id = s.id, reply_id = m.id,
+                    model = m.model, format = p.format, created = _iso(_uuid7_time(id)))
+            path = joinpath(_reasoning_dir(dir, s.id), string(id, ".md"))
+            _write_atomic(path, _trace_markdown(meta, p.text))
+            push!(paths, path)
+        end
+    end
+    return isempty(paths) ? nothing : paths
+end
+
 function _delete_files!(s::Session)
     dir = something(s._store.dir, _storage_dir())
     rm(_session_path(dir, s.id); force = true)
     rm(_messages_path(dir, s.id); force = true)
     rm(_tools_dir(dir, s.id); force = true, recursive = true)
+    rm(_reasoning_dir(dir, s.id); force = true, recursive = true)
     s._store.dir = nothing
     s._store.nsaved = 0
     s._store.meta = UInt(0)
@@ -249,7 +288,8 @@ function _load_session(dir::AbstractString, id::UUID)
     store = _SessionStore(dir, bad ? typemax(Int) : length(messages), UInt(0))
     s = Session(_Register(), meta["name"], _restore_model(meta["model"], "the session's"),
                 meta["system"], tools === nothing ? nothing : String[t for t in tools];
-                id, messages, store)
+                id, messages, store, thinking_effort = get(meta, "thinking_effort", nothing),
+                temperature = get(meta, "temperature", nothing))
     # Record what is on disk so an unchanged session isn't rewritten; skipped lines are dropped
     # from the file on the next sync.
     store.meta = hash(read(path, String))
@@ -308,10 +348,12 @@ the saved sessions, newest first, by name, creation time and first prompt; cance
 `session restore` opens the same menu.
 
 Sessions are saved automatically from their first message on: the session (name, `id`,
-`created`, model, system instructions, tools) to `<dir>/sessions/<id>.json`, and its messages to
+`created`, model, system instructions, tools, thinking effort, temperature) to
+`<dir>/sessions/<id>.json`, and its messages to
 `<dir>/messages/<id>.jsonl`, one line per message, appended as the conversation grows. Each tool
 call and its result are also saved together to `<dir>/tools/<id>/<pair id>.json`, named by the
-[`ToolResult`](@ref)'s `id`. `<dir>`
+[`ToolResult`](@ref)'s `id`. With `show_reasoning` on, each reasoning summary is saved to
+`<dir>/reasoning/<id>/<trace id>.md`, a Markdown file with YAML front matter. `<dir>`
 is the Preference `storage_dir` (default `".jail"`, relative to the working directory when the
 session is first saved). Set the Preference `persist_sessions = false` to stop saving.
 

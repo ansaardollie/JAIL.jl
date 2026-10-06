@@ -114,8 +114,74 @@ produced it: after a switch to another provider, or between `GoogleEnterprise`'s
 settings, it is left out. Hand-written replies such as the one above have no model, so their
 reasoning is never sent. Chained turns don't resend it; the provider already holds it.
 
-JAIL doesn't ask providers for reasoning summaries yet, so `text` is usually empty, and the REPL
-doesn't show reasoning.
+JAIL doesn't ask providers for reasoning summaries unless `show_reasoning` is on (see
+[Thinking effort, temperature and reasoning](#Thinking-effort,-temperature-and-reasoning)), so
+`text` is usually empty. OpenAI-compatible servers on Chat Completions that return reasoning text
+(`reasoning_content` or `reasoning`, e.g. vLLM, LM Studio, DeepSeek) get a `:chat_completions`
+part, which is never sent back.
+
+## Thinking effort, temperature and reasoning
+
+`thinking_effort` sets how much the model reasons, `temperature` its sampling temperature:
+
+```julia
+chat!(s, "Prove it."; thinking_effort = :high)
+chat!(s, "Name a colour."; temperature = 0.2)
+```
+
+Each is taken from, in order: the `chat!` keyword, the session (set with
+[`set_thinking_effort!`](@ref) / [`set_temperature!`](@ref), or `Session(...; thinking_effort,
+temperature)`; saved with the session), then the Preference of the same name. When all are
+unset, nothing is sent and the model's default applies.
+
+```julia
+s = Session("openai/gpt-5"; thinking_effort = :low)
+set_temperature!(s, 0.5)
+set_thinking_effort!(s, nothing)    # back to the Preference, if any
+```
+
+The effort is a `Symbol`, sent as-is; JAIL doesn't check it against the model:
+
+| Provider | Sent as | Levels the provider documents |
+|---|---|---|
+| OpenAI, OpenAI-compatible (Responses) | `reasoning.effort` | `:none`, `:minimal`, `:low`, `:medium`, `:high`, `:xhigh`, `:max` (per model) |
+| OpenAI-compatible (Chat Completions) | `reasoning_effort` | as OpenAI; up to the server |
+| Anthropic | `output_config.effort` plus `thinking: {type: "adaptive"}`; `:none` sends `thinking: {type: "disabled"}` | `:low`, `:medium`, `:high`, `:xhigh`, `:max` (per model) |
+| Google, `GoogleEnterprise` (Interactions) | `generation_config.thinking_level` | `:minimal`, `:low`, `:medium`, `:high` (per model) |
+| `GoogleEnterprise` (`generateContent`) | `generationConfig.thinkingConfig.thinkingLevel`, in upper case | as Google |
+
+A level the model doesn't take comes back as the provider's error. Temperature is sent as-is
+too: OpenAI takes 0 to 2, Anthropic 0 to 1. The newest Anthropic models (e.g. Claude Sonnet 5)
+reject any temperature but the default, with or without thinking, and Google has deprecated it
+on its latest models.
+
+`show_reasoning = true` (or the Preference `show_reasoning = true`) asks for readable reasoning
+summaries, which fill the replies' [`ReasoningPart`](@ref) `text`:
+
+| Provider | Sent as |
+|---|---|
+| OpenAI, OpenAI-compatible (Responses) | `reasoning.summary = "auto"` |
+| OpenAI-compatible (Chat Completions) | nothing; reasoning text the server returns anyway is kept |
+| Anthropic | `thinking.display = "summarized"`, only with a `thinking_effort` |
+| Google, `GoogleEnterprise` (Interactions) | `generation_config.thinking_summaries = "auto"` |
+| `GoogleEnterprise` (`generateContent`) | `generationConfig.thinkingConfig.includeThoughts = true` |
+
+Without a `thinking_effort` (from `chat!`, the session or the Preference), Anthropic gets no
+thinking or effort settings at all, so models that hide their thinking by default (Sonnet 5,
+Opus 5.x) return no summaries. Anthropic models that only support extended thinking
+(`budget_tokens`, e.g. Haiku 4.5) reject the adaptive thinking an effort sends, so leave
+`thinking_effort` unset for them.
+
+When streaming, summaries are shown dimmed above the reply text as they arrive. After each
+turn, each summary is saved to `<storage_dir>/reasoning/<session id>/<trace id>.md`: YAML front
+matter with the trace id, session id, reply id, model, format and time, then the summary as the
+model wrote it. In the `}` mode and with `chat!(...; stream = true)`, the finished turn gets a
+`Reasoning` box linking to those files rather than repeating the text (see
+[REPL modes](repl.md#Reasoning)).
+
+```julia
+chat!(s, "What is the GCD of 1071 and 462?"; stream = true, show_reasoning = true)
+```
 
 ## Counting tokens
 
@@ -157,6 +223,8 @@ arrive. All built-in providers can stream. The `}` REPL mode streams when the Pr
   Anthropic uses the model's maximum output (128000; Haiku 4.5: 64000; 3.5: 4096) (it requires a value) and the other providers let the model decide.
 - `max_tool_rounds` caps tool rounds for one call: `chat!(s, "..."; max_tool_rounds = 2)`.
   Without it, the `max_tool_rounds` Preference applies (default 10).
+- `thinking_effort`, `temperature` and `show_reasoning`: see
+  [above](#Thinking-effort,-temperature-and-reasoning).
 - `store_requests` (default `true`): see above.
 - `tool_approval` (default `"auto"`) and `tool_auto_approvals` (default empty): which tool calls
   are confirmed first; see [Tools](tools.md#Security-levels-and-approval).
@@ -165,6 +233,9 @@ arrive. All built-in providers can stream. The `}` REPL mode streams when the Pr
 [JAIL]
 max_tokens = 2048
 store_requests = false
+thinking_effort = "low"
+temperature = 0.5
+show_reasoning = true
 ```
 
 ## Troubleshooting

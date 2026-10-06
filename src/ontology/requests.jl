@@ -9,6 +9,16 @@ struct _Request
     previous_id::Union{Nothing,String}
     stream::Bool
     tools::Vector{ToolSpec}
+    thinking_effort::Union{Nothing,Symbol}   # sent as-is; the provider rejects levels it lacks
+    temperature::Union{Nothing,Float64}
+    show_reasoning::Bool                     # ask for readable reasoning summaries
+end
+
+# What a stream reports as it arrives: `text(delta)` for reply text, `reasoning(delta)` for
+# reasoning summary text.
+struct _StreamHooks
+    text::Any
+    reasoning::Any
 end
 
 # Request interface: each provider implements these.
@@ -18,7 +28,8 @@ end
 #   _parse_reply(p, req, json)       -> AssistantMessage (ToolCall parts => stop_reason :tool_use)
 # Streaming (SSE), for providers with _supports_streaming:
 #   _stream_state(p, req)                        -> mutable accumulator
-#   _stream_event!(state, data::String, on_text) -> handle one event's `data`, on_text(delta) for text
+#   _stream_event!(state, data::String, on::_StreamHooks) -> handle one event's `data`: on.text(delta)
+#                                                for text, on.reasoning(delta) for reasoning summaries
 #   _stream_finish(state, req)                   -> AssistantMessage (throws on a stream error)
 function _request_url end
 # For wire formats whose URL depends on the request (model id, streaming); most ignore it.
