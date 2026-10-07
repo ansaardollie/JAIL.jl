@@ -124,11 +124,13 @@ function _render_reasoning_rows(io::IO, r::_ReasoningSaved; tty::Bool)
     end
 end
 
+_rgb_escape(c::Colors.RGB) =
+    string("\e[38;2;", join((round(Int, 255 * Float64(f(c))) for f in (Colors.red, Colors.green, Colors.blue)), ';'), 'm')
+
 # Bold 24-bit color text, plain when `io` has no color.
 function _print_rgb(io::IO, c::Colors.RGB, text...)
     get(io, :color, false) || return print(io, text...)
-    rgb = (round(Int, 255 * Float64(f(c))) for f in (Colors.red, Colors.green, Colors.blue))
-    print(io, "\e[1m\e[38;2;", join(rgb, ';'), 'm', text..., "\e[39m\e[22m")
+    print(io, "\e[1m", _rgb_escape(c), text..., "\e[39m\e[22m")
 end
 
 _blank_line(l) = isempty(strip(replace(l, r"\e\[[0-9;]*m" => "")))

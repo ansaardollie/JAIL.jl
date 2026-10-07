@@ -30,6 +30,8 @@ function _install_repl_modes(repl)
                      mode_name = "jail_agent",
                      completion_provider = FunctionCompletionProvider(_complete_agent_mode),
                      startup_text = false)
+    # ReplMaker only takes named/256 colors; the Julia logo purple needs 24-bit color.
+    repl.hascolor && (agent.prompt_prefix = _rgb_escape(_CHAT_COLOR))
     _add_newline_keys!(agent)
     _REPL_INSTALLED[] = true
     return nothing
