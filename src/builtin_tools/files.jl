@@ -375,3 +375,7 @@ _builtin!(edit_file; group = "edit", label = "Edit lines", concurrent = false,
           security = (path, _...) -> _write_level(path), preview = _line_edits_preview)
 _builtin!(remove_file; group = "edit", label = "Delete file", concurrent = false,
           security = path -> _write_level(path, :high), preview = "path")
+
+foreach(f -> _PATH_GUARDS[f] = _read_guard, (read_file, list_dir))
+foreach(f -> _PATH_GUARDS[f] = _write_guard, (create_file, create_directory, replace_in_file, edit_file, remove_file))
+_PATH_GUARDS[replace_in_files] = edits -> any(e -> _write_guard(e.path), edits)

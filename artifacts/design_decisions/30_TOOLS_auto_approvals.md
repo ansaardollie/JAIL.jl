@@ -1,3 +1,5 @@
+> **Superseded in part by:** `46_HARNESS_agent_mode_agents_and_skills.md` (amendment 2026-10-07: `true` doesn't cover built-in path tools outside the workspace or protected writes)
+
 # Decision: Per-tool auto-approvals (`tool_auto_approvals`)
 
 | Field | Value |

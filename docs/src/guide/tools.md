@@ -322,9 +322,16 @@ function with `register_tool!(f; preview = g)`.
 The Preference `tool_auto_approvals` overrides the rule above for chosen tools or groups,
 whatever their security level and `tool_approval` (including `"all"` and `"yolo"`):
 
-- `true`: the tool's calls run without asking;
+- `true`: the tool's calls run without asking, except for the path cases below;
 - `false`: they are always confirmed;
 - not listed: the security level and `tool_approval` decide.
+
+For the built-in tools that take a path (`read_file`, `list_dir`, `check_julia_syntax` and the
+`edit` tools), an auto-approval covers only the workspace: a call that touches a path outside
+it (unless the path is in `path_allow_list`), or writes to a protected path, goes through its
+security level and `tool_approval` as if it weren't approved, so it is confirmed (it is
+`:high`) unless `tool_approval = "yolo"`. The same holds for tools an agent's `tools` or an
+active skill's `allowed-tools` approve (see [Agents and skills](agents.md)).
 
 Tools of the `"global"` group are keyed by name. Other tools sit under their group, which can
 instead be a single `true`/`false` for all of its tools (TOML can't hold both for one group):
@@ -388,8 +395,9 @@ unregister_tool!("execute_julia_code")        # as for any tool
 
 They are grouped by what they do, so a whole group can be selected
 (`set_tools!(s, tools("read"))`) or auto-approved (`tool_auto_approvals.read = true`). An
-auto-approval skips the security level entirely, so approving `read` also lets the model read
-files outside the workspace without asking.
+auto-approval skips the security level for paths inside the workspace; reads and writes outside
+it (and writes to protected paths) are still confirmed (see
+[Auto-approving tools](#Auto-approving-tools)).
 
 | Group | Tool | What it does | Security level |
 |---|---|---|---|
@@ -457,7 +465,8 @@ The Preference `path_allow_list` makes the `edit` tools (`create_file`, `create_
 lists. Entries are files or folders (a folder covers everything inside), relative to the
 workspace folder or absolute, so a folder outside the workspace can be allowed too. Protected
 paths stay `:high` even inside an allowed folder. Paths are compared after resolving symbolic
-links, so a link can't lead from an allowed folder to somewhere else.
+links, so a link can't lead from an allowed folder to somewhere else. Listed paths are also
+the only paths outside the workspace that auto-approved path tools may touch without asking.
 
 ```toml
 [JAIL]

@@ -76,8 +76,9 @@ use_agent!(s, nothing)        # back to `julia`
 While an agent is applied:
 
 - `tools`: these tools are loaded (the model sees them in full) and run without asking,
-  whatever their security level. They must be among the session's tools (see
-  [`set_tools!`](@ref)).
+  whatever their security level, except that the built-in path tools still ask for paths
+  outside the workspace (unless in `path_allow_list`) and for writes to protected paths. They
+  must be among the session's tools (see [`set_tools!`](@ref)).
 - `disallowedTools`: these tools are left out of the request.
 
 `agent select` prints both lists, since an agent file from a cloned repository can approve
@@ -94,7 +95,7 @@ name is the front matter `name`, else the folder name.
 |---|---|
 | `name`, `description` | What the model and the user see |
 | `when_to_use` | Added to the description in the model's skill list |
-| `allowed-tools` | Tools that run without asking once the skill is active, until the turn ends |
+| `allowed-tools` | Tools that run without asking once the skill is active, until the turn ends (path tools still ask outside the workspace and for protected writes) |
 | `disallowed-tools` | Tools refused (with an error result) once the skill is active, until the turn ends |
 | `arguments` | Typed arguments (below); makes the skill a tool for the model |
 | `argument-hint` | A hint per argument (a mapping), or one hint string for `/help` |

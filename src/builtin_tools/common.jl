@@ -125,6 +125,14 @@ function _write_level(path, base::Symbol = :medium)
     return r.inside ? base : :high
 end
 
+# Path guards: whether a call must still go through approval when the tool is auto-approved
+# (tool_auto_approvals, an agent's `tools`, a skill's `allowed-tools`). Keyed by the tool's function.
+const _PATH_GUARDS = IdDict{Function,Function}()
+
+_outside(r::_PathInfo) = !r.inside && !_allow_listed(r.path)
+_read_guard(path, _...) = _outside(_resolve(path))
+_write_guard(path, _...) = (r = _resolve(path); r.protected || _outside(r))
+
 # --- Child processes -------------------------------------------------------------------------
 
 const _SECRET_SUFFIXES = ("_KEY", "_CREDENTIALS", "_CREDENTIAL")

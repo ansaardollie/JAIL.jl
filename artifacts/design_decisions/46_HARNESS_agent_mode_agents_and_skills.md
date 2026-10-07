@@ -216,6 +216,24 @@ chat!(s, prompt; max_tokens, stream, thinking_effort, temperature, show_reasonin
 - Skill-tool parameters list required arguments first; an omitted optional followed by a given
   one is an error result (existing `_call_args` rule).
 
+## Amendment (2026-10-07, user request): auto-approvals stop at the workspace
+
+Owner: "auto approval for editing/writing/creating files should only be for workspace local
+changes. Anything outside workspace should always need approval (unless in path_approval_list)"
+(the Preference is `path_allow_list`). Follow-up answers:
+
+| Question | Chosen |
+|---|---|
+| Protected writes inside the workspace also ask? | **yes** |
+| Which approvals are capped | **agent `tools`, skill `allowed-tools` and `tool_auto_approvals` (incl. `a` = always)** |
+| Which tools | **every built-in path tool, reads included** (`read_file`, `list_dir`, `check_julia_syntax`, edit group) |
+
+Code: `_PATH_GUARDS` (`IdDict` keyed by the tool's function; `_read_guard`, `_write_guard` in
+`src/builtin_tools/common.jl`), `_approval_override` / `_path_guarded` in `src/tools.jl`. A guarded
+call falls back to its security level and `tool_approval` (agent-decided: so
+`tool_approval = "yolo"` still runs it without asking, as for any other call). A guard that throws
+counts as guarded. Supersedes in part decision 30's "`true` never asks" for these tools.
+
 ## Revisit Trigger
 
 A provider rejecting `tool_choice` "none" with replayed tool history; agent/skill front matter

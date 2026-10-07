@@ -638,6 +638,10 @@ shell.run_shell = false    # always asks, even with tool_approval = "yolo"
 files = true               # every tool in the "files" group
 ```
 
+For the built-in path tools (`read_file`, `list_dir`, `check_julia_syntax`, the `edit` group),
+`true` covers only paths inside the workspace or in the Preference `path_allow_list`, and never
+writes to protected paths; other calls follow their security level and `tool_approval`.
+
 Tools not listed follow their security level and [`tool_approval`](@ref). The built-in
 `ask_user` is never confirmed, whatever its entry says. See also
 [`set_tool_auto_approval!`](@ref).
@@ -671,11 +675,30 @@ function _auto_approval(t::ToolSpec, table = tool_auto_approvals())
 end
 
 function _confirmation_needed(t::ToolSpec, args, mode::AbstractString)
-    v = _turn_verdict(t)
-    v === nothing || return false   # run without asking, or refused without asking
-    _never_confirm(t) && return false
-    a = _auto_approval(t)
+    _turn_verdict(t) isa String && return false   # refused without asking
+    a = _approval_override(t, args)
     return a === nothing ? _needs_confirmation(_security_level(t, args), mode) : !a
+end
+
+# true: run without asking; false: always ask; nothing: the security level and approval mode
+# decide. Auto-approvals (Preference, agent `tools`, skill `allowed-tools`) don't cover calls a
+# path guard flags: outside the workspace and not allow-listed, or writes to protected paths.
+function _approval_override(t::ToolSpec, args)
+    _never_confirm(t) && return true
+    a = _turn_verdict(t) === true ? true : _auto_approval(t)
+    a === true && _path_guarded(t, args) && return nothing
+    return a
+end
+
+function _path_guarded(t::ToolSpec, args)
+    g = get(_PATH_GUARDS, t.f, nothing)
+    g === nothing && return false
+    try
+        return g(_padded(t, args)...) === true
+    catch e
+        e isa InterruptException && rethrow()
+        return true
+    end
 end
 
 function _registered_tool(x::Union{AbstractString,Function})
@@ -805,7 +828,7 @@ function _prepare_tool(c::ToolCall, specs::AbstractVector{ToolSpec}; approval::A
     end
     verdict = _turn_verdict(t)
     verdict isa String && return err(verdict)
-    auto = verdict === true || _never_confirm(t) ? true : _auto_approval(t)
+    auto = _approval_override(t, args)
     level = auto === true ? :low : _security_level(t, args)
     if auto === false || (auto === nothing && _needs_confirmation(level, approval))
         shown = before_confirm !== nothing && before_confirm(c) === true
