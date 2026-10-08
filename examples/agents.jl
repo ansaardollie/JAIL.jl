@@ -7,7 +7,7 @@
 # or that you run with `run_skill!` / `/name` in `&`). Agents and skills are found in
 # `.github|.claude|.copilot/{agents,skills}` (current directory), `<storage_dir>/{agents,skills}`
 # and `~/.claude`, `~/.agents`, `~/.copilot`. Without an agent, agent turns use the built-in
-# `julia` agent.
+# `julia` agent. Applying an agent with `use_agent!` also loads the memory tools in the session.
 #
 # Providers: all (tools as in examples/tools.jl). Chat turns after agent turns send the tools
 # named in the history with `tool_choice` "none" (OpenAI, compatible, Anthropic, Google).
@@ -107,6 +107,7 @@ try
 
     use_agent!(s, "reviewer")
     @show current_agent(s)
+    @show filter(n -> endswith(n, "_memory"), s.loaded_tools)
     script[] = b -> results(b) == 0 ? Any[call("c1", "activate_skill", Dict("name" => "style"))] :
                                       Any[text("Looks fine; follows the house style.")]
     reply = agent!(s, "Review src/chat.jl")
@@ -135,6 +136,7 @@ try
     # --- 7. Streaming, as the `&` mode shows it ------------------------------------------------
 
     use_agent!(s, nothing)
+    @show length(filter(n -> endswith(n, "_memory"), s.loaded_tools))
     script[] = _ -> Any[text("Done with **julia**, the built-in agent.")]
     agent!(s, "Anything else?"; stream = true)
 

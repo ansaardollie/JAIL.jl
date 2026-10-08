@@ -245,7 +245,8 @@ runs concurrently may run on another
 thread at the same time as other tools, so it must be safe to do so. Register tools that read
 the terminal, redirect `stdout`, or change shared state with `concurrent = false`
 (`@tool concurrent=false f`). Of the built-in tools, `ask_user`, `execute_julia_code`,
-`pkg_add`, `add_memory`, `remove_memory`, `tool_load` and the `edit` tools other than
+`pkg_add`, the memory tools that add or remove (`add_session_memory`, `remove_session_memory`,
+`add_agent_memory`, `remove_agent_memory`), `tool_load` and the `edit` tools other than
 `create_directory` run alone.
 
 `parallel_tool_calls = false` asks OpenAI, OpenAI-compatible servers and Anthropic for at most
@@ -381,7 +382,7 @@ one to the Preferences (`nothing` removes it).
 
 JAIL ships tools for working in a Julia project: reading, searching and editing files, looking
 up Julia source and documentation, running Julia code and shell commands, fetching web pages,
-sending HTTP requests, asking the user and keeping per-session memories. [`builtin_tools`](@ref) lists them. All of them are registered when JAIL loads and none is loaded, so the
+sending HTTP requests, asking the user and keeping session and agent memories. [`builtin_tools`](@ref) lists them. All of them are registered when JAIL loads and none is loaded, so the
 model finds them through [tool search](#Tool-search). The Preference `registered_tools` chooses
 which are registered instead, by group or by name (`[]` for none):
 
@@ -434,9 +435,12 @@ it (and writes to protected paths) are still confirmed (see
 | `web` | `fetch_url(url)` | a page's content as served (HTML as HTML) | medium for `https` to a public host; high otherwise |
 | | `http_request(url, method, query_params, body, headers)` | sends any GET, HEAD, POST, PUT, PATCH, DELETE or OPTIONS request; returns status, headers and body | high; low if allow-listed |
 | `interact` | `ask_user(question, options, allow_free_text)` | asks you in the terminal (a menu for `options`, with an "Other" choice for your own answer unless `allow_free_text = false`) and returns the answer | never asks for approval |
-| `memory` | `read_memory()` | the session's memories, a numbered list | low |
-| | `add_memory(input)` | adds a memory as the next number | low |
-| | `remove_memory(number)` | removes the memory with that number | low |
+| `memory` | `read_session_memory()` | the session's memories, a numbered list | low |
+| | `add_session_memory(input)` | adds a session memory as the next number | low |
+| | `remove_session_memory(number)` | removes the session memory with that number | low |
+| | `read_agent_memory()` | the agent's memories, a numbered list | low |
+| | `add_agent_memory(input)` | adds an agent memory as the next number | low |
+| | `remove_agent_memory(number)` | removes the agent memory with that number | low |
 
 The model sees each tool's docstring; read it with `@doc JAIL.read_file`. Calls are confirmed
 following [Security levels and approval](#Security-levels-and-approval) like any tool, except
@@ -559,14 +563,29 @@ url_allow_list = ["https://api.github.com/repos/", "http://localhost:8080/api"]
 
 ### Memory
 
-The `memory` tools keep notes for a session in a Markdown numbered list at
-`<storage_dir>/memory/sessions/<session id>.md`. `read_memory()` returns the whole list,
-`add_memory(input)` adds a line with the next number (line breaks in `input` become spaces),
-and `remove_memory(number)` removes that line. Numbers are not reused or shifted: after
-removing 2 from `1. 2. 3.`, the list is `1. 3.` and the next memory is 4.
-`delete_session!(s; files = true)` deletes the memory file with the session's other files. The tools are `:low`: they only
-touch the calling session's file (the session of the [`ToolContext`](@ref), or the active
-session when called directly).
+The `memory` tools keep notes in two scopes, each a Markdown numbered list:
+
+- session memory, in `<storage_dir>/memory/sessions/<session id>.md`, holds directives for the
+  specific task of the session;
+- agent memory, in `<storage_dir>/memory/agents/<agent name>.memory.md`, holds directives about an
+  agent that are useful for all future sessions with it (see [agent memory](agents.md#Agent-memory)).
+
+The tools act on the calling session: the session of the [`ToolContext`](@ref) during a tool call,
+or the active session when called directly. Its agent is the one applied to it, or the built-in
+`julia` agent when none is. The folder is the one the session was first saved to, or the current
+`storage_dir` if it has not been saved yet.
+
+`read_session_memory()` and `read_agent_memory()` return the whole list. `add_session_memory(input)`
+and `add_agent_memory(input)` add a line with the next number; line breaks in `input` become spaces.
+`remove_session_memory(number)` and `remove_agent_memory(number)` remove that line and leave the
+other numbers as they are. A new memory takes the largest number in use plus one, so after removing
+the last memory its number is used again: from `1. 2. 3.`, removing 2 gives `1. 3.` and the next
+memory is 4; removing 3 instead gives `1. 2.` and the next memory is 3.
+
+`delete_session!(s; files = true)` deletes the session memory file with the session's other files;
+agent memory stays, since other sessions may use the agent. The tools are `:low`, so with the
+default `tool_approval` the model can add to either list without asking. Applying an agent (see
+[agent memory](agents.md#Agent-memory)) loads them in the session.
 
 ### Tool context
 

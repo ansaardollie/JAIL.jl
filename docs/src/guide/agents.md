@@ -84,6 +84,20 @@ While an agent is applied:
 `agent select` prints both lists, since an agent file from a cloned repository can approve
 tools such as `run_shell`.
 
+## Agent memory
+
+The `memory` tools keep a second list per agent, in `<storage_dir>/memory/agents/<agent name>.memory.md`
+(see [memory](tools.md#Memory)). The agent is the one applied to the session, or `julia` when none
+is. Every session that uses the agent shares the list, and it outlives those sessions:
+`delete_session!(s; files = true)` leaves it in place. Two agent files with the same name share one
+list. The list is not added to the system prompt; the model reads it with `read_agent_memory()`.
+A name containing `/` or `\`, a NUL character, or a name that is `.`, `..` or empty is refused with
+an error.
+
+Applying an agent loads the memory tools in the session, so the model sees them in full. Under the
+default `tool_approval`, the model can add to the list without asking. The file is plain
+Markdown, so it can be read and corrected by hand.
+
 ## Skills
 
 A skill is a folder with a `SKILL.md` file, found by [`skills`](@ref) in the `skills/` folder of

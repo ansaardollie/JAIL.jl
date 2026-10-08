@@ -200,6 +200,9 @@ resolved against the working directory when the session is first saved):
   summary: YAML front matter (`version`, `id`, `session_id`, `reply_id`, `model`, `format`,
   `created`), then the summary as the model wrote it.
   The `}` mode links to them (see [Chat](chat.md#Thinking-effort,-temperature-and-reasoning)).
+- `memory/sessions/<id>.md`: the session's memory list, written by the memory tools (see
+  [Memory](tools.md#Memory)). Agent memory is under `memory/agents/` and is not removed with the
+  session.
 
 A session with no messages is not saved, and a turn that fails is removed from the file too.
 [`set_model!`](@ref), [`set_tools!`](@ref), [`load_tools!`](@ref), [`unload_tools!`](@ref),
@@ -230,7 +233,8 @@ restore_session!(id)     # a UUID, or its string form
 - Messages edited in place in `s.messages` (rather than added or removed) are not re-saved.
 
 [`delete_session!`](@ref) keeps the files, so a deleted session can be restored;
-`delete_session!(s; files = true)` removes them as well, tool call and generated files included.
+`delete_session!(s; files = true)` removes them as well: the tool call and generated files, and the
+session memory file. Agent memory is kept.
 
 ## Common errors
 

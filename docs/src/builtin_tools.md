@@ -70,9 +70,12 @@ ask_user
 ## memory
 
 ```@docs
-read_memory
-add_memory
-remove_memory
+read_session_memory
+add_session_memory
+remove_session_memory
+read_agent_memory
+add_agent_memory
+remove_agent_memory
 ```
 
 ## Tool search (not registered)

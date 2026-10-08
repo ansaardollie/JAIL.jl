@@ -240,7 +240,7 @@ function _delete_files!(s::Session)
     rm(_messages_path(dir, s.id); force = true)
     rm(_tools_dir(dir, s.id); force = true, recursive = true)
     rm(_reasoning_dir(dir, s.id); force = true, recursive = true)
-    rm(_memory_path(dir, s.id); force = true)
+    rm(_session_memory_path(dir, s.id); force = true)
     rm(joinpath(dir, "debug", string(s.id)); force = true, recursive = true)
     foreach(t -> rm(joinpath(dir, "generated", t, string(s.id)); force = true, recursive = true), _GENERATED_TYPES)
     s._store.dir = nothing

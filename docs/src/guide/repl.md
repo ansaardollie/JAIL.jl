@@ -246,8 +246,11 @@ In the model mode:
 
 ## Example
 
-This transcript was produced against a local OpenAI-compatible server registered with
-`register_provider!(OpenAICompatible("lmstudio", "http://127.0.0.1:1234/v1"))`:
+This transcript is illustrative and was not captured from a live session. It assumes a local
+OpenAI-compatible server registered with
+`register_provider!(OpenAICompatible("lmstudio", "http://127.0.0.1:1234/v1"))`. The `st` fields
+(`system`, `thinking`, `reasoning`, `loaded`) were not regenerated after the memory tools were
+added and may differ from current output:
 
 ```text
 (default: openai/gpt-5) model> st
@@ -258,7 +261,7 @@ Session "default"
   provider:    OpenAI("https://api.openai.com/v1", "OPENAI_API_KEY")
   system:      "You are an assistant inside an interactive Julia REPL sessi…" (970 chars)
   agent:       none (agent mode uses "julia")
-  tools:       all (add_memory, ask_user, check_julia_syntax, create_directory, …)
+  tools:       all (add_agent_memory, add_session_memory, ask_user, check_julia_syntax, …)
   loaded:      none (others found with the provider's tool search)
   thinking:    medium (Preference)
   temperature: model default

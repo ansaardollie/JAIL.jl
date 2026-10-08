@@ -62,8 +62,8 @@ Apply the agent called `name` (see [`agents`](@ref)) to the session, or to the
 [`active_session`](@ref) when none is given; `nothing` removes it. The agent shapes every
 [`agent!`](@ref) turn (and the `&` REPL mode) on the session until changed: its instructions are
 added to the system prompt, its `tools` are loaded and run without asking, and its
-`disallowedTools` are left out. [`chat!`](@ref) is unaffected. Without an agent, agent turns use
-the built-in `julia` agent.
+`disallowedTools` are left out. The registered memory tools are loaded in the session.
+[`chat!`](@ref) is unaffected. Without an agent, agent turns use the built-in `julia` agent.
 
 When several agent files share the name, a terminal menu asks which; the choice is remembered
 with the session (and saved with it). Returns the agent, or `nothing` when removed (including
@@ -79,6 +79,8 @@ function use_agent!(s::Session, name::Union{Nothing,AbstractString})
     a === nothing && return nothing
     # The built-in agent is the same as no agent.
     s.agent, s.agent_path = a.path === nothing ? (nothing, nothing) : (a.name, a.path)
+    # Agentic sessions load the registered memory tools, so the model sees them in full.
+    a.path === nothing || append!(s.loaded_tools, setdiff([t.name for t in values(_TOOLS) if t.group == "memory"], s.loaded_tools))
     _sync_meta!(s)
     return a.path === nothing ? nothing : a
 end

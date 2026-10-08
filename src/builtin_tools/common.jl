@@ -212,7 +212,7 @@ they do:
 | `"execute"` | `execute_julia_code`, `run_shell`, `run_tests`, `pkg_add` |
 | `"web"` | `fetch_url`, `http_request` |
 | `"interact"` | `ask_user` |
-| `"memory"` | `read_memory`, `add_memory`, `remove_memory` |
+| `"memory"` | `read_session_memory`, `add_session_memory`, `remove_session_memory`, `read_agent_memory`, `add_agent_memory`, `remove_agent_memory` |
 
 Every built-in is registered when JAIL loads, unless the Preference `registered_tools` lists
 which (groups or tool names; `[]` for none). Registered tools are found by the model through
