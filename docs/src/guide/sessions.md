@@ -190,7 +190,12 @@ resolved against the working directory when the session is first saved):
 - `tools/<id>/<pair id>.json`: one file per tool call and its result, named by the
   [`ToolResult`](@ref)'s `id` (a version 7 UUID, also stored with the result in the messages
   file). It holds the session id, model, start and finish times, the tool (name, label, group),
-  the call (provider call id, name, arguments) and the result (content, `is_error`).
+  the call (provider call id, name, arguments) and the result (content, `is_error`), plus
+  `generated`, the path of the file below (or `null`).
+- `generated/<type>/<id>/<pair id>/generated.<ext>`: the text a call carried, as a file of its
+  own so it reads as code rather than a JSON string: `code` for `execute_julia_code` (`.jl`),
+  `shell` for `run_shell` (`.sh`), `file` for `create_file` (the created file's extension, else
+  `.txt`).
 - `reasoning/<id>/<trace id>.md`: with `show_reasoning` on, one Markdown file per reasoning
   summary: YAML front matter (`version`, `id`, `session_id`, `reply_id`, `model`, `format`,
   `created`), then the summary as the model wrote it.
@@ -225,7 +230,7 @@ restore_session!(id)     # a UUID, or its string form
 - Messages edited in place in `s.messages` (rather than added or removed) are not re-saved.
 
 [`delete_session!`](@ref) keeps the files, so a deleted session can be restored;
-`delete_session!(s; files = true)` removes them as well, tool call files included.
+`delete_session!(s; files = true)` removes them as well, tool call and generated files included.
 
 ## Common errors
 

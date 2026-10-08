@@ -201,7 +201,12 @@ When a reply contains [`ToolCall`](@ref)s (`stop_reason = :tool_use`), `agent!`:
 2. appends a [`ToolResultMessage`](@ref) with one [`ToolResult`](@ref) per call, each with its
    own `id` (a version 7 UUID), and saves the call and result together as
    `<storage_dir>/tools/<session id>/<id>.json` (see
-   [Saving and restoring](sessions.md#Saving-and-restoring));
+   [Saving and restoring](sessions.md#Saving-and-restoring)). The code of an
+   `execute_julia_code` call, the command of a `run_shell` call and the contents of a
+   `create_file` call are also saved as files of their own, under
+   `<storage_dir>/generated/{code,shell,file}/<session id>/<id>/`, and linked from the
+   `Tool calls` box as `View Generated code` / `shell` / `file` (see
+   [REPL modes](repl.md#The-agent-mode));
 3. sends the history again, and repeats until a reply calls no tools.
 
 Every step stays in `session.messages` and the last reply is returned. Problems the model can

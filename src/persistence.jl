@@ -141,22 +141,62 @@ end
 # Model or tools changed: only the session JSON, and only once the session is on disk.
 _sync_meta!(s::Session) = s._store.dir === nothing ? nothing : _sync!(s)
 
-# Gives the result its pair id and saves the call with it to <dir>/tools/<session id>/<id>.json.
+# Gives the result its pair id and saves the call with it to <dir>/tools/<session id>/<id>.json,
+# plus any text the call generated (see _GENERATED).
 function _record_tool!(s::Session, c::ToolCall, r::ToolResult, started::DateTime)
     r = ToolResult(r.call_id, r.name, r.content; is_error = r.is_error, id = uuid7())
     finished = Dates.now(Dates.UTC)
     _guard(s) do
         spec = get(_TOOLS, c.name, nothing)
+        dir = something(s._store.dir, _storage_dir())
+        generated = _save_generated(dir, s, spec, c, r.id)
         rec = (version = _FORMAT_VERSION, id = string(r.id), session_id = string(s.id),
                model = _model_string(s), started = _iso(started), finished = _iso(finished),
                duration_ms = Dates.value(finished - started),
                tool = (name = c.name, label = _tool_label(c.name), group = spec === nothing ? nothing : spec.group),
                call = (id = c.id, name = c.name, arguments = c.arguments),
-               result = (content = _result_value(r.content), is_error = r.is_error))
-        dir = something(s._store.dir, _storage_dir())
+               result = (content = _result_value(r.content), is_error = r.is_error),
+               generated)
         _write_atomic(_tool_record_path(dir, s.id, r.id), JSON.json(rec; pretty = true))
     end
     return r
+end
+
+# Tool function => (type, arguments -> (text, extension) or nothing), for tools whose arguments
+# carry a wall of text (code, file contents, shell commands); filled by the built-in tool files.
+const _GENERATED = IdDict{Function,Tuple{String,Function}}()
+const _GENERATED_TYPES = ("file", "code", "shell")
+
+_generated_dir(dir, type, session_id, pair_id) = joinpath(dir, "generated", type, string(session_id), string(pair_id))
+
+# <dir>/generated/<type>/<session id>/<pair id>/generated.<ext>; the path, or nothing.
+function _save_generated(dir, s::Session, spec, c::ToolCall, id)
+    spec === nothing && return nothing
+    g = get(_GENERATED, spec.f, nothing)
+    g === nothing && return nothing
+    type, f = g
+    x = try
+        f(c.arguments)
+    catch
+        nothing
+    end
+    x === nothing && return nothing
+    text, ext = x
+    (text isa AbstractString && !isempty(text)) || return nothing
+    path = joinpath(_generated_dir(dir, type, s.id, id), "generated" * ext)
+    _write_atomic(path, text)
+    return path
+end
+
+# (type, path) of the text a recorded call generated, or nothing.
+function _generated_file(dir, session_id, pair_id)
+    for type in _GENERATED_TYPES
+        d = _generated_dir(dir, type, session_id, pair_id)
+        isdir(d) || continue
+        fs = readdir(d)
+        isempty(fs) || return (type, joinpath(d, first(fs)))
+    end
+    return nothing
 end
 
 # JSON strings are valid YAML double-quoted scalars, so ids and model names need no YAML escaping.
@@ -202,6 +242,7 @@ function _delete_files!(s::Session)
     rm(_reasoning_dir(dir, s.id); force = true, recursive = true)
     rm(_memory_path(dir, s.id); force = true)
     rm(joinpath(dir, "debug", string(s.id)); force = true, recursive = true)
+    foreach(t -> rm(joinpath(dir, "generated", t, string(s.id)); force = true, recursive = true), _GENERATED_TYPES)
     s._store.dir = nothing
     s._store.nsaved = 0
     s._store.meta = UInt(0)
@@ -372,11 +413,13 @@ the saved sessions, newest first, by name, creation time and first prompt; cance
 `session restore` opens the same menu.
 
 Sessions are saved automatically from their first message on: the session (name, `id`,
-`created`, model, system instructions, tools, thinking effort, temperature) to
+`created`, model, system instructions, tools, thinking effort, temperature, agent) to
 `<dir>/sessions/<id>.json`, and its messages to
 `<dir>/messages/<id>.jsonl`, one line per message, appended as the conversation grows. Each tool
 call and its result are also saved together to `<dir>/tools/<id>/<pair id>.json`, named by the
-[`ToolResult`](@ref)'s `id`. With `show_reasoning` on, each reasoning summary is saved to
+[`ToolResult`](@ref)'s `id`, and the code, shell command or file contents a built-in
+`execute_julia_code`, `run_shell` or `create_file` call carried to
+`<dir>/generated/<code|shell|file>/<id>/<pair id>/generated.<ext>`. With `show_reasoning` on, each reasoning summary is saved to
 `<dir>/reasoning/<id>/<trace id>.md`, a Markdown file with YAML front matter. `<dir>`
 is the Preference `storage_dir` (default `".jail"`, relative to the working directory when the
 session is first saved). Set the Preference `persist_sessions = false` to stop saving.

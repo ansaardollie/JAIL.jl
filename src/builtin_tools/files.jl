@@ -379,3 +379,5 @@ _builtin!(remove_file; group = "edit", label = "Delete file", concurrent = false
 foreach(f -> _PATH_GUARDS[f] = _read_guard, (read_file, list_dir))
 foreach(f -> _PATH_GUARDS[f] = _write_guard, (create_file, create_directory, replace_in_file, edit_file, remove_file))
 _PATH_GUARDS[replace_in_files] = edits -> any(e -> _write_guard(e.path), edits)
+
+_GENERATED[create_file] = ("file", a -> (a["content"], (e = splitext(a["path"])[2]; isempty(e) ? ".txt" : e)))

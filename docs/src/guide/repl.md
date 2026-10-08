@@ -60,7 +60,9 @@ When the model calls tools, a red `Tool calls` box comes before the response: on
 call with ✓ or ✗ and the tool's label (see [Groups and labels](tools.md#Groups-and-labels)),
 followed by `View`, a link to the call's saved JSON file (see
 [Saving and restoring](sessions.md#Saving-and-restoring)) in terminals that support OSC 8
-hyperlinks (iTerm2, kitty, WezTerm, VS Code, …). While the turn runs
+hyperlinks (iTerm2, kitty, WezTerm, VS Code, …), and for calls that carry code, a shell command
+or a new file's contents, `View Generated code` / `shell` / `file`, a link to that text saved as a
+file of its own. While the turn runs
 without streaming, a transient line shows `thinking…` or the tool being run. If the tool round
 limit is reached, the turn ends with `[stop reason: tool_use]`.
 

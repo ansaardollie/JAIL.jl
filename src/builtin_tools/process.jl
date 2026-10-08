@@ -118,6 +118,7 @@ function pkg_add(packages::Vector{String})
 end
 
 _builtin!(run_shell; group = "execute", label = "Shell command", security = _shell_level, preview = "command")
+_GENERATED[run_shell] = ("shell", a -> (a["command"], ".sh"))
 _builtin!(run_tests; group = "execute", label = "Run tests", security = :high)
 _builtin!(pkg_add; group = "execute", label = "Add packages", security = :high, preview = "packages",
           concurrent = false)

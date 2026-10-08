@@ -199,3 +199,4 @@ _builtin!(julia_docs; group = "inspect", label = "Julia docs", security = :low, 
 _builtin!(find_julia_symbols; group = "inspect", label = "Find Julia names", security = :low, preview = "query")
 _builtin!(check_julia_syntax; group = "read", label = "Check syntax", security = _read_level, preview = "path")
 _PATH_GUARDS[check_julia_syntax] = _read_guard
+_GENERATED[execute_julia_code] = ("code", a -> (a["code"], ".jl"))

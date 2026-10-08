@@ -69,7 +69,7 @@ _hyperlink(text::AbstractString, path::AbstractString) =
     string("\e]8;;", _file_url(path), "\e\\", text, "\e]8;;\e\\")
 
 # One line per call of the turn: ✓/✗, the tool's label, and a link to its saved call/result JSON
-# (on a terminal `View`, else the path).
+# (on a terminal `View`, else the path), then `View Generated <type>` for text the call carried.
 function _render_tool_rows(io::IO, s::Session, results::Vector{ToolResult}; tty::Bool)
     labels = [_tool_label(r.name) for r in results]
     width = maximum(textwidth, labels)
@@ -81,6 +81,13 @@ function _render_tool_rows(io::IO, s::Session, results::Vector{ToolResult}; tty:
             printstyled(io, rpad(label, width), "  "; color = :cyan)
             printstyled(io, tty ? _hyperlink("View", path) : Base.contractuser(path);
                         color = :light_black, underline = tty)
+            gen = _generated_file(s._store.dir, s.id, r.id)
+            if gen !== nothing
+                type, gpath = gen
+                print(io, "  ")
+                printstyled(io, tty ? _hyperlink("View Generated $(type)", gpath) : Base.contractuser(gpath);
+                            color = :light_black, underline = tty)
+            end
         else
             printstyled(io, label; color = :cyan)
         end

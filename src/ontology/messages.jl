@@ -37,8 +37,10 @@ end
 The outcome of running the [`ToolCall`](@ref) with id `call_id`: the text the model sees, and
 whether it is an error (the tool threw, the arguments were invalid, or the call was declined).
 
-`id` is JAIL's own version 7 UUID for the call/result pair, set by [`chat!`](@ref) when it runs
-the call; the pair is saved as `<storage_dir>/tools/<session id>/<id>.json` (see
+`id` is JAIL's own version 7 UUID for the call/result pair, set by [`agent!`](@ref) when it runs
+the call; the pair is saved as `<storage_dir>/tools/<session id>/<id>.json`, and text the call
+carried (Julia code, a shell command, a new file's contents) as
+`<storage_dir>/generated/<type>/<session id>/<id>/generated.<ext>` (see
 [`restore_session!`](@ref)). It is never sent to the provider.
 """
 struct ToolResult <: AbstractContentPart

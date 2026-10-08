@@ -24,7 +24,9 @@
 #
 # Running it: section 4 asks [y/N/a] for :medium/:high calls under MODE and `ask_user` asks a
 # question, so run it in a terminal REPL. It works in a temporary folder inside the current
-# directory and removes it, the demo session and the tools it registered at the end.
+# directory and removes it, the demo session and the tools it registered at the end. The Tool
+# calls box of the create_file and execute_julia_code turns links `View Generated file` /
+# `View Generated code` (saved under <storage_dir>/generated/).
 #
 # Open / tentative:
 # - The built-in tool functions are not exported; `JAIL.read_file` etc. are callable directly,

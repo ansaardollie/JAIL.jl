@@ -27,14 +27,16 @@
 # show <name>`, `tools use/add/drop <name>...` (`group:<group>` = every tool in it), `tools all`,
 # `tools none`. The `&` mode streams `→ label` / `← label: result` lines as calls happen; the
 # finished turn is boxed: a `Tool calls` box (✓/✗, label, `View` link to the call's JSON via
-# OSC 8), then a `Response (model; N in; M out):` box with the reply text.
+# OSC 8, and `View Generated code|shell|file` for calls that carried such text), then a
+# `Response (model; N in; M out):` box with the reply text.
 #
 # Groups and labels: every tool is in a group ("global" unless `group=` is given) and has a
 # label for display (default: the function name as written). The model sees neither.
 #
 # Saved calls: each ToolResult gets an `id` (UUID v7) when agent! runs the call, and the call +
 # result pair is written to <storage_dir>/tools/<session id>/<id>.json (unless
-# `persist_sessions = false`).
+# `persist_sessions = false`). The text of built-in execute_julia_code, run_shell and create_file
+# calls also goes to <storage_dir>/generated/{code,shell,file}/<session id>/<id>/generated.<ext>.
 #
 # Open / tentative:
 # - Security/preview functions get every parameter of the tool; optional ones the model left out
