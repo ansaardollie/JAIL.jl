@@ -216,6 +216,8 @@ above rather than editing by hand, though hand edits are picked up without a res
 | `tool_auto_approvals` | table of tool name (or group) → `true` / `false` | [`set_tool_auto_approval!`](@ref), `a` at a prompt, `tools approve` | `true`: never ask for that tool; `false`: always ask (default empty) |
 | `registered_tools` | list of built-in group or tool names | by hand | Built-in tools registered when JAIL loads (default: every built-in; `[]` for none). The older `builtin_tools` is no longer read |
 | `loaded_tools` | list of tool or group names | by hand | Tools a new session loads, so the model sees them in full; the others are found through tool search (default empty; see [`load_tools!`](@ref)) |
+| `allowed_skills` | list of skill names | by hand | Only these skills exist for JAIL: [`skills`](@ref), the agent mode and `/name` (default: unset, every skill). Takes precedence, with a warning, when `disallowed_skills` is also set |
+| `disallowed_skills` | list of skill names | by hand | These skills are hidden everywhere, as above (default: unset) |
 | `julia_code_module` | `"main"` / `"sandbox"` | by hand | Where the built-in `execute_julia_code` runs: `Main`, or a module per session (default `"main"`) |
 | `protected_paths` | list of paths | by hand | Paths, relative to the workspace folder, whose writes by built-in tools are always `:high`, besides `LocalPreferences.toml`, `Project.toml`, `.git` and `storage_dir` (default empty) |
 | `scrub_env_vars` | list of ENV var names | by hand | Removed from the built-in tools' child processes, besides names ending in `_KEY`, `_CREDENTIALS`, `_CREDENTIAL` (default empty) |

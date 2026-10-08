@@ -186,6 +186,9 @@ Every skill found now, sorted by name: each `<name>/SKILL.md` in the `skills` fo
 `./.github`, `./.claude`, `./.copilot` (the current directory), `<storage_dir>`, `~/.claude`,
 `~/.agents` and `~/.copilot`. A skill's name is its front matter `name`, else its folder name.
 See the Agents guide for the front matter keys.
+
+The Preference `allowed_skills` (a list of names) keeps only those skills; `disallowed_skills`
+drops those. Set one of them: with both, `allowed_skills` is used and a warning shown.
 """
 function skills()
     out = Skill[]
@@ -203,7 +206,20 @@ function skills()
             s === nothing || push!(out, s)
         end
     end
-    return sort!(out; by = s -> s.name)
+    keep = _skill_filter()
+    return sort!(filter!(s -> keep(s.name), out); by = s -> s.name)
+end
+
+# Name predicate from the `allowed_skills` / `disallowed_skills` Preferences.
+function _skill_filter()
+    allowed = _load_pref("allowed_skills") === nothing ? nothing : Set(_string_list_pref("allowed_skills"))
+    denied = _load_pref("disallowed_skills") === nothing ? nothing : Set(_string_list_pref("disallowed_skills"))
+    if allowed !== nothing
+        denied === nothing || _warn_ref_once("pref:skills_both",
+            "the Preferences `allowed_skills` and `disallowed_skills` are both set; `allowed_skills` is used")
+        return in(allowed)
+    end
+    return denied === nothing ? Returns(true) : !in(denied)
 end
 
 _location(a::Agent) = a.path === nothing ? "built in" : string(a.source, ": ", Base.contractuser(a.path))

@@ -21,6 +21,8 @@
 # - `new_agent`/`new_skill` always open the editor; this script sets JULIA_EDITOR to `true` (a
 #   no-op command) for the run.
 # - Agent names come from front matter `name` or the file name; duplicates ask with a menu.
+# - `allowed_skills` / `disallowed_skills` Preferences hide skills everywhere (both set: allowed
+#   wins, with a warning). There is no Julia setter; they are set by hand.
 
 using JAIL
 using HTTP: HTTP
@@ -50,6 +52,7 @@ end
 scripted = OpenAICompatible("scripted", "http://127.0.0.1:$(HTTP.port(server))/v1")
 
 previous_storage = Preferences.load_preference(JAIL, "storage_dir")
+previous_skill_prefs = [k => Preferences.load_preference(JAIL, k) for k in ("allowed_skills", "disallowed_skills")]
 Preferences.set_preferences!(JAIL, "storage_dir" => mktempdir(); force = true)
 previous_editor = get(ENV, "JULIA_EDITOR", nothing)
 ENV["JULIA_EDITOR"] = "true"
@@ -145,9 +148,28 @@ try
             println("misuse: ", sprint(showerror, e))
         end
     end
+
+    # --- 9. Allow or disallow skills with Preferences ------------------------------------------
+    # Normally set by hand in LocalPreferences.toml; filtered skills are gone from skills(), the
+    # model's list, `/name` and run_skill!.
+
+    Preferences.set_preferences!(JAIL, "disallowed_skills" => ["style"]; force = true)
+    @show filter(n -> n in ("style", "review-file"), [k.name for k in skills()])
+    Preferences.delete_preferences!(JAIL, "disallowed_skills"; force = true)
+    Preferences.set_preferences!(JAIL, "allowed_skills" => ["style"]; force = true)
+    @show [k.name for k in skills()]
+    try
+        run_skill!(s, "review-file", "src/x.jl")
+    catch e
+        println("misuse: ", sprint(showerror, e))
+    end
     delete_session!(s; files = true)
 finally
     close(server)
+    for (k, v) in previous_skill_prefs
+        v === nothing ? Preferences.delete_preferences!(JAIL, k; force = true) :
+            Preferences.set_preferences!(JAIL, k => v; force = true)
+    end
     previous_storage === nothing ? Preferences.delete_preferences!(JAIL, "storage_dir"; force = true) :
         Preferences.set_preferences!(JAIL, "storage_dir" => previous_storage; force = true)
     previous_editor === nothing ? delete!(ENV, "JULIA_EDITOR") : (ENV["JULIA_EDITOR"] = previous_editor)

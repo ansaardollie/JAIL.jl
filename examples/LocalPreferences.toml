@@ -39,6 +39,11 @@ parallel_tool_calls = true
 # through tool search. Default: none.
 # loaded_tools = ["read_file", "ask_user"]
 
+# Skill names to keep (allowed_skills) or hide (disallowed_skills) in skills(), the agent mode
+# and /name. Set one; with both, allowed_skills wins. Default: unset (every skill).
+# allowed_skills = ["review"]
+# disallowed_skills = ["python-type-inference"]
+
 # Where the built-in execute_julia_code runs: "main" (Main) or "sandbox" (a module per session).
 julia_code_module = "main"
 

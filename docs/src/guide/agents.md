@@ -91,6 +91,16 @@ the same places: `.github/skills/`, `.claude/skills/`, `.copilot/skills/`,
 `<storage_dir>/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.copilot/skills/`. The
 name is the front matter `name`, else the folder name.
 
+The Preference `allowed_skills` (a list of names) keeps only those skills; `disallowed_skills`
+hides those. Filtered skills are gone everywhere: [`skills`](@ref), the model's list, `/name`
+and [`run_skill!`](@ref). Set one of the two; with both, `allowed_skills` is used (with a
+warning).
+
+```toml
+[JAIL]
+disallowed_skills = ["python-type-inference", "pylance-docs"]
+```
+
 | Front matter key | Meaning |
 |---|---|
 | `name`, `description` | What the model and the user see |
